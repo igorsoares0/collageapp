@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -27,14 +28,30 @@ TextStyle googleFontsResolver(String family, TextStyle base) {
 ///   (Konva rotates around the node origin, NOT the center).
 /// - layers[0] is the bottom of the stack.
 /// - Text has fixed width and automatic height.
+/// User scale adjustments are clamped so a slot can't vanish or swallow
+/// the canvas — shared by the pinch gesture and the corner handles.
+const double _kMinSlotScale = 0.3;
+const double _kMaxSlotScale = 4.0;
+
 class TemplateCanvas extends StatelessWidget {
   final Template template;
   final SlotContent content;
   final FontResolver fontResolver;
 
-  /// When set, image slots become tappable (FittedBox/Transform map the hit
-  /// test back to template space) and empty placeholders show a photo icon.
-  final void Function(String slotId)? onImageSlotTap;
+  /// When set, slot layers (image and text) become tappable (FittedBox/
+  /// Transform map the hit test back to template space) and empty image
+  /// placeholders show a photo icon. The screen decides what a tap means
+  /// (select, open the picker, …).
+  final void Function(String slotId)? onSlotTap;
+
+  /// Tap on the canvas outside any slot (background, shapes, stickers) —
+  /// used by the screen to clear the selection.
+  final VoidCallback? onCanvasTap;
+
+  /// Slot currently selected by the user: rendered with a border and corner
+  /// resize handles (the chrome lives inside the slot's transform chain, so
+  /// it follows rotation and scale).
+  final String? selectedSlotId;
 
   /// When set, slot layers (image/text — the user's content) become
   /// draggable. [delta] arrives in template space: gesture events are
@@ -44,13 +61,22 @@ class TemplateCanvas extends StatelessWidget {
   /// stay fixed.
   final void Function(String slotId, Offset delta)? onSlotDrag;
 
+  /// When set, slot layers can be pinch-resized. [scale] is the new
+  /// absolute scale for the slot (the canvas combines the gesture ratio
+  /// with the scale the slot had when the gesture started); store it in
+  /// SlotContent.scales.
+  final void Function(String slotId, double scale)? onSlotScale;
+
   const TemplateCanvas({
     super.key,
     required this.template,
     this.content = const SlotContent(),
     this.fontResolver = googleFontsResolver,
-    this.onImageSlotTap,
+    this.onSlotTap,
+    this.onCanvasTap,
+    this.selectedSlotId,
     this.onSlotDrag,
+    this.onSlotScale,
   });
 
   @override
@@ -59,20 +85,32 @@ class TemplateCanvas extends StatelessWidget {
       child: SizedBox(
         width: template.canvasWidth,
         height: template.canvasHeight,
-        child: Stack(
-          children: [
-            // Canvas background, same as the editor's white stage.
-            const Positioned.fill(child: ColoredBox(color: Colors.white)),
-            for (final layer in template.layers)
-              if (!layer.hidden)
-                _LayerWidget(
-                  layer: layer,
-                  content: content,
-                  fontResolver: fontResolver,
-                  onImageSlotTap: onImageSlotTap,
-                  onSlotDrag: onSlotDrag,
-                ),
-          ],
+        // The deselect detector wraps the whole canvas: slot detectors are
+        // deeper and win the gesture arena, so this only fires for taps on
+        // the background, shapes and stickers. (A detector on the white
+        // backdrop wouldn't work — any full-bleed shape layer above it
+        // swallows the hit test.)
+        child: GestureDetector(
+          onTap: onCanvasTap,
+          child: Stack(
+            children: [
+              // Canvas background, same as the editor's white stage.
+              const Positioned.fill(child: ColoredBox(color: Colors.white)),
+              for (final layer in template.layers)
+                if (!layer.hidden)
+                  _LayerWidget(
+                    layer: layer,
+                    content: content,
+                    fontResolver: fontResolver,
+                    onSlotTap: onSlotTap,
+                    onSlotDrag: onSlotDrag,
+                    onSlotScale: onSlotScale,
+                    selected: layer is ImageLayer &&
+                            layer.slotId == selectedSlotId ||
+                        layer is TextLayer && layer.slotId == selectedSlotId,
+                  ),
+            ],
+          ),
         ),
       ),
     );
@@ -83,15 +121,19 @@ class _LayerWidget extends StatelessWidget {
   final Layer layer;
   final SlotContent content;
   final FontResolver fontResolver;
-  final void Function(String slotId)? onImageSlotTap;
+  final void Function(String slotId)? onSlotTap;
   final void Function(String slotId, Offset delta)? onSlotDrag;
+  final void Function(String slotId, double scale)? onSlotScale;
+  final bool selected;
 
   const _LayerWidget({
     required this.layer,
     required this.content,
     required this.fontResolver,
-    this.onImageSlotTap,
+    this.onSlotTap,
     this.onSlotDrag,
+    this.onSlotScale,
+    this.selected = false,
   });
 
   @override
@@ -103,33 +145,62 @@ class _LayerWidget extends StatelessWidget {
           l.y,
           _rotated(
               l.rotation,
-              _ImageSlot(
-                  layer: l, content: content, onTap: onImageSlotTap))),
+              _chromed(
+                  l.slotId,
+                  _ImageSlot(
+                      layer: l,
+                      content: content,
+                      interactive: onSlotTap != null)))),
       TextLayer l => _slot(
           l.slotId,
           l.x,
           l.y,
-          _TextSlot(layer: l, content: content, fontResolver: fontResolver)),
+          _chromed(l.slotId,
+              _TextSlot(layer: l, content: content, fontResolver: fontResolver))),
       ShapeLayer l => _positioned(
           l.x, l.y, Container(width: l.width, height: l.height, color: l.fill)),
       StickerLayer l => _positioned(l.x, l.y, _StickerPlaceholder(layer: l)),
     };
   }
 
-  /// Slot layers carry the user's position adjustment and, when enabled,
-  /// a pan handler. Translation is applied before rotation, so dragging a
-  /// rotated slot still follows the finger.
+  /// Selection chrome (border + corner handles) wraps the slot content
+  /// inside the rotation/scale transforms, so it hugs the element exactly
+  /// as drawn.
+  Widget _chromed(String slotId, Widget child) {
+    if (!selected) return child;
+    final scale = content.scaleFor(slotId);
+    return _SelectionChrome(
+      scale: scale,
+      onResize: onSlotScale == null
+          ? null
+          : (factor) => onSlotScale!(
+              slotId,
+              (scale * factor).clamp(_kMinSlotScale, _kMaxSlotScale)),
+      child: child,
+    );
+  }
+
+  /// Slot layers carry the user's position/size adjustments and, when
+  /// enabled, the tap/drag/pinch handlers. Translation is applied before
+  /// rotation, so dragging a rotated slot still follows the finger; the
+  /// pinch scale is anchored at the slot's center.
   Widget _slot(String slotId, double x, double y, Widget child) {
     final offset = content.offsetFor(slotId);
-    final dragged = onSlotDrag == null
+    final scale = content.scaleFor(slotId);
+    Widget result = scale == 1.0
         ? child
-        : GestureDetector(
-            // d.delta is a localDelta: already in template space, with the
-            // FittedBox scale factored out by the event transform.
-            onPanUpdate: (d) => onSlotDrag!(slotId, d.delta),
-            child: child,
-          );
-    return _positioned(x + offset.dx, y + offset.dy, dragged);
+        : Transform.scale(scale: scale, child: child);
+    if (onSlotTap != null || onSlotDrag != null || onSlotScale != null) {
+      result = _SlotGestures(
+        slotId: slotId,
+        currentScale: scale,
+        onTap: onSlotTap,
+        onDrag: onSlotDrag,
+        onScaleChange: onSlotScale,
+        child: result,
+      );
+    }
+    return _positioned(x + offset.dx, y + offset.dy, result);
   }
 
   Widget _positioned(double x, double y, Widget child) =>
@@ -142,17 +213,199 @@ class _LayerWidget extends StatelessWidget {
       );
 }
 
+/// One GestureDetector for both gestures: pan and pinch can't be separate
+/// recognizers (they'd fight in the arena), so onScaleUpdate handles both —
+/// one finger moves the focal point, two fingers also change [d.scale].
+/// d.scale is a ratio relative to the gesture start, so the slot's scale at
+/// gesture start is captured as the base; it is re-captured whenever the
+/// finger count changes, because the recognizer re-bases its ratio then.
+class _SlotGestures extends StatefulWidget {
+  final String slotId;
+  final double currentScale;
+  final void Function(String slotId)? onTap;
+  final void Function(String slotId, Offset delta)? onDrag;
+  final void Function(String slotId, double scale)? onScaleChange;
+  final Widget child;
+
+  const _SlotGestures({
+    required this.slotId,
+    required this.currentScale,
+    required this.onTap,
+    required this.onDrag,
+    required this.onScaleChange,
+    required this.child,
+  });
+
+  @override
+  State<_SlotGestures> createState() => _SlotGesturesState();
+}
+
+class _SlotGesturesState extends State<_SlotGestures> {
+  double _baseScale = 1.0;
+  int _pointerCount = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap:
+          widget.onTap == null ? null : () => widget.onTap!(widget.slotId),
+      onScaleStart: (d) {
+        _baseScale = widget.currentScale;
+        _pointerCount = d.pointerCount;
+      },
+      onScaleUpdate: (d) {
+        if (d.pointerCount != _pointerCount) {
+          _baseScale = widget.currentScale;
+          _pointerCount = d.pointerCount;
+        }
+        if (d.focalPointDelta != Offset.zero) {
+          widget.onDrag?.call(widget.slotId, d.focalPointDelta);
+        }
+        if (d.pointerCount >= 2 && d.scale != 1.0) {
+          widget.onScaleChange?.call(
+            widget.slotId,
+            (_baseScale * d.scale).clamp(_kMinSlotScale, _kMaxSlotScale),
+          );
+        }
+      },
+      child: widget.child,
+    );
+  }
+}
+
+/// Claims the pointer as soon as it lands, instead of waiting out the touch
+/// slop. Resize handles need this: a regular pan recognizer ties with the
+/// slot's own scale recognizer in the gesture arena and loses the resize.
+class _EagerPanGestureRecognizer extends PanGestureRecognizer {
+  @override
+  void addAllowedPointer(PointerDownEvent event) {
+    super.addAllowedPointer(event);
+    resolve(GestureDisposition.accepted);
+  }
+}
+
+/// Editor-style selection chrome: accent border plus four corner handles.
+/// It sits inside the slot's transform chain (follows rotation/scale), so
+/// its sizes are divided by the current scale to stay visually constant.
+/// Dragging a handle reports a resize [factor] per update: the projection
+/// of the drag onto the corner's outward diagonal, relative to the slot's
+/// half-diagonal.
+class _SelectionChrome extends StatelessWidget {
+  static const _accent = Color(0xFF3B82F6);
+
+  final double scale;
+  final void Function(double factor)? onResize;
+  final Widget child;
+
+  const _SelectionChrome({
+    required this.scale,
+    required this.onResize,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final stroke = 5.0 / scale;
+    final handleSize = 56.0 / scale;
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        child,
+        Positioned.fill(
+          child: IgnorePointer(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                border: Border.all(color: _accent, width: stroke),
+              ),
+            ),
+          ),
+        ),
+        Positioned.fill(
+          child: LayoutBuilder(builder: (context, constraints) {
+            final w = constraints.maxWidth;
+            final h = constraints.maxHeight;
+            final halfDiagonal = math.sqrt(w * w + h * h) / 2;
+
+            Widget handle(String corner, double sx, double sy) {
+              // The visual square sits centered on the corner; the hit box
+              // is twice as big and biased inward, because hits outside the
+              // Stack bounds are clipped away.
+              return Positioned(
+                left: sx < 0 ? -handleSize : null,
+                right: sx > 0 ? -handleSize : null,
+                top: sy < 0 ? -handleSize : null,
+                bottom: sy > 0 ? -handleSize : null,
+                child: RawGestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  gestures: {
+                    _EagerPanGestureRecognizer:
+                        GestureRecognizerFactoryWithHandlers<
+                            _EagerPanGestureRecognizer>(
+                      _EagerPanGestureRecognizer.new,
+                      (recognizer) => recognizer.onUpdate = onResize == null
+                          ? null
+                          : (d) {
+                              final projection =
+                                  (d.delta.dx * sx + d.delta.dy * sy) /
+                                      math.sqrt2;
+                              onResize!((halfDiagonal + projection) /
+                                  halfDiagonal);
+                            },
+                    ),
+                  },
+                  child: SizedBox(
+                    width: handleSize * 2,
+                    height: handleSize * 2,
+                    child: Center(
+                      child: Container(
+                        key: ValueKey('handle_$corner'),
+                        width: handleSize,
+                        height: handleSize,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          border: Border.all(color: _accent, width: stroke),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            }
+
+            return Stack(
+              clipBehavior: Clip.none,
+              children: [
+                handle('tl', -1, -1),
+                handle('tr', 1, -1),
+                handle('bl', -1, 1),
+                handle('br', 1, 1),
+              ],
+            );
+          }),
+        ),
+      ],
+    );
+  }
+}
+
 class _ImageSlot extends StatelessWidget {
   final ImageLayer layer;
   final SlotContent content;
-  final void Function(String slotId)? onTap;
 
-  const _ImageSlot({required this.layer, required this.content, this.onTap});
+  /// Whether the canvas is interactive (tap handlers installed) — empty
+  /// placeholders then advertise themselves with a photo icon.
+  final bool interactive;
+
+  const _ImageSlot({
+    required this.layer,
+    required this.content,
+    this.interactive = false,
+  });
 
   @override
   Widget build(BuildContext context) {
     final image = content.imageFor(layer.slotId);
-    final slot = Opacity(
+    return Opacity(
       opacity: layer.opacity,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(layer.borderRadius),
@@ -171,7 +424,7 @@ class _ImageSlot extends StatelessWidget {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    if (onTap != null)
+                    if (interactive)
                       const Icon(
                         Icons.add_photo_alternate_outlined,
                         size: 96,
@@ -189,8 +442,6 @@ class _ImageSlot extends StatelessWidget {
               ),
       ),
     );
-    if (onTap == null) return slot;
-    return GestureDetector(onTap: () => onTap!(layer.slotId), child: slot);
   }
 }
 

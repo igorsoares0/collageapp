@@ -81,4 +81,113 @@ void main() {
     expect(end - mid, const Offset(50, 30));
     expect(content.offsetFor('hero_image').dx, greaterThan(0));
   });
+
+  testWidgets('SlotContent scales resize the slot around its center',
+      (tester) async {
+    await pump(
+      tester,
+      TemplateCanvas(template: template, fontResolver: testFontResolver),
+    );
+    final before = tester.getTopLeft(find.text('title'));
+
+    await pump(
+      tester,
+      TemplateCanvas(
+        template: template,
+        content: const SlotContent(scales: {'title': 2.0}),
+        fontResolver: testFontResolver,
+      ),
+    );
+    final after = tester.getTopLeft(find.text('title'));
+
+    // Center-anchored 2x scale: the 900-wide slot's top-left moves left by
+    // 450 template px → 225 screen px at FittedBox scale 0.5.
+    expect(after.dx - before.dx, -225);
+    expect(after.dy, lessThan(before.dy));
+  });
+
+  testWidgets('pinching a slot updates its scale', (tester) async {
+    var content = const SlotContent();
+    await pump(
+      tester,
+      StatefulBuilder(
+        builder: (context, setState) => TemplateCanvas(
+          template: template,
+          content: content,
+          fontResolver: testFontResolver,
+          onSlotScale: (slotId, scale) =>
+              setState(() => content = content.withScale(slotId, scale)),
+        ),
+      ),
+    );
+
+    final center = tester.getCenter(find.text('title'));
+    final finger1 = await tester.startGesture(center - const Offset(20, 0));
+    final finger2 = await tester.startGesture(center + const Offset(20, 0));
+    await finger1.moveBy(const Offset(-20, 0));
+    await finger2.moveBy(const Offset(20, 0));
+    await tester.pump();
+    await finger1.up();
+    await finger2.up();
+
+    // Finger spread doubled (40 → 80 px).
+    expect(content.scaleFor('title'), closeTo(2.0, 0.25));
+  });
+
+  testWidgets('tap selects a slot; canvas tap clears the selection',
+      (tester) async {
+    final taps = <String>[];
+    var canvasTaps = 0;
+    await pump(
+      tester,
+      TemplateCanvas(
+        template: template,
+        fontResolver: testFontResolver,
+        onSlotTap: taps.add,
+        onCanvasTap: () => canvasTaps++,
+      ),
+    );
+
+    await tester.tap(find.text('title'));
+    expect(taps, ['title']);
+
+    // The sticker has no tap detector: the tap falls through to the canvas.
+    await tester.tap(find.text('sticker_star'));
+    expect(canvasTaps, 1);
+  });
+
+  testWidgets('selected slot shows handles and corner drag resizes it',
+      (tester) async {
+    var content = const SlotContent();
+    await pump(
+      tester,
+      StatefulBuilder(
+        builder: (context, setState) => TemplateCanvas(
+          template: template,
+          content: content,
+          fontResolver: testFontResolver,
+          selectedSlotId: 'title',
+          onSlotScale: (slotId, scale) =>
+              setState(() => content = content.withScale(slotId, scale)),
+        ),
+      ),
+    );
+
+    expect(find.byKey(const ValueKey('handle_tl')), findsOneWidget);
+    expect(find.byKey(const ValueKey('handle_br')), findsOneWidget);
+
+    // The handle is centered on the slot corner, but hits outside the slot
+    // box are clipped by the Stack hit test — start the drag just inside.
+    final corner = tester.getCenter(find.byKey(const ValueKey('handle_br')));
+    await tester.dragFrom(corner - const Offset(6, 6), const Offset(40, 20));
+    expect(content.scaleFor('title'), greaterThan(1.0));
+
+    // And back inward shrinks.
+    final grown = content.scaleFor('title');
+    final cornerNow =
+        tester.getCenter(find.byKey(const ValueKey('handle_br')));
+    await tester.dragFrom(
+        cornerNow - const Offset(6, 6), const Offset(-60, -30));
+    expect(content.scaleFor('title'), lessThan(grown));
+  });
 }

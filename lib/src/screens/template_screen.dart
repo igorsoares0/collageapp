@@ -27,6 +27,7 @@ class _TemplateScreenState extends State<TemplateScreen> {
   final _canvasKey = GlobalKey();
   late Future<Template> _template;
   SlotContent _content = const SlotContent();
+  String? _selectedSlot;
   bool _exporting = false;
 
   @override
@@ -48,7 +49,26 @@ class _TemplateScreenState extends State<TemplateScreen> {
     setState(() => _content = _content.withImage(slotId, MemoryImage(bytes)));
   }
 
+  /// First tap selects (shows the handles); tapping the selected image slot
+  /// again opens the picker. Empty image slots open the picker right away —
+  /// filling the slot is what the user almost certainly wants.
+  void _handleSlotTap(Template template, String slotId) {
+    final isImage = template.layers
+        .any((l) => l is ImageLayer && l.slotId == slotId);
+    final wasSelected = _selectedSlot == slotId;
+    if (!wasSelected) setState(() => _selectedSlot = slotId);
+    if (isImage && (wasSelected || _content.imageFor(slotId) == null)) {
+      _pickImage(slotId);
+    }
+  }
+
   Future<void> _exportPng(Template template) async {
+    // Deselect first: the handles are widgets inside the RepaintBoundary
+    // and would end up in the PNG.
+    if (_selectedSlot != null) {
+      setState(() => _selectedSlot = null);
+      await WidgetsBinding.instance.endOfFrame;
+    }
     setState(() => _exporting = true);
     try {
       final bytes = await capturePng(_canvasKey, template.canvasWidth);
@@ -119,10 +139,15 @@ class _TemplateScreenState extends State<TemplateScreen> {
               child: TemplateCanvas(
                 template: template,
                 content: _content,
-                onImageSlotTap: _pickImage,
+                selectedSlotId: _selectedSlot,
+                onSlotTap: (slotId) => _handleSlotTap(template, slotId),
+                onCanvasTap: () => setState(() => _selectedSlot = null),
                 onSlotDrag: (slotId, delta) => setState(() {
                   _content = _content.withOffset(
                       slotId, _content.offsetFor(slotId) + delta);
+                }),
+                onSlotScale: (slotId, scale) => setState(() {
+                  _content = _content.withScale(slotId, scale);
                 }),
               ),
             ),
