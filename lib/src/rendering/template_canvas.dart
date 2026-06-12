@@ -53,6 +53,15 @@ class TemplateCanvas extends StatelessWidget {
   /// it follows rotation and scale).
   final String? selectedSlotId;
 
+  /// Text slot being edited inline: its Text swaps for an autofocused
+  /// TextField with the same style, and the slot's move/pinch gestures are
+  /// suspended so the field owns cursor/selection gestures.
+  final String? editingSlotId;
+
+  /// Streams every keystroke of the inline editor; store it in
+  /// SlotContent.texts.
+  final void Function(String slotId, String value)? onTextChanged;
+
   /// When set, slot layers (image/text — the user's content) become
   /// draggable. [delta] arrives in template space: gesture events are
   /// transformed into the listener's local coordinates, so the FittedBox
@@ -75,6 +84,8 @@ class TemplateCanvas extends StatelessWidget {
     this.onSlotTap,
     this.onCanvasTap,
     this.selectedSlotId,
+    this.editingSlotId,
+    this.onTextChanged,
     this.onSlotDrag,
     this.onSlotScale,
   });
@@ -105,9 +116,12 @@ class TemplateCanvas extends StatelessWidget {
                     onSlotTap: onSlotTap,
                     onSlotDrag: onSlotDrag,
                     onSlotScale: onSlotScale,
+                    onTextChanged: onTextChanged,
                     selected: layer is ImageLayer &&
                             layer.slotId == selectedSlotId ||
                         layer is TextLayer && layer.slotId == selectedSlotId,
+                    editing: layer is TextLayer &&
+                        layer.slotId == editingSlotId,
                   ),
             ],
           ),
@@ -124,7 +138,9 @@ class _LayerWidget extends StatelessWidget {
   final void Function(String slotId)? onSlotTap;
   final void Function(String slotId, Offset delta)? onSlotDrag;
   final void Function(String slotId, double scale)? onSlotScale;
+  final void Function(String slotId, String value)? onTextChanged;
   final bool selected;
+  final bool editing;
 
   const _LayerWidget({
     required this.layer,
@@ -133,7 +149,9 @@ class _LayerWidget extends StatelessWidget {
     this.onSlotTap,
     this.onSlotDrag,
     this.onSlotScale,
+    this.onTextChanged,
     this.selected = false,
+    this.editing = false,
   });
 
   @override
@@ -155,8 +173,16 @@ class _LayerWidget extends StatelessWidget {
           l.slotId,
           l.x,
           l.y,
-          _chromed(l.slotId,
-              _TextSlot(layer: l, content: content, fontResolver: fontResolver))),
+          _chromed(
+              l.slotId,
+              _TextSlot(
+                  layer: l,
+                  content: content,
+                  fontResolver: fontResolver,
+                  editing: editing,
+                  onTextChanged: onTextChanged)),
+          // The TextField owns cursor/selection gestures while editing.
+          gestures: !editing),
       ShapeLayer l => _positioned(
           l.x, l.y, Container(width: l.width, height: l.height, color: l.fill)),
       StickerLayer l => _positioned(l.x, l.y, _StickerPlaceholder(layer: l)),
@@ -184,13 +210,15 @@ class _LayerWidget extends StatelessWidget {
   /// enabled, the tap/drag/pinch handlers. Translation is applied before
   /// rotation, so dragging a rotated slot still follows the finger; the
   /// pinch scale is anchored at the slot's center.
-  Widget _slot(String slotId, double x, double y, Widget child) {
+  Widget _slot(String slotId, double x, double y, Widget child,
+      {bool gestures = true}) {
     final offset = content.offsetFor(slotId);
     final scale = content.scaleFor(slotId);
     Widget result = scale == 1.0
         ? child
         : Transform.scale(scale: scale, child: child);
-    if (onSlotTap != null || onSlotDrag != null || onSlotScale != null) {
+    if (gestures &&
+        (onSlotTap != null || onSlotDrag != null || onSlotScale != null)) {
       result = _SlotGestures(
         slotId: slotId,
         currentScale: scale,
@@ -449,11 +477,15 @@ class _TextSlot extends StatelessWidget {
   final TextLayer layer;
   final SlotContent content;
   final FontResolver fontResolver;
+  final bool editing;
+  final void Function(String slotId, String value)? onTextChanged;
 
   const _TextSlot({
     required this.layer,
     required this.content,
     required this.fontResolver,
+    this.editing = false,
+    this.onTextChanged,
   });
 
   @override
@@ -464,22 +496,91 @@ class _TextSlot extends StatelessWidget {
       color: layer.color,
     );
     final style = fontResolver(layer.fontFamily, base);
+    final align = switch (layer.alignment) {
+      'center' => TextAlign.center,
+      'right' => TextAlign.right,
+      _ => TextAlign.left,
+    };
+    if (editing) {
+      return SizedBox(
+        width: layer.width,
+        child: _InlineTextEditor(
+          initial: content.textFor(layer.slotId) ?? '',
+          hint: layer.slotId,
+          style: style,
+          textAlign: align,
+          onChanged: (value) => onTextChanged?.call(layer.slotId, value),
+        ),
+      );
+    }
     return SizedBox(
       width: layer.width,
       child: Text(
         content.textFor(layer.slotId) ?? layer.slotId,
         style: style,
-        textAlign: switch (layer.alignment) {
-          'center' => TextAlign.center,
-          'right' => TextAlign.right,
-          _ => TextAlign.left,
-        },
+        textAlign: align,
       ),
     );
   }
 
   FontWeight _weight(int value) =>
       FontWeight.values[(value / 100).round().clamp(1, 9) - 1];
+}
+
+/// In-canvas text editing: a collapsed TextField styled exactly like the
+/// Text it replaces, so the glyphs don't shift when editing starts. Stateful
+/// because the controller must survive the per-keystroke rebuilds.
+class _InlineTextEditor extends StatefulWidget {
+  final String initial;
+  final String hint;
+  final TextStyle style;
+  final TextAlign textAlign;
+  final ValueChanged<String> onChanged;
+
+  const _InlineTextEditor({
+    required this.initial,
+    required this.hint,
+    required this.style,
+    required this.textAlign,
+    required this.onChanged,
+  });
+
+  @override
+  State<_InlineTextEditor> createState() => _InlineTextEditorState();
+}
+
+class _InlineTextEditorState extends State<_InlineTextEditor> {
+  late final TextEditingController _controller =
+      TextEditingController(text: widget.initial);
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // TextField needs a Material ancestor; transparency keeps the canvas
+    // pixels untouched.
+    return Material(
+      type: MaterialType.transparency,
+      child: TextField(
+        controller: _controller,
+        autofocus: true,
+        maxLines: null,
+        style: widget.style,
+        textAlign: widget.textAlign,
+        decoration: InputDecoration.collapsed(
+          hintText: widget.hint,
+          hintStyle: widget.style.copyWith(
+            color: widget.style.color?.withValues(alpha: 0.4),
+          ),
+        ),
+        onChanged: widget.onChanged,
+      ),
+    );
+  }
 }
 
 /// Stickers are backend assets (spec §19); until asset storage exists this
