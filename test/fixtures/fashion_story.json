@@ -1,0 +1,78 @@
+{
+  "id": "fixture_fashion_story",
+  "schemaVersion": 1,
+  "version": 3,
+  "name": "Fashion Cover",
+  "aspectRatio": "story",
+  "canvas": { "width": 1080, "height": 1920 },
+  "layers": [
+    {
+      "id": "shape_bg",
+      "type": "shape",
+      "shape": "rectangle",
+      "x": 0,
+      "y": 0,
+      "width": 1080,
+      "height": 1920,
+      "fill": "#1C1917"
+    },
+    {
+      "id": "img_hero",
+      "type": "image",
+      "slotId": "hero_image",
+      "x": 90,
+      "y": 160,
+      "width": 900,
+      "height": 1100,
+      "rotation": 4,
+      "opacity": 0.95,
+      "borderRadius": 48
+    },
+    {
+      "id": "txt_title",
+      "type": "text",
+      "slotId": "title",
+      "x": 90,
+      "y": 1380,
+      "width": 900,
+      "fontFamily": "Playfair Display",
+      "fontSize": 96,
+      "fontWeight": 700,
+      "color": "#FAFAF9",
+      "alignment": "center"
+    },
+    {
+      "id": "txt_sub",
+      "type": "text",
+      "slotId": "subtitle",
+      "x": 90,
+      "y": 1560,
+      "width": 900,
+      "fontFamily": "Inter",
+      "fontSize": 44,
+      "fontWeight": 400,
+      "color": "#A8A29E",
+      "alignment": "center"
+    },
+    {
+      "id": "sticker_deco",
+      "type": "sticker",
+      "assetId": "sticker_star",
+      "x": 800,
+      "y": 80,
+      "width": 200,
+      "height": 200
+    },
+    {
+      "id": "shape_hidden",
+      "type": "shape",
+      "shape": "rectangle",
+      "x": 0,
+      "y": 0,
+      "width": 500,
+      "height": 500,
+      "fill": "#FF0000",
+      "editor": { "hidden": true }
+    }
+  ]
+}

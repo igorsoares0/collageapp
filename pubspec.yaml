@@ -1,0 +1,30 @@
+name: collageapp
+description: "Collage Studio mobile app — renders remote template JSON."
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.9.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  http: ^1.2.0
+  # Spec §20: fonts are external resources referenced by literal family name;
+  # google_fonts downloads them at runtime, mirroring the editor's behavior.
+  google_fonts: ^6.2.1
+  image_picker: ^1.1.2
+  # Offline cache (spec §27): raw API responses stored as files.
+  path_provider: ^2.1.4
+  # PNG export goes through the system share sheet (no storage permissions).
+  share_plus: ^10.1.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
