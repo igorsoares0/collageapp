@@ -13,6 +13,8 @@ class SlotContent {
   final Map<String, double> scales;
   final Map<String, Color> colors;
   final Map<String, String> fonts;
+  final Map<String, String> alignments;
+  final Map<String, int> weights;
 
   const SlotContent({
     this.texts = const {},
@@ -21,6 +23,8 @@ class SlotContent {
     this.scales = const {},
     this.colors = const {},
     this.fonts = const {},
+    this.alignments = const {},
+    this.weights = const {},
   });
 
   String? textFor(String slotId) => texts[slotId];
@@ -29,6 +33,8 @@ class SlotContent {
   double scaleFor(String slotId) => scales[slotId] ?? 1.0;
   Color? colorFor(String slotId) => colors[slotId];
   String? fontFor(String slotId) => fonts[slotId];
+  String? alignmentFor(String slotId) => alignments[slotId];
+  int? weightFor(String slotId) => weights[slotId];
 
   SlotContent withText(String slotId, String value) => _copy(
         texts: {...texts, slotId: value},
@@ -54,6 +60,14 @@ class SlotContent {
         fonts: {...fonts, slotId: value},
       );
 
+  SlotContent withAlignment(String slotId, String value) => _copy(
+        alignments: {...alignments, slotId: value},
+      );
+
+  SlotContent withWeight(String slotId, int value) => _copy(
+        weights: {...weights, slotId: value},
+      );
+
   SlotContent _copy({
     Map<String, String>? texts,
     Map<String, ImageProvider>? images,
@@ -61,6 +75,8 @@ class SlotContent {
     Map<String, double>? scales,
     Map<String, Color>? colors,
     Map<String, String>? fonts,
+    Map<String, String>? alignments,
+    Map<String, int>? weights,
   }) =>
       SlotContent(
         texts: texts ?? this.texts,
@@ -69,5 +85,7 @@ class SlotContent {
         scales: scales ?? this.scales,
         colors: colors ?? this.colors,
         fonts: fonts ?? this.fonts,
+        alignments: alignments ?? this.alignments,
+        weights: weights ?? this.weights,
       );
 }

@@ -85,4 +85,25 @@ void main() {
     final text = tester.widget<Text>(find.text('Hi'));
     expect(text.style!.color, const Color(0xFF3B82F6));
   });
+
+  testWidgets('alignment and weight overrides reach the rendered text',
+      (tester) async {
+    await pump(
+      tester,
+      TemplateCanvas(
+        template: template,
+        fontResolver: testFontResolver,
+        // Subtitle defaults to center/400; override to right/700.
+        content: const SlotContent(
+          texts: {'subtitle': 'Hello'},
+          alignments: {'subtitle': 'right'},
+          weights: {'subtitle': 700},
+        ),
+      ),
+    );
+
+    final text = tester.widget<Text>(find.text('Hello'));
+    expect(text.textAlign, TextAlign.right);
+    expect(text.style!.fontWeight, FontWeight.w700);
+  });
 }

@@ -36,15 +36,23 @@ const Color _accent = Color(0xFF3B82F6);
 class TextStyleBar extends StatelessWidget {
   final String currentFont;
   final Color currentColor;
+  final String currentAlignment;
+  final bool isBold;
   final ValueChanged<String> onFont;
   final ValueChanged<Color> onColor;
+  final ValueChanged<String> onAlignment;
+  final VoidCallback onBoldToggle;
 
   const TextStyleBar({
     super.key,
     required this.currentFont,
     required this.currentColor,
+    required this.currentAlignment,
+    required this.isBold,
     required this.onFont,
     required this.onColor,
+    required this.onAlignment,
+    required this.onBoldToggle,
   });
 
   @override
@@ -58,6 +66,33 @@ class TextStyleBar extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            Row(
+              children: [
+                const SizedBox(width: 8),
+                _IconToggle(
+                  icon: Icons.format_align_left,
+                  selected: currentAlignment == 'left',
+                  onTap: () => onAlignment('left'),
+                ),
+                _IconToggle(
+                  icon: Icons.format_align_center,
+                  selected: currentAlignment == 'center',
+                  onTap: () => onAlignment('center'),
+                ),
+                _IconToggle(
+                  icon: Icons.format_align_right,
+                  selected: currentAlignment == 'right',
+                  onTap: () => onAlignment('right'),
+                ),
+                const Spacer(),
+                _IconToggle(
+                  icon: Icons.format_bold,
+                  selected: isBold,
+                  onTap: onBoldToggle,
+                ),
+                const SizedBox(width: 8),
+              ],
+            ),
             SizedBox(
               height: 56,
               child: ListView(
@@ -89,6 +124,42 @@ class TextStyleBar extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _IconToggle extends StatelessWidget {
+  final IconData icon;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _IconToggle({
+    required this.icon,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 6),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          width: 44,
+          height: 40,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(8),
+            color: selected ? _accent.withValues(alpha: 0.2) : null,
+            border: Border.all(
+              color: selected ? _accent : const Color(0xFF3F3F46),
+              width: selected ? 2 : 1,
+            ),
+          ),
+          child: Icon(icon, size: 22, color: Colors.white),
         ),
       ),
     );

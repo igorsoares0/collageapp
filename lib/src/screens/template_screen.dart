@@ -182,18 +182,32 @@ class _TemplateScreenState extends State<TemplateScreen> {
           ),
         ),
         if (textLayer != null)
-          TextStyleBar(
-            currentFont:
-                _content.fontFor(textLayer.slotId) ?? textLayer.fontFamily,
-            currentColor:
-                _content.colorFor(textLayer.slotId) ?? textLayer.color,
-            onFont: (font) => setState(() {
-              _content = _content.withFont(textLayer.slotId, font);
-            }),
-            onColor: (color) => setState(() {
-              _content = _content.withColor(textLayer.slotId, color);
-            }),
-          ),
+          Builder(builder: (context) {
+            final weight =
+                _content.weightFor(textLayer.slotId) ?? textLayer.fontWeight;
+            return TextStyleBar(
+              currentFont:
+                  _content.fontFor(textLayer.slotId) ?? textLayer.fontFamily,
+              currentColor:
+                  _content.colorFor(textLayer.slotId) ?? textLayer.color,
+              currentAlignment: _content.alignmentFor(textLayer.slotId) ??
+                  textLayer.alignment,
+              isBold: weight >= 700,
+              onFont: (font) => setState(() {
+                _content = _content.withFont(textLayer.slotId, font);
+              }),
+              onColor: (color) => setState(() {
+                _content = _content.withColor(textLayer.slotId, color);
+              }),
+              onAlignment: (align) => setState(() {
+                _content = _content.withAlignment(textLayer.slotId, align);
+              }),
+              onBoldToggle: () => setState(() {
+                _content = _content.withWeight(
+                    textLayer.slotId, weight >= 700 ? 400 : 700);
+              }),
+            );
+          }),
       ],
     );
   }
