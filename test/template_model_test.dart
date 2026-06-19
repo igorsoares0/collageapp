@@ -52,4 +52,14 @@ void main() {
     expect(parseHexColor('not-a-color'), const Color(0xFF000000));
     expect(parseHexColor('#FF0066'), const Color(0xFFFF0066));
   });
+
+  test('canvas backgroundColor defaults to white when absent', () {
+    expect(Template.fromJson(json).backgroundColor, const Color(0xFFFFFFFF));
+  });
+
+  test('canvas backgroundColor is parsed when present', () {
+    final withBg = jsonDecode(jsonEncode(json)) as Map<String, dynamic>;
+    (withBg['canvas'] as Map<String, dynamic>)['backgroundColor'] = '#1C1917';
+    expect(Template.fromJson(withBg).backgroundColor, const Color(0xFF1C1917));
+  });
 }

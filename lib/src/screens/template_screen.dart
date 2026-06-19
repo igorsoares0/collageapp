@@ -181,6 +181,13 @@ class _TemplateScreenState extends State<TemplateScreen> {
             ),
           ),
         ),
+        if (textLayer == null && _selectedSlot == null)
+          BackgroundColorBar(
+            currentColor:
+                _content.backgroundColor ?? template.backgroundColor,
+            onColor: (color) => setState(
+                () => _content = _content.withBackgroundColor(color)),
+          ),
         if (textLayer != null)
           Builder(builder: (context) {
             final weight =

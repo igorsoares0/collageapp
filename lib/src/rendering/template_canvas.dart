@@ -116,8 +116,14 @@ class TemplateCanvas extends StatelessWidget {
           onTap: onCanvasTap,
           child: Stack(
             children: [
-              // Canvas background, same as the editor's white stage.
-              const Positioned.fill(child: ColoredBox(color: Colors.white)),
+              // Canvas background: the user's override if set, else the
+              // template's backgroundColor (defaults to white).
+              Positioned.fill(
+                child: ColoredBox(
+                  key: const ValueKey('canvas-background'),
+                  color: content.backgroundColor ?? template.backgroundColor,
+                ),
+              ),
               for (final layer in template.layers)
                 if (!layer.hidden)
                   _LayerWidget(

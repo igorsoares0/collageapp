@@ -16,6 +16,10 @@ class SlotContent {
   final Map<String, String> alignments;
   final Map<String, int> weights;
 
+  /// Canvas-level (not per-slot) override of the template's background color;
+  /// null means use the template's own background.
+  final Color? backgroundColor;
+
   const SlotContent({
     this.texts = const {},
     this.images = const {},
@@ -25,6 +29,7 @@ class SlotContent {
     this.fonts = const {},
     this.alignments = const {},
     this.weights = const {},
+    this.backgroundColor,
   });
 
   String? textFor(String slotId) => texts[slotId];
@@ -68,6 +73,8 @@ class SlotContent {
         weights: {...weights, slotId: value},
       );
 
+  SlotContent withBackgroundColor(Color value) => _copy(backgroundColor: value);
+
   SlotContent _copy({
     Map<String, String>? texts,
     Map<String, ImageProvider>? images,
@@ -77,6 +84,7 @@ class SlotContent {
     Map<String, String>? fonts,
     Map<String, String>? alignments,
     Map<String, int>? weights,
+    Color? backgroundColor,
   }) =>
       SlotContent(
         texts: texts ?? this.texts,
@@ -87,5 +95,6 @@ class SlotContent {
         fonts: fonts ?? this.fonts,
         alignments: alignments ?? this.alignments,
         weights: weights ?? this.weights,
+        backgroundColor: backgroundColor ?? this.backgroundColor,
       );
 }

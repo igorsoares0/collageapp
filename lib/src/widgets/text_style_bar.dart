@@ -166,6 +166,59 @@ class _IconToggle extends StatelessWidget {
   }
 }
 
+/// Bottom bar shown when no slot is selected: recolor the canvas background
+/// (a user override of the template's background, included in the export).
+class BackgroundColorBar extends StatelessWidget {
+  final Color currentColor;
+  final ValueChanged<Color> onColor;
+
+  const BackgroundColorBar({
+    super.key,
+    required this.currentColor,
+    required this.onColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: const Color(0xFF27272A),
+      child: SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 8, 16, 0),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Background',
+                  style: TextStyle(color: Colors.white70, fontSize: 12),
+                ),
+              ),
+            ),
+            SizedBox(
+              height: 52,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                children: [
+                  for (final color in kColorChoices)
+                    _ColorDot(
+                      color: color,
+                      selected: color == currentColor,
+                      onTap: () => onColor(color),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _FontChip extends StatelessWidget {
   final String font;
   final bool selected;

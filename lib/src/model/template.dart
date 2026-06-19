@@ -15,6 +15,10 @@ class Template {
   final String aspectRatio;
   final double canvasWidth;
   final double canvasHeight;
+
+  /// Canvas background, optional in the JSON (added after the first
+  /// templates); defaults to white so old templates render unchanged.
+  final Color backgroundColor;
   final List<Layer> layers;
 
   const Template({
@@ -25,11 +29,13 @@ class Template {
     required this.aspectRatio,
     required this.canvasWidth,
     required this.canvasHeight,
+    required this.backgroundColor,
     required this.layers,
   });
 
   factory Template.fromJson(Map<String, dynamic> json) {
     final canvas = json['canvas'] as Map<String, dynamic>;
+    final bg = canvas['backgroundColor'];
     return Template(
       id: json['id'] as String,
       schemaVersion: (json['schemaVersion'] as num?)?.toInt() ?? 1,
@@ -38,6 +44,8 @@ class Template {
       aspectRatio: json['aspectRatio'] as String,
       canvasWidth: (canvas['width'] as num).toDouble(),
       canvasHeight: (canvas['height'] as num).toDouble(),
+      backgroundColor:
+          bg is String ? parseHexColor(bg) : const Color(0xFFFFFFFF),
       layers: (json['layers'] as List<dynamic>)
           .map((l) => Layer.fromJson(l as Map<String, dynamic>))
           .whereType<Layer>()
