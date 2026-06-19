@@ -1,6 +1,5 @@
 import 'dart:math' as math;
 
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -29,9 +28,21 @@ TextStyle googleFontsResolver(String family, TextStyle base) {
 /// - layers[0] is the bottom of the stack.
 /// - Text has fixed width and automatic height.
 /// User scale adjustments are clamped so a slot can't vanish or swallow
-/// the canvas — shared by the pinch gesture and the corner handles.
+/// the canvas — shared by the pinch gesture and the corner-handle resize.
 const double _kMinSlotScale = 0.3;
 const double _kMaxSlotScale = 4.0;
+
+/// Hittable margin the selection chrome floats around the element (pre-scale
+/// template px, divided by the slot scale to stay visually constant) so the
+/// corner handles — which sit on the element corners and spill outward — are
+/// fully touchable. `_slot` shifts the element back by the same amount so it
+/// doesn't move on selection. Must exceed _kCornerReach.
+const double _kChromePad = 64.0;
+
+/// Radius of each corner's resize touch zone (pre-scale template px / scale).
+/// Starting a one-finger drag within this distance of a corner resizes;
+/// anywhere else moves.
+const double _kCornerReach = 56.0;
 
 class TemplateCanvas extends StatelessWidget {
   final Template template;
@@ -189,46 +200,44 @@ class _LayerWidget extends StatelessWidget {
     };
   }
 
-  /// Selection chrome (border + corner handles) wraps the slot content
+  /// Selection chrome (border + handle visuals) wraps the slot content
   /// inside the rotation/scale transforms, so it hugs the element exactly
-  /// as drawn.
+  /// as drawn. It is visual only — gestures (including resize) live in
+  /// _SlotGestures so there is a single recognizer and no arena contention.
   Widget _chromed(String slotId, Widget child) {
     if (!selected) return child;
-    final scale = content.scaleFor(slotId);
-    return _SelectionChrome(
-      scale: scale,
-      onResize: onSlotScale == null
-          ? null
-          : (factor) => onSlotScale!(
-              slotId,
-              (scale * factor).clamp(_kMinSlotScale, _kMaxSlotScale)),
-      child: child,
-    );
+    return _SelectionChrome(scale: content.scaleFor(slotId), child: child);
   }
 
-  /// Slot layers carry the user's position/size adjustments and, when
-  /// enabled, the tap/drag/pinch handlers. Translation is applied before
-  /// rotation, so dragging a rotated slot still follows the finger; the
-  /// pinch scale is anchored at the slot's center.
+  /// Slot layers carry the user's position/size adjustments and the
+  /// tap/drag/pinch/resize handler. _SlotGestures sits INSIDE Transform.scale
+  /// so its hit area grows with the element (otherwise a scaled-up element
+  /// would extend past its own touch region). Translation is applied before
+  /// rotation, so dragging a rotated slot still follows the finger.
   Widget _slot(String slotId, double x, double y, Widget child,
       {bool gestures = true}) {
     final offset = content.offsetFor(slotId);
     final scale = content.scaleFor(slotId);
-    Widget result = scale == 1.0
-        ? child
-        : Transform.scale(scale: scale, child: child);
+    // When selected the chrome floats a _kChromePad margin around the element
+    // (so corner zones overflow it and stay touchable); shift back by the
+    // same pad so the element's center stays put on selection.
+    final pad = selected ? _kChromePad / scale : 0.0;
+    Widget inner = child;
     if (gestures &&
         (onSlotTap != null || onSlotDrag != null || onSlotScale != null)) {
-      result = _SlotGestures(
+      inner = _SlotGestures(
         slotId: slotId,
         currentScale: scale,
+        resizeEnabled: selected,
         onTap: onSlotTap,
         onDrag: onSlotDrag,
         onScaleChange: onSlotScale,
-        child: result,
+        child: inner,
       );
     }
-    return _positioned(x + offset.dx, y + offset.dy, result);
+    final result =
+        scale == 1.0 ? inner : Transform.scale(scale: scale, child: inner);
+    return _positioned(x + offset.dx - pad, y + offset.dy - pad, result);
   }
 
   Widget _positioned(double x, double y, Widget child) =>
@@ -241,15 +250,19 @@ class _LayerWidget extends StatelessWidget {
       );
 }
 
-/// One GestureDetector for both gestures: pan and pinch can't be separate
-/// recognizers (they'd fight in the arena), so onScaleUpdate handles both —
-/// one finger moves the focal point, two fingers also change [d.scale].
-/// d.scale is a ratio relative to the gesture start, so the slot's scale at
-/// gesture start is captured as the base; it is re-captured whenever the
-/// finger count changes, because the recognizer re-bases its ratio then.
+/// The single gesture surface for a slot: tap, move, pinch AND resize, all
+/// in one ScaleGestureRecognizer so nothing competes in the gesture arena
+/// (nested resize/move recognizers were the source of dropped touches).
+///
+/// One finger near the element's edge (the resize band, only when selected)
+/// resizes by tracking the finger's distance to the element center in global
+/// coordinates — the edge sticks to the finger, size-independent. One finger
+/// in the interior moves. Two fingers pinch. d.scale is a ratio relative to
+/// the gesture start, re-based whenever the finger count changes.
 class _SlotGestures extends StatefulWidget {
   final String slotId;
   final double currentScale;
+  final bool resizeEnabled;
   final void Function(String slotId)? onTap;
   final void Function(String slotId, Offset delta)? onDrag;
   final void Function(String slotId, double scale)? onScaleChange;
@@ -258,6 +271,7 @@ class _SlotGestures extends StatefulWidget {
   const _SlotGestures({
     required this.slotId,
     required this.currentScale,
+    required this.resizeEnabled,
     required this.onTap,
     required this.onDrag,
     required this.onScaleChange,
@@ -271,20 +285,77 @@ class _SlotGestures extends StatefulWidget {
 class _SlotGesturesState extends State<_SlotGestures> {
   double _baseScale = 1.0;
   int _pointerCount = 0;
+  bool _isResizing = false;
+  double _startScale = 1.0;
+  double? _startDistance;
+
+  /// Element center in global coordinates. This widget sits inside
+  /// Transform.scale, so localToGlobal already accounts for the scale; the
+  /// center is the scale's fixed point, hence stable while resizing.
+  Offset? _centerGlobal() {
+    final box = context.findRenderObject();
+    if (box is! RenderBox || !box.hasSize) return null;
+    return box.localToGlobal(box.size.center(Offset.zero));
+  }
+
+  /// True when [local] (in this widget's padded coordinate space) is within
+  /// reach of one of the element's four corners — the resize zones.
+  bool _nearCorner(Offset local, Size size) {
+    final pad = _kChromePad / widget.currentScale;
+    final reach = _kCornerReach / widget.currentScale;
+    final w = size.width - 2 * pad;
+    final h = size.height - 2 * pad;
+    final corners = [
+      Offset(pad, pad),
+      Offset(pad + w, pad),
+      Offset(pad, pad + h),
+      Offset(pad + w, pad + h),
+    ];
+    return corners.any((c) => (local - c).distanceSquared <= reach * reach);
+  }
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap:
-          widget.onTap == null ? null : () => widget.onTap!(widget.slotId),
+      // Opaque, not the default deferToChild: a text slot is mostly empty
+      // space (glyphs only at the top) with IgnorePointer chrome, so
+      // deferToChild would drop touches on the corners and gaps — which was
+      // exactly why grabbing a handle so often did nothing.
+      behavior: HitTestBehavior.opaque,
+      onTap: widget.onTap == null ? null : () => widget.onTap!(widget.slotId),
       onScaleStart: (d) {
         _baseScale = widget.currentScale;
+        _startScale = widget.currentScale;
         _pointerCount = d.pointerCount;
+        final size = context.size;
+        _isResizing = widget.resizeEnabled &&
+            d.pointerCount == 1 &&
+            size != null &&
+            _nearCorner(d.localFocalPoint, size);
+        if (_isResizing) {
+          final center = _centerGlobal();
+          _startDistance =
+              center == null ? null : (d.focalPoint - center).distance;
+        }
       },
       onScaleUpdate: (d) {
         if (d.pointerCount != _pointerCount) {
           _baseScale = widget.currentScale;
           _pointerCount = d.pointerCount;
+          // A second finger turns the gesture into a pinch/move.
+          if (d.pointerCount >= 2) _isResizing = false;
+        }
+        if (_isResizing && d.pointerCount == 1) {
+          final center = _centerGlobal();
+          if (center != null && _startDistance != null && _startDistance! >= 1) {
+            final distance = (d.focalPoint - center).distance;
+            widget.onScaleChange?.call(
+              widget.slotId,
+              (_startScale * distance / _startDistance!)
+                  .clamp(_kMinSlotScale, _kMaxSlotScale),
+            );
+          }
+          return;
         }
         if (d.focalPointDelta != Offset.zero) {
           widget.onDrag?.call(widget.slotId, d.focalPointDelta);
@@ -301,117 +372,84 @@ class _SlotGesturesState extends State<_SlotGestures> {
   }
 }
 
-/// Claims the pointer as soon as it lands, instead of waiting out the touch
-/// slop. Resize handles need this: a regular pan recognizer ties with the
-/// slot's own scale recognizer in the gesture arena and loses the resize.
-class _EagerPanGestureRecognizer extends PanGestureRecognizer {
-  @override
-  void addAllowedPointer(PointerDownEvent event) {
-    super.addAllowedPointer(event);
-    resolve(GestureDisposition.accepted);
-  }
-}
-
-/// Editor-style selection chrome: accent border plus four corner handles.
-/// It sits inside the slot's transform chain (follows rotation/scale), so
-/// its sizes are divided by the current scale to stay visually constant.
-/// Dragging a handle reports a resize [factor] per update: the projection
-/// of the drag onto the corner's outward diagonal, relative to the slot's
-/// half-diagonal.
+/// Editor-style selection chrome: a thin white frame with four round corner
+/// handles, floated a _kChromePad margin around the element so the handles
+/// (and their touch zones in _SlotGestures) overflow the element and stay
+/// reachable. Purely VISUAL (IgnorePointer) — it shows where to grab; the
+/// resize itself is handled by _SlotGestures' corner zones. Sizes are divided
+/// by the current scale to stay visually constant.
 class _SelectionChrome extends StatelessWidget {
-  static const _accent = Color(0xFF3B82F6);
-
   final double scale;
-  final void Function(double factor)? onResize;
   final Widget child;
 
-  const _SelectionChrome({
-    required this.scale,
-    required this.onResize,
-    required this.child,
-  });
+  const _SelectionChrome({required this.scale, required this.child});
 
   @override
   Widget build(BuildContext context) {
-    final stroke = 5.0 / scale;
-    final handleSize = 56.0 / scale;
+    final pad = _kChromePad / scale;
+    final stroke = 4.0 / scale;
     return Stack(
       clipBehavior: Clip.none,
       children: [
-        child,
-        Positioned.fill(
+        // Padded element sizes the stack to element + 2*pad, giving the
+        // wrapping _SlotGestures a hit region that extends past the element.
+        Padding(padding: EdgeInsets.all(pad), child: child),
+        Positioned(
+          left: pad,
+          top: pad,
+          right: pad,
+          bottom: pad,
           child: IgnorePointer(
             child: DecoratedBox(
               decoration: BoxDecoration(
-                border: Border.all(color: _accent, width: stroke),
+                border: Border.all(color: Colors.white, width: stroke),
               ),
             ),
           ),
         ),
         Positioned.fill(
-          child: LayoutBuilder(builder: (context, constraints) {
-            final w = constraints.maxWidth;
-            final h = constraints.maxHeight;
-            final halfDiagonal = math.sqrt(w * w + h * h) / 2;
-
-            Widget handle(String corner, double sx, double sy) {
-              // The visual square sits centered on the corner; the hit box
-              // is twice as big and biased inward, because hits outside the
-              // Stack bounds are clipped away.
-              return Positioned(
-                left: sx < 0 ? -handleSize : null,
-                right: sx > 0 ? -handleSize : null,
-                top: sy < 0 ? -handleSize : null,
-                bottom: sy > 0 ? -handleSize : null,
-                child: RawGestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  gestures: {
-                    _EagerPanGestureRecognizer:
-                        GestureRecognizerFactoryWithHandlers<
-                            _EagerPanGestureRecognizer>(
-                      _EagerPanGestureRecognizer.new,
-                      (recognizer) => recognizer.onUpdate = onResize == null
-                          ? null
-                          : (d) {
-                              final projection =
-                                  (d.delta.dx * sx + d.delta.dy * sy) /
-                                      math.sqrt2;
-                              onResize!((halfDiagonal + projection) /
-                                  halfDiagonal);
-                            },
-                    ),
-                  },
-                  child: SizedBox(
-                    width: handleSize * 2,
-                    height: handleSize * 2,
-                    child: Center(
-                      child: Container(
-                        key: ValueKey('handle_$corner'),
-                        width: handleSize,
-                        height: handleSize,
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          border: Border.all(color: _accent, width: stroke),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
+          child: IgnorePointer(
+            child: LayoutBuilder(builder: (context, constraints) {
+              final w = constraints.maxWidth - 2 * pad;
+              final h = constraints.maxHeight - 2 * pad;
+              return Stack(
+                children: [
+                  _corner('tl', pad, pad),
+                  _corner('tr', pad + w, pad),
+                  _corner('bl', pad, pad + h),
+                  _corner('br', pad + w, pad + h),
+                ],
               );
-            }
-
-            return Stack(
-              clipBehavior: Clip.none,
-              children: [
-                handle('tl', -1, -1),
-                handle('tr', 1, -1),
-                handle('bl', -1, 1),
-                handle('br', 1, 1),
-              ],
-            );
-          }),
+            }),
+          ),
         ),
       ],
+    );
+  }
+
+  /// One round corner handle centered at ([cx], [cy]) in the padded space.
+  Widget _corner(String key, double cx, double cy) {
+    final dot = 52.0 / scale;
+    return Positioned(
+      left: cx - dot / 2,
+      top: cy - dot / 2,
+      width: dot,
+      height: dot,
+      child: Container(
+        key: ValueKey('handle_$key'),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          shape: BoxShape.circle,
+          border: Border.all(color: const Color(0xFFD4D4D8), width: 1.5 / scale),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.25),
+              blurRadius: 6 / scale,
+              offset: Offset(0, 2 / scale),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

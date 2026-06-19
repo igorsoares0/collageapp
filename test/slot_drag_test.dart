@@ -173,21 +173,66 @@ void main() {
       ),
     );
 
-    expect(find.byKey(const ValueKey('handle_tl')), findsOneWidget);
-    expect(find.byKey(const ValueKey('handle_br')), findsOneWidget);
+    // Four round corner handles, no side handles.
+    for (final key in ['tl', 'tr', 'bl', 'br']) {
+      expect(find.byKey(ValueKey('handle_$key')), findsOneWidget);
+    }
+    for (final key in ['l', 'r', 't', 'b']) {
+      expect(find.byKey(ValueKey('handle_$key')), findsNothing);
+    }
 
-    // The handle is centered on the slot corner, but hits outside the slot
-    // box are clipped by the Stack hit test — start the drag just inside.
+    // Grab the bottom-right corner and pull outward: the slot grows.
+    // (Multi-step gesture: the first move clears the recognizer's slop.)
     final corner = tester.getCenter(find.byKey(const ValueKey('handle_br')));
-    await tester.dragFrom(corner - const Offset(6, 6), const Offset(40, 20));
+    final grow = await tester.startGesture(corner);
+    await grow.moveBy(const Offset(30, 15));
+    await tester.pump();
+    await grow.moveBy(const Offset(40, 20));
+    await tester.pump();
+    await grow.up();
     expect(content.scaleFor('title'), greaterThan(1.0));
 
     // And back inward shrinks.
     final grown = content.scaleFor('title');
     final cornerNow =
         tester.getCenter(find.byKey(const ValueKey('handle_br')));
-    await tester.dragFrom(
-        cornerNow - const Offset(6, 6), const Offset(-60, -30));
+    final shrink = await tester.startGesture(cornerNow);
+    await shrink.moveBy(const Offset(-30, -15));
+    await tester.pump();
+    await shrink.moveBy(const Offset(-50, -25));
+    await tester.pump();
+    await shrink.up();
     expect(content.scaleFor('title'), lessThan(grown));
+  });
+
+  testWidgets('dragging the interior moves the selected slot, not resize',
+      (tester) async {
+    var content = const SlotContent();
+    await pump(
+      tester,
+      StatefulBuilder(
+        builder: (context, setState) => TemplateCanvas(
+          template: template,
+          content: content,
+          fontResolver: testFontResolver,
+          selectedSlotId: 'title',
+          onSlotScale: (slotId, scale) =>
+              setState(() => content = content.withScale(slotId, scale)),
+          onSlotDrag: (slotId, delta) => setState(() => content =
+              content.withOffset(slotId, content.offsetFor(slotId) + delta)),
+        ),
+      ),
+    );
+
+    // Centre of the title slot is interior → move, scale untouched.
+    final center = tester.getCenter(find.text('title'));
+    final g = await tester.startGesture(center);
+    await g.moveBy(const Offset(15, 20));
+    await tester.pump();
+    await g.moveBy(const Offset(15, 20));
+    await tester.pump();
+    await g.up();
+    expect(content.scaleFor('title'), 1.0);
+    expect(content.offsetFor('title'), isNot(Offset.zero));
   });
 }
