@@ -57,4 +57,32 @@ void main() {
     await tester.enterText(find.byType(TextField), 'Verão 2026');
     expect(changes['title'], 'Verão 2026');
   });
+
+  testWidgets('per-slot color and font overrides reach the rendered text',
+      (tester) async {
+    final familiesSeen = <String>[];
+    TextStyle capturingResolver(String family, TextStyle base) {
+      familiesSeen.add(family);
+      return base;
+    }
+
+    await pump(
+      tester,
+      TemplateCanvas(
+        template: template,
+        fontResolver: capturingResolver,
+        content: const SlotContent(
+          texts: {'title': 'Hi'},
+          colors: {'title': Color(0xFF3B82F6)},
+          fonts: {'title': 'Oswald'},
+        ),
+      ),
+    );
+
+    // The font override is what the resolver was asked to resolve...
+    expect(familiesSeen, contains('Oswald'));
+    // ...and the color override is baked into the Text's style.
+    final text = tester.widget<Text>(find.text('Hi'));
+    expect(text.style!.color, const Color(0xFF3B82F6));
+  });
 }

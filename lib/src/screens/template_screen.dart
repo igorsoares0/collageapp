@@ -7,6 +7,7 @@ import '../model/slot_content.dart';
 import '../model/template.dart';
 import '../rendering/export.dart';
 import '../rendering/template_canvas.dart';
+import '../widgets/text_style_bar.dart';
 
 /// Renders one template and lets the user fill its slots (spec §12),
 /// editing directly on the canvas: tap selects, tap again edits text
@@ -134,35 +135,66 @@ class _TemplateScreenState extends State<TemplateScreen> {
     );
   }
 
+  /// The TextLayer of the currently selected slot, or null when nothing —
+  /// or a non-text slot — is selected. Drives the styling bar.
+  TextLayer? _selectedTextLayer(Template template) {
+    final slot = _selectedSlot;
+    if (slot == null) return null;
+    for (final layer in template.layers) {
+      if (layer is TextLayer && layer.slotId == slot) return layer;
+    }
+    return null;
+  }
+
   Widget _buildBody(Template template) {
-    return Container(
-      color: const Color(0xFF18181B),
-      padding: const EdgeInsets.all(16),
-      alignment: Alignment.center,
-      child: RepaintBoundary(
-        key: _canvasKey,
-        child: TemplateCanvas(
-          template: template,
-          content: _content,
-          selectedSlotId: _selectedSlot,
-          editingSlotId: _editingSlot,
-          onSlotTap: (slotId) => _handleSlotTap(template, slotId),
-          onCanvasTap: () => setState(() {
-            _selectedSlot = null;
-            _editingSlot = null;
-          }),
-          onTextChanged: (slotId, value) => setState(() {
-            _content = _content.withText(slotId, value);
-          }),
-          onSlotDrag: (slotId, delta) => setState(() {
-            _content = _content.withOffset(
-                slotId, _content.offsetFor(slotId) + delta);
-          }),
-          onSlotScale: (slotId, scale) => setState(() {
-            _content = _content.withScale(slotId, scale);
-          }),
+    final textLayer = _selectedTextLayer(template);
+    return Column(
+      children: [
+        Expanded(
+          child: Container(
+            color: const Color(0xFF18181B),
+            padding: const EdgeInsets.all(16),
+            alignment: Alignment.center,
+            child: RepaintBoundary(
+              key: _canvasKey,
+              child: TemplateCanvas(
+                template: template,
+                content: _content,
+                selectedSlotId: _selectedSlot,
+                editingSlotId: _editingSlot,
+                onSlotTap: (slotId) => _handleSlotTap(template, slotId),
+                onCanvasTap: () => setState(() {
+                  _selectedSlot = null;
+                  _editingSlot = null;
+                }),
+                onTextChanged: (slotId, value) => setState(() {
+                  _content = _content.withText(slotId, value);
+                }),
+                onSlotDrag: (slotId, delta) => setState(() {
+                  _content = _content.withOffset(
+                      slotId, _content.offsetFor(slotId) + delta);
+                }),
+                onSlotScale: (slotId, scale) => setState(() {
+                  _content = _content.withScale(slotId, scale);
+                }),
+              ),
+            ),
+          ),
         ),
-      ),
+        if (textLayer != null)
+          TextStyleBar(
+            currentFont:
+                _content.fontFor(textLayer.slotId) ?? textLayer.fontFamily,
+            currentColor:
+                _content.colorFor(textLayer.slotId) ?? textLayer.color,
+            onFont: (font) => setState(() {
+              _content = _content.withFont(textLayer.slotId, font);
+            }),
+            onColor: (color) => setState(() {
+              _content = _content.withColor(textLayer.slotId, color);
+            }),
+          ),
+      ],
     );
   }
 }

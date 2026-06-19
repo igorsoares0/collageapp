@@ -3,25 +3,32 @@ import 'package:flutter/widgets.dart';
 /// User content injected into template slots (spec §12). Templates never
 /// contain user content; this map is the app-side counterpart of slotIds.
 /// [offsets] (template space) and [scales] are user position/size
-/// adjustments — the template itself stays immutable, the tweak travels
-/// with the user's content.
+/// adjustments; [colors] and [fonts] override a text slot's styling. The
+/// template itself stays immutable — every tweak travels with the user's
+/// content, so accessors fall back to the layer's own value when absent.
 class SlotContent {
   final Map<String, String> texts;
   final Map<String, ImageProvider> images;
   final Map<String, Offset> offsets;
   final Map<String, double> scales;
+  final Map<String, Color> colors;
+  final Map<String, String> fonts;
 
   const SlotContent({
     this.texts = const {},
     this.images = const {},
     this.offsets = const {},
     this.scales = const {},
+    this.colors = const {},
+    this.fonts = const {},
   });
 
   String? textFor(String slotId) => texts[slotId];
   ImageProvider? imageFor(String slotId) => images[slotId];
   Offset offsetFor(String slotId) => offsets[slotId] ?? Offset.zero;
   double scaleFor(String slotId) => scales[slotId] ?? 1.0;
+  Color? colorFor(String slotId) => colors[slotId];
+  String? fontFor(String slotId) => fonts[slotId];
 
   SlotContent withText(String slotId, String value) => _copy(
         texts: {...texts, slotId: value},
@@ -39,16 +46,28 @@ class SlotContent {
         scales: {...scales, slotId: value},
       );
 
+  SlotContent withColor(String slotId, Color value) => _copy(
+        colors: {...colors, slotId: value},
+      );
+
+  SlotContent withFont(String slotId, String value) => _copy(
+        fonts: {...fonts, slotId: value},
+      );
+
   SlotContent _copy({
     Map<String, String>? texts,
     Map<String, ImageProvider>? images,
     Map<String, Offset>? offsets,
     Map<String, double>? scales,
+    Map<String, Color>? colors,
+    Map<String, String>? fonts,
   }) =>
       SlotContent(
         texts: texts ?? this.texts,
         images: images ?? this.images,
         offsets: offsets ?? this.offsets,
         scales: scales ?? this.scales,
+        colors: colors ?? this.colors,
+        fonts: fonts ?? this.fonts,
       );
 }

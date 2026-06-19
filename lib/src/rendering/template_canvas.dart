@@ -493,9 +493,10 @@ class _TextSlot extends StatelessWidget {
     final base = TextStyle(
       fontSize: layer.fontSize,
       fontWeight: _weight(layer.fontWeight),
-      color: layer.color,
+      color: content.colorFor(layer.slotId) ?? layer.color,
     );
-    final style = fontResolver(layer.fontFamily, base);
+    final style =
+        fontResolver(content.fontFor(layer.slotId) ?? layer.fontFamily, base);
     final align = switch (layer.alignment) {
       'center' => TextAlign.center,
       'right' => TextAlign.right,
