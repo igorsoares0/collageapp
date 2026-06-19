@@ -182,24 +182,25 @@ void main() {
     }
 
     // Grab the bottom-right corner and pull outward: the slot grows.
-    // (Multi-step gesture: the first move clears the recognizer's slop.)
+    // (Multi-step gesture: the first move clears the recognizer's slop.
+    // Kept small so the wide fixture title's corner stays on-canvas.)
     final corner = tester.getCenter(find.byKey(const ValueKey('handle_br')));
     final grow = await tester.startGesture(corner);
-    await grow.moveBy(const Offset(30, 15));
+    await grow.moveBy(const Offset(8, 4));
     await tester.pump();
-    await grow.moveBy(const Offset(40, 20));
+    await grow.moveBy(const Offset(8, 4));
     await tester.pump();
     await grow.up();
-    expect(content.scaleFor('title'), greaterThan(1.0));
+    final grown = content.scaleFor('title');
+    expect(grown, greaterThan(1.0));
 
     // And back inward shrinks.
-    final grown = content.scaleFor('title');
     final cornerNow =
         tester.getCenter(find.byKey(const ValueKey('handle_br')));
     final shrink = await tester.startGesture(cornerNow);
-    await shrink.moveBy(const Offset(-30, -15));
+    await shrink.moveBy(const Offset(-8, -4));
     await tester.pump();
-    await shrink.moveBy(const Offset(-50, -25));
+    await shrink.moveBy(const Offset(-12, -6));
     await tester.pump();
     await shrink.up();
     expect(content.scaleFor('title'), lessThan(grown));

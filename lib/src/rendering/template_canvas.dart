@@ -235,8 +235,10 @@ class _LayerWidget extends StatelessWidget {
         child: inner,
       );
     }
-    final result =
-        scale == 1.0 ? inner : Transform.scale(scale: scale, child: inner);
+    // Always wrap in Transform.scale (identity at 1.0), never conditionally:
+    // inserting it on the first resize would restructure the tree and remount
+    // _SlotGestures mid-gesture — the one-time hitch on the first drag.
+    final result = Transform.scale(scale: scale, child: inner);
     return _positioned(x + offset.dx - pad, y + offset.dy - pad, result);
   }
 
