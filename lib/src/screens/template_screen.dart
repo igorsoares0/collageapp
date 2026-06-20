@@ -181,8 +181,15 @@ class _TemplateScreenState extends State<TemplateScreen> {
                 // narrower than the viewport so the next one peeks in.
                 final panelWidth = constraints.maxWidth *
                     (template.panels.length == 1 ? 1.0 : 0.82);
+                // While a slot is selected or being edited, freeze the panel
+                // scroll so its drag doesn't steal the resize/move gestures
+                // (otherwise grabbing a handle just scrolls the strip).
+                final locked = _selectedSlot != null || _editingSlot != null;
                 return SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
+                  physics: locked
+                      ? const NeverScrollableScrollPhysics()
+                      : const ClampingScrollPhysics(),
                   padding:
                       const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
                   child: Row(
