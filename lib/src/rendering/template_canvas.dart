@@ -44,8 +44,13 @@ const double _kChromePad = 64.0;
 /// anywhere else moves.
 const double _kCornerReach = 56.0;
 
-class TemplateCanvas extends StatelessWidget {
-  final Template template;
+/// Renders ONE panel (a carousel slide) in template space. The screen lays
+/// out several of these side by side; tests and single-panel templates use the
+/// [TemplateCanvas] convenience wrapper below.
+class PanelCanvas extends StatelessWidget {
+  final Panel panel;
+  final double canvasWidth;
+  final double canvasHeight;
   final SlotContent content;
   final FontResolver fontResolver;
 
@@ -87,9 +92,11 @@ class TemplateCanvas extends StatelessWidget {
   /// SlotContent.scales.
   final void Function(String slotId, double scale)? onSlotScale;
 
-  const TemplateCanvas({
+  const PanelCanvas({
     super.key,
-    required this.template,
+    required this.panel,
+    required this.canvasWidth,
+    required this.canvasHeight,
     this.content = const SlotContent(),
     this.fontResolver = googleFontsResolver,
     this.onSlotTap,
@@ -105,8 +112,8 @@ class TemplateCanvas extends StatelessWidget {
   Widget build(BuildContext context) {
     return FittedBox(
       child: SizedBox(
-        width: template.canvasWidth,
-        height: template.canvasHeight,
+        width: canvasWidth,
+        height: canvasHeight,
         // The deselect detector wraps the whole canvas: slot detectors are
         // deeper and win the gesture arena, so this only fires for taps on
         // the background, shapes and stickers. (A detector on the white
@@ -116,15 +123,15 @@ class TemplateCanvas extends StatelessWidget {
           onTap: onCanvasTap,
           child: Stack(
             children: [
-              // Canvas background: the user's override if set, else the
-              // template's backgroundColor (defaults to white).
+              // Panel background: the user's per-panel override if set, else
+              // the panel's own backgroundColor (defaults to white).
               Positioned.fill(
                 child: ColoredBox(
                   key: const ValueKey('canvas-background'),
-                  color: content.backgroundColor ?? template.backgroundColor,
+                  color: content.backgroundFor(panel.id) ?? panel.backgroundColor,
                 ),
               ),
-              for (final layer in template.layers)
+              for (final layer in panel.layers)
                 if (!layer.hidden)
                   _LayerWidget(
                     layer: layer,
@@ -144,6 +151,54 @@ class TemplateCanvas extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Convenience wrapper that renders a template's FIRST panel — used by tests
+/// and any single-panel context. Multi-panel screens use [PanelCanvas] per
+/// panel directly.
+class TemplateCanvas extends StatelessWidget {
+  final Template template;
+  final SlotContent content;
+  final FontResolver fontResolver;
+  final void Function(String slotId)? onSlotTap;
+  final VoidCallback? onCanvasTap;
+  final String? selectedSlotId;
+  final String? editingSlotId;
+  final void Function(String slotId, String value)? onTextChanged;
+  final void Function(String slotId, Offset delta)? onSlotDrag;
+  final void Function(String slotId, double scale)? onSlotScale;
+
+  const TemplateCanvas({
+    super.key,
+    required this.template,
+    this.content = const SlotContent(),
+    this.fontResolver = googleFontsResolver,
+    this.onSlotTap,
+    this.onCanvasTap,
+    this.selectedSlotId,
+    this.editingSlotId,
+    this.onTextChanged,
+    this.onSlotDrag,
+    this.onSlotScale,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return PanelCanvas(
+      panel: template.panels.first,
+      canvasWidth: template.canvasWidth,
+      canvasHeight: template.canvasHeight,
+      content: content,
+      fontResolver: fontResolver,
+      onSlotTap: onSlotTap,
+      onCanvasTap: onCanvasTap,
+      selectedSlotId: selectedSlotId,
+      editingSlotId: editingSlotId,
+      onTextChanged: onTextChanged,
+      onSlotDrag: onSlotDrag,
+      onSlotScale: onSlotScale,
     );
   }
 }

@@ -45,14 +45,33 @@ void main() {
   });
 
   testWidgets('user background override wins over the template', (tester) async {
+    // Classic fixture reads as one panel with id 'panel_0'.
     await pump(
       tester,
       TemplateCanvas(
         template: fixture(backgroundColor: '#1C1917'),
-        content: const SlotContent(backgroundColor: Color(0xFF2563EB)),
+        content: const SlotContent(
+          panelBackgrounds: {'panel_0': Color(0xFF2563EB)},
+        ),
         fontResolver: testFontResolver,
       ),
     );
     expect(backgroundOf(tester), const Color(0xFF2563EB));
+  });
+
+  testWidgets('per-panel override only affects the keyed panel', (tester) async {
+    await pump(
+      tester,
+      PanelCanvas(
+        panel:
+            const Panel(id: 'p2', backgroundColor: Color(0xFF111111), layers: []),
+        canvasWidth: 1080,
+        canvasHeight: 1920,
+        // Override is keyed to a different panel, so it must not apply here.
+        content: const SlotContent(panelBackgrounds: {'p1': Color(0xFF2563EB)}),
+        fontResolver: testFontResolver,
+      ),
+    );
+    expect(backgroundOf(tester), const Color(0xFF111111));
   });
 }

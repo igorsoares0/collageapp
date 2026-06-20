@@ -25,12 +25,19 @@ class TemplateScreen extends StatefulWidget {
 class _TemplateScreenState extends State<TemplateScreen> {
   final _store = TemplateStore();
   final _picker = ImagePicker();
-  final _canvasKey = GlobalKey();
+  // One RepaintBoundary key per panel, so each carousel slide exports to its
+  // own PNG. Reused across rebuilds (keyed by panel id).
+  final Map<String, GlobalKey> _panelKeys = {};
   late Future<Template> _template;
   SlotContent _content = const SlotContent();
   String? _selectedSlot;
   String? _editingSlot;
+  // Panel the styling bars act on (last one the user touched).
+  String? _focusedPanelId;
   bool _exporting = false;
+
+  GlobalKey _panelKey(String panelId) =>
+      _panelKeys.putIfAbsent(panelId, () => GlobalKey());
 
   @override
   void initState() {
@@ -84,10 +91,20 @@ class _TemplateScreenState extends State<TemplateScreen> {
     }
     setState(() => _exporting = true);
     try {
-      final bytes = await capturePng(_canvasKey, template.canvasWidth);
-      await Share.shareXFiles([
-        XFile.fromData(bytes, mimeType: 'image/png', name: '${template.id}.png'),
-      ]);
+      // One PNG per panel, in carousel order — ready to post as a carousel.
+      final files = <XFile>[];
+      for (var i = 0; i < template.panels.length; i++) {
+        final panel = template.panels[i];
+        final bytes = await capturePng(_panelKey(panel.id), template.canvasWidth);
+        files.add(XFile.fromData(
+          bytes,
+          mimeType: 'image/png',
+          name: template.panels.length == 1
+              ? '${template.id}.png'
+              : '${template.id}_${i + 1}.png',
+        ));
+      }
+      await Share.shareXFiles(files);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
@@ -148,45 +165,78 @@ class _TemplateScreenState extends State<TemplateScreen> {
 
   Widget _buildBody(Template template) {
     final textLayer = _selectedTextLayer(template);
+    final focusedId = _focusedPanelId ?? template.panels.first.id;
+    final focusedPanel = template.panels.firstWhere(
+      (p) => p.id == focusedId,
+      orElse: () => template.panels.first,
+    );
     return Column(
       children: [
         Expanded(
           child: Container(
             color: const Color(0xFF18181B),
-            padding: const EdgeInsets.all(16),
-            alignment: Alignment.center,
-            child: RepaintBoundary(
-              key: _canvasKey,
-              child: TemplateCanvas(
-                template: template,
-                content: _content,
-                selectedSlotId: _selectedSlot,
-                editingSlotId: _editingSlot,
-                onSlotTap: (slotId) => _handleSlotTap(template, slotId),
-                onCanvasTap: () => setState(() {
-                  _selectedSlot = null;
-                  _editingSlot = null;
-                }),
-                onTextChanged: (slotId, value) => setState(() {
-                  _content = _content.withText(slotId, value);
-                }),
-                onSlotDrag: (slotId, delta) => setState(() {
-                  _content = _content.withOffset(
-                      slotId, _content.offsetFor(slotId) + delta);
-                }),
-                onSlotScale: (slotId, scale) => setState(() {
-                  _content = _content.withScale(slotId, scale);
-                }),
-              ),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                // Panels sit side by side; with more than one, each is a bit
+                // narrower than the viewport so the next one peeks in.
+                final panelWidth = constraints.maxWidth *
+                    (template.panels.length == 1 ? 1.0 : 0.82);
+                return SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                  child: Row(
+                    children: [
+                      for (final panel in template.panels)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 6),
+                          child: SizedBox(
+                            width: panelWidth,
+                            child: RepaintBoundary(
+                              key: _panelKey(panel.id),
+                              child: PanelCanvas(
+                                panel: panel,
+                                canvasWidth: template.canvasWidth,
+                                canvasHeight: template.canvasHeight,
+                                content: _content,
+                                selectedSlotId: _selectedSlot,
+                                editingSlotId: _editingSlot,
+                                onSlotTap: (slotId) {
+                                  _focusedPanelId = panel.id;
+                                  _handleSlotTap(template, slotId);
+                                },
+                                onCanvasTap: () => setState(() {
+                                  _focusedPanelId = panel.id;
+                                  _selectedSlot = null;
+                                  _editingSlot = null;
+                                }),
+                                onTextChanged: (slotId, value) => setState(() {
+                                  _content = _content.withText(slotId, value);
+                                }),
+                                onSlotDrag: (slotId, delta) => setState(() {
+                                  _content = _content.withOffset(slotId,
+                                      _content.offsetFor(slotId) + delta);
+                                }),
+                                onSlotScale: (slotId, scale) => setState(() {
+                                  _content = _content.withScale(slotId, scale);
+                                }),
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                );
+              },
             ),
           ),
         ),
         if (textLayer == null && _selectedSlot == null)
           BackgroundColorBar(
-            currentColor:
-                _content.backgroundColor ?? template.backgroundColor,
-            onColor: (color) => setState(
-                () => _content = _content.withBackgroundColor(color)),
+            currentColor: _content.backgroundFor(focusedPanel.id) ??
+                focusedPanel.backgroundColor,
+            onColor: (color) => setState(() => _content =
+                _content.withPanelBackground(focusedPanel.id, color)),
           ),
         if (textLayer != null)
           Builder(builder: (context) {

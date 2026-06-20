@@ -16,9 +16,9 @@ class SlotContent {
   final Map<String, String> alignments;
   final Map<String, int> weights;
 
-  /// Canvas-level (not per-slot) override of the template's background color;
-  /// null means use the template's own background.
-  final Color? backgroundColor;
+  /// Per-panel override of each panel's background color, keyed by panel id;
+  /// a missing entry means use that panel's own template background.
+  final Map<String, Color> panelBackgrounds;
 
   const SlotContent({
     this.texts = const {},
@@ -29,7 +29,7 @@ class SlotContent {
     this.fonts = const {},
     this.alignments = const {},
     this.weights = const {},
-    this.backgroundColor,
+    this.panelBackgrounds = const {},
   });
 
   String? textFor(String slotId) => texts[slotId];
@@ -40,6 +40,7 @@ class SlotContent {
   String? fontFor(String slotId) => fonts[slotId];
   String? alignmentFor(String slotId) => alignments[slotId];
   int? weightFor(String slotId) => weights[slotId];
+  Color? backgroundFor(String panelId) => panelBackgrounds[panelId];
 
   SlotContent withText(String slotId, String value) => _copy(
         texts: {...texts, slotId: value},
@@ -73,7 +74,9 @@ class SlotContent {
         weights: {...weights, slotId: value},
       );
 
-  SlotContent withBackgroundColor(Color value) => _copy(backgroundColor: value);
+  SlotContent withPanelBackground(String panelId, Color value) => _copy(
+        panelBackgrounds: {...panelBackgrounds, panelId: value},
+      );
 
   SlotContent _copy({
     Map<String, String>? texts,
@@ -84,7 +87,7 @@ class SlotContent {
     Map<String, String>? fonts,
     Map<String, String>? alignments,
     Map<String, int>? weights,
-    Color? backgroundColor,
+    Map<String, Color>? panelBackgrounds,
   }) =>
       SlotContent(
         texts: texts ?? this.texts,
@@ -95,6 +98,6 @@ class SlotContent {
         fonts: fonts ?? this.fonts,
         alignments: alignments ?? this.alignments,
         weights: weights ?? this.weights,
-        backgroundColor: backgroundColor ?? this.backgroundColor,
+        panelBackgrounds: panelBackgrounds ?? this.panelBackgrounds,
       );
 }

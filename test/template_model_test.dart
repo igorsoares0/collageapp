@@ -53,13 +53,49 @@ void main() {
     expect(parseHexColor('#FF0066'), const Color(0xFFFF0066));
   });
 
-  test('canvas backgroundColor defaults to white when absent', () {
-    expect(Template.fromJson(json).backgroundColor, const Color(0xFFFFFFFF));
+  test('classic v1 template reads as a single panel', () {
+    final template = Template.fromJson(json);
+    expect(template.panels, hasLength(1));
+    expect(template.panels.first.id, 'panel_0');
+    expect(template.panels.first.layers, hasLength(6));
   });
 
-  test('canvas backgroundColor is parsed when present', () {
+  test('panel backgroundColor defaults to white when absent', () {
+    expect(
+      Template.fromJson(json).panels.first.backgroundColor,
+      const Color(0xFFFFFFFF),
+    );
+  });
+
+  test('panel backgroundColor is parsed from the classic canvas field', () {
     final withBg = jsonDecode(jsonEncode(json)) as Map<String, dynamic>;
     (withBg['canvas'] as Map<String, dynamic>)['backgroundColor'] = '#1C1917';
-    expect(Template.fromJson(withBg).backgroundColor, const Color(0xFF1C1917));
+    expect(
+      Template.fromJson(withBg).panels.first.backgroundColor,
+      const Color(0xFF1C1917),
+    );
+  });
+
+  test('v2 multi-panel template parses panels with per-panel backgrounds', () {
+    final layers = (json['layers'] as List);
+    final v2 = {
+      'id': 'multi',
+      'schemaVersion': 2,
+      'version': 1,
+      'name': 'Carousel',
+      'aspectRatio': 'story',
+      'canvas': {'width': 1080, 'height': 1920},
+      'panels': [
+        {'id': 'p1', 'backgroundColor': '#111111', 'layers': layers},
+        {'id': 'p2', 'backgroundColor': '#2563EB', 'layers': <dynamic>[]},
+      ],
+    };
+    final template = Template.fromJson(v2);
+    expect(template.panels, hasLength(2));
+    expect(template.panels[0].backgroundColor, const Color(0xFF111111));
+    expect(template.panels[1].backgroundColor, const Color(0xFF2563EB));
+    // layers/slotIds getters flatten across panels.
+    expect(template.layers, hasLength(6));
+    expect(template.slotIds, ['hero_image', 'title', 'subtitle']);
   });
 }

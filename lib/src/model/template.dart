@@ -3,7 +3,47 @@ import 'dart:ui';
 /// Highest template schema this renderer understands. Templates above this
 /// are filtered out during sync instead of being rendered incorrectly.
 /// Mirror of CURRENT_SCHEMA_VERSION in the editor (lib/template/types.ts).
-const int kSupportedSchemaVersion = 1;
+/// v2 added multi-panel ("panels"); single-panel templates stay v1.
+const int kSupportedSchemaVersion = 2;
+
+/// One slide of a carousel template: its own background and layer stack. All
+/// panels share the template's canvas size. Classic single-canvas templates
+/// (v1) are read as a one-panel list.
+class Panel {
+  final String id;
+  final Color backgroundColor;
+  final List<Layer> layers;
+
+  const Panel({
+    required this.id,
+    required this.backgroundColor,
+    required this.layers,
+  });
+
+  factory Panel.fromJson(Map<String, dynamic> json) {
+    final bg = json['backgroundColor'];
+    return Panel(
+      id: json['id'] as String,
+      backgroundColor:
+          bg is String ? parseHexColor(bg) : const Color(0xFFFFFFFF),
+      layers: _parseLayers(json['layers']),
+    );
+  }
+
+  /// Slot ids of this panel's layers that accept user content, in stack order.
+  List<String> get slotIds => [
+        for (final layer in layers)
+          if (layer is ImageLayer)
+            layer.slotId
+          else if (layer is TextLayer)
+            layer.slotId,
+      ];
+}
+
+List<Layer> _parseLayers(dynamic value) => (value as List<dynamic>)
+    .map((l) => Layer.fromJson(l as Map<String, dynamic>))
+    .whereType<Layer>()
+    .toList();
 
 /// Template JSON contract — see "Collage Studio - Product & Architecture
 /// Specification.md" §5–13. Templates are data; this app only interprets them.
@@ -16,10 +56,8 @@ class Template {
   final double canvasWidth;
   final double canvasHeight;
 
-  /// Canvas background, optional in the JSON (added after the first
-  /// templates); defaults to white so old templates render unchanged.
-  final Color backgroundColor;
-  final List<Layer> layers;
+  /// One or more panels (carousel slides). Always non-empty.
+  final List<Panel> panels;
 
   const Template({
     required this.id,
@@ -29,13 +67,30 @@ class Template {
     required this.aspectRatio,
     required this.canvasWidth,
     required this.canvasHeight,
-    required this.backgroundColor,
-    required this.layers,
+    required this.panels,
   });
 
   factory Template.fromJson(Map<String, dynamic> json) {
     final canvas = json['canvas'] as Map<String, dynamic>;
-    final bg = canvas['backgroundColor'];
+    final panelsJson = json['panels'];
+    final List<Panel> panels;
+    if (panelsJson is List) {
+      // v2 multi-panel.
+      panels = panelsJson
+          .map((p) => Panel.fromJson(p as Map<String, dynamic>))
+          .toList();
+    } else {
+      // Classic v1: the single canvas becomes one panel.
+      final bg = canvas['backgroundColor'];
+      panels = [
+        Panel(
+          id: 'panel_0',
+          backgroundColor:
+              bg is String ? parseHexColor(bg) : const Color(0xFFFFFFFF),
+          layers: _parseLayers(json['layers']),
+        ),
+      ];
+    }
     return Template(
       id: json['id'] as String,
       schemaVersion: (json['schemaVersion'] as num?)?.toInt() ?? 1,
@@ -44,23 +99,16 @@ class Template {
       aspectRatio: json['aspectRatio'] as String,
       canvasWidth: (canvas['width'] as num).toDouble(),
       canvasHeight: (canvas['height'] as num).toDouble(),
-      backgroundColor:
-          bg is String ? parseHexColor(bg) : const Color(0xFFFFFFFF),
-      layers: (json['layers'] as List<dynamic>)
-          .map((l) => Layer.fromJson(l as Map<String, dynamic>))
-          .whereType<Layer>()
-          .toList(),
+      panels: panels,
     );
   }
 
-  /// Slot ids of layers that accept user content, in stack order.
-  List<String> get slotIds => [
-        for (final layer in layers)
-          if (layer is ImageLayer)
-            layer.slotId
-          else if (layer is TextLayer)
-            layer.slotId,
-      ];
+  /// All layers across every panel — convenient for slotId-based lookups
+  /// (slotIds are unique across the whole template).
+  List<Layer> get layers => [for (final p in panels) ...p.layers];
+
+  /// Slot ids of layers that accept user content, across all panels.
+  List<String> get slotIds => [for (final p in panels) ...p.slotIds];
 }
 
 sealed class Layer {
