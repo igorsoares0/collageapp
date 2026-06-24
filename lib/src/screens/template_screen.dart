@@ -34,6 +34,15 @@ class _TemplateScreenState extends State<TemplateScreen> {
   // One RepaintBoundary key per panel, so each carousel slide exports to its
   // own PNG. Reused across rebuilds (keyed by panel id).
   final Map<String, GlobalKey> _panelKeys = {};
+  // Pan/zoom of the editing surface. Pinch zooms only when nothing is selected
+  // (a selected slot's pinch resizes the slot instead); the zoom persists
+  // across selection, and slot gestures keep working because hit testing maps
+  // through this transform.
+  final TransformationController _zoom = TransformationController();
+  // True once zoomed past 1x. At 1x panning is locked to horizontal (browse
+  // panels without drifting up/down); when zoomed in, panning goes free so you
+  // can reach every corner of the magnified panel.
+  bool _isZoomed = false;
   late Future<Template> _template;
   SlotContent _content = const SlotContent();
   String? _selectedSlot;
@@ -48,7 +57,23 @@ class _TemplateScreenState extends State<TemplateScreen> {
   @override
   void initState() {
     super.initState();
+    _zoom.addListener(_onZoomChange);
     _template = _store.loadTemplate(widget.id).then((r) => r.template);
+  }
+
+  @override
+  void dispose() {
+    _zoom.dispose();
+    super.dispose();
+  }
+
+  // Flip the pan-axis lock only when crossing the 1x threshold (not on every
+  // pan/zoom frame), so a sideways drag at 1x can't drift vertically.
+  void _onZoomChange() {
+    final zoomed = _zoom.value.getMaxScaleOnAxis() > 1.01;
+    if (zoomed != _isZoomed && mounted) {
+      setState(() => _isZoomed = zoomed);
+    }
   }
 
   Future<void> _pickImage(String slotId) async {
@@ -224,10 +249,11 @@ class _TemplateScreenState extends State<TemplateScreen> {
                 final panelWidth =
                     constraints.maxWidth *
                     (template.panels.length == 1 ? 1.0 : 0.82);
-                // While a slot is selected or being edited, freeze the panel
-                // scroll so its drag doesn't steal the resize/move gestures
-                // (otherwise grabbing a handle just scrolls the strip).
-                final locked = _selectedSlot != null || _editingSlot != null;
+                // Pinch-to-zoom is live only when nothing is selected; a
+                // selected slot's pinch resizes the slot instead, so disable
+                // the viewer's pan/scale then (the zoom transform stays put).
+                final interacting =
+                    _selectedSlot != null || _editingSlot != null;
                 return SingleChildScrollView(
                   // Vertical scroll only while editing — that's when the
                   // framework needs to lift the focused field above the
@@ -237,67 +263,85 @@ class _TemplateScreenState extends State<TemplateScreen> {
                       : const NeverScrollableScrollPhysics(),
                   child: SizedBox(
                     height: canvasHeight,
-                    child: SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      physics: locked
-                          ? const NeverScrollableScrollPhysics()
-                          : const ClampingScrollPhysics(),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 16,
-                      ),
-                      child: Row(
-                        children: [
-                          for (final panel in template.panels)
-                            Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 6,
-                              ),
-                              child: SizedBox(
-                                width: panelWidth,
-                                child: RepaintBoundary(
-                                  key: _panelKey(panel.id),
-                                  child: PanelCanvas(
-                                    panel: panel,
-                                    canvasWidth: template.canvasWidth,
-                                    canvasHeight: template.canvasHeight,
-                                    content: _content,
-                                    selectedSlotId: _selectedSlot,
-                                    editingSlotId: _editingSlot,
-                                    onSlotTap: (slotId) {
-                                      _focusedPanelId = panel.id;
-                                      _handleSlotTap(template, slotId);
-                                    },
-                                    onCanvasTap: () => setState(() {
-                                      _focusedPanelId = panel.id;
-                                      _selectedSlot = null;
-                                      _editingSlot = null;
-                                    }),
-                                    onTextChanged: (slotId, value) =>
-                                        setState(() {
-                                          _content = _content.withText(
-                                            slotId,
-                                            value,
-                                          );
+                    child: InteractiveViewer(
+                      transformationController: _zoom,
+                      // The strip is wider than the viewport (panels side by
+                      // side), so it sizes to its content, not the viewport;
+                      // panning then moves between panels and around when
+                      // zoomed in.
+                      constrained: false,
+                      panEnabled: !interacting,
+                      scaleEnabled: !interacting,
+                      // Horizontal-only at 1x (browse panels); free once zoomed
+                      // in so every corner is reachable.
+                      panAxis: _isZoomed ? PanAxis.free : PanAxis.horizontal,
+                      minScale: 1,
+                      maxScale: 4,
+                      boundaryMargin: const EdgeInsets.all(64),
+                      child: SizedBox(
+                        height: canvasHeight,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 16,
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              for (final panel in template.panels)
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 6,
+                                  ),
+                                  child: SizedBox(
+                                    width: panelWidth,
+                                    child: RepaintBoundary(
+                                      key: _panelKey(panel.id),
+                                      child: PanelCanvas(
+                                        panel: panel,
+                                        canvasWidth: template.canvasWidth,
+                                        canvasHeight: template.canvasHeight,
+                                        content: _content,
+                                        selectedSlotId: _selectedSlot,
+                                        editingSlotId: _editingSlot,
+                                        onSlotTap: (slotId) {
+                                          _focusedPanelId = panel.id;
+                                          _handleSlotTap(template, slotId);
+                                        },
+                                        onCanvasTap: () => setState(() {
+                                          _focusedPanelId = panel.id;
+                                          _selectedSlot = null;
+                                          _editingSlot = null;
                                         }),
-                                    onSlotDrag: (slotId, delta) => setState(() {
-                                      _content = _content.withOffset(
-                                        slotId,
-                                        _content.offsetFor(slotId) + delta,
-                                      );
-                                    }),
-                                    onSlotScale: (slotId, scale) =>
-                                        setState(() {
-                                          _content = _content.withScale(
-                                            slotId,
-                                            scale,
-                                          );
-                                        }),
+                                        onTextChanged: (slotId, value) =>
+                                            setState(() {
+                                              _content = _content.withText(
+                                                slotId,
+                                                value,
+                                              );
+                                            }),
+                                        onSlotDrag: (slotId, delta) =>
+                                            setState(() {
+                                              _content = _content.withOffset(
+                                                slotId,
+                                                _content.offsetFor(slotId) +
+                                                    delta,
+                                              );
+                                            }),
+                                        onSlotScale: (slotId, scale) =>
+                                            setState(() {
+                                              _content = _content.withScale(
+                                                slotId,
+                                                scale,
+                                              );
+                                            }),
+                                      ),
+                                    ),
                                   ),
                                 ),
-                              ),
-                            ),
-                        ],
+                            ],
+                          ),
+                        ),
                       ),
                     ),
                   ),
