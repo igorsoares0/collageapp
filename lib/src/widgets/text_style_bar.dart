@@ -5,11 +5,29 @@ import 'package:google_fonts/google_fonts.dart';
 /// template's original font is always among the choices (and the current
 /// font is prepended at render time if it falls outside this list).
 const List<String> kFontChoices = [
+  // Sans-serif
   'Inter',
-  'Playfair Display',
   'Montserrat',
-  'Lora',
+  'Poppins',
+  'Roboto',
+  'Raleway',
+  'Work Sans',
   'Oswald',
+  'Bebas Neue',
+  'Anton',
+  'Archivo Black',
+  // Serif
+  'Playfair Display',
+  'Lora',
+  'Merriweather',
+  'Cormorant Garamond',
+  'DM Serif Display',
+  'Abril Fatface',
+  // Script / handwriting
+  'Dancing Script',
+  'Caveat',
+  'Pacifico',
+  'Lobster',
 ];
 
 /// Curated text-color palette: neutrals first, then vivid accents.
