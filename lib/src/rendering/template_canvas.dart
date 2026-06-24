@@ -318,7 +318,7 @@ class _LayerWidget extends StatelessWidget {
       inner = _SlotGestures(
         slotId: slotId,
         currentScale: scale,
-        resizeEnabled: selected,
+        selected: selected,
         onTap: onSlotTap,
         onDrag: onSlotDrag,
         onScaleChange: onSlotScale,
@@ -354,7 +354,10 @@ class _LayerWidget extends StatelessWidget {
 class _SlotGestures extends StatefulWidget {
   final String slotId;
   final double currentScale;
-  final bool resizeEnabled;
+  // Move/resize/pinch are wired only when the slot is selected; otherwise the
+  // detector exposes just the tap (to select) and lets drags fall through to
+  // the canvas pan/zoom instead of moving an unselected element.
+  final bool selected;
   final void Function(String slotId)? onTap;
   final void Function(String slotId, Offset delta)? onDrag;
   final void Function(String slotId, double scale)? onScaleChange;
@@ -363,7 +366,7 @@ class _SlotGestures extends StatefulWidget {
   const _SlotGestures({
     required this.slotId,
     required this.currentScale,
-    required this.resizeEnabled,
+    required this.selected,
     required this.onTap,
     required this.onDrag,
     required this.onScaleChange,
@@ -406,6 +409,53 @@ class _SlotGesturesState extends State<_SlotGestures> {
     return corners.any((c) => (local - c).distanceSquared <= reach * reach);
   }
 
+  void _onScaleStart(ScaleStartDetails d) {
+    _baseScale = widget.currentScale;
+    _startScale = widget.currentScale;
+    _pointerCount = d.pointerCount;
+    final size = context.size;
+    _isResizing =
+        d.pointerCount == 1 &&
+        size != null &&
+        _nearCorner(d.localFocalPoint, size);
+    if (_isResizing) {
+      final center = _centerGlobal();
+      _startDistance = center == null ? null : (d.focalPoint - center).distance;
+    }
+  }
+
+  void _onScaleUpdate(ScaleUpdateDetails d) {
+    if (d.pointerCount != _pointerCount) {
+      _baseScale = widget.currentScale;
+      _pointerCount = d.pointerCount;
+      // A second finger turns the gesture into a pinch/move.
+      if (d.pointerCount >= 2) _isResizing = false;
+    }
+    if (_isResizing && d.pointerCount == 1) {
+      final center = _centerGlobal();
+      if (center != null && _startDistance != null && _startDistance! >= 1) {
+        final distance = (d.focalPoint - center).distance;
+        widget.onScaleChange?.call(
+          widget.slotId,
+          (_startScale * distance / _startDistance!).clamp(
+            _kMinSlotScale,
+            _kMaxSlotScale,
+          ),
+        );
+      }
+      return;
+    }
+    if (d.focalPointDelta != Offset.zero) {
+      widget.onDrag?.call(widget.slotId, d.focalPointDelta);
+    }
+    if (d.pointerCount >= 2 && d.scale != 1.0) {
+      widget.onScaleChange?.call(
+        widget.slotId,
+        (_baseScale * d.scale).clamp(_kMinSlotScale, _kMaxSlotScale),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
@@ -415,56 +465,12 @@ class _SlotGesturesState extends State<_SlotGestures> {
       // exactly why grabbing a handle so often did nothing.
       behavior: HitTestBehavior.opaque,
       onTap: widget.onTap == null ? null : () => widget.onTap!(widget.slotId),
-      onScaleStart: (d) {
-        _baseScale = widget.currentScale;
-        _startScale = widget.currentScale;
-        _pointerCount = d.pointerCount;
-        final size = context.size;
-        _isResizing =
-            widget.resizeEnabled &&
-            d.pointerCount == 1 &&
-            size != null &&
-            _nearCorner(d.localFocalPoint, size);
-        if (_isResizing) {
-          final center = _centerGlobal();
-          _startDistance = center == null
-              ? null
-              : (d.focalPoint - center).distance;
-        }
-      },
-      onScaleUpdate: (d) {
-        if (d.pointerCount != _pointerCount) {
-          _baseScale = widget.currentScale;
-          _pointerCount = d.pointerCount;
-          // A second finger turns the gesture into a pinch/move.
-          if (d.pointerCount >= 2) _isResizing = false;
-        }
-        if (_isResizing && d.pointerCount == 1) {
-          final center = _centerGlobal();
-          if (center != null &&
-              _startDistance != null &&
-              _startDistance! >= 1) {
-            final distance = (d.focalPoint - center).distance;
-            widget.onScaleChange?.call(
-              widget.slotId,
-              (_startScale * distance / _startDistance!).clamp(
-                _kMinSlotScale,
-                _kMaxSlotScale,
-              ),
-            );
-          }
-          return;
-        }
-        if (d.focalPointDelta != Offset.zero) {
-          widget.onDrag?.call(widget.slotId, d.focalPointDelta);
-        }
-        if (d.pointerCount >= 2 && d.scale != 1.0) {
-          widget.onScaleChange?.call(
-            widget.slotId,
-            (_baseScale * d.scale).clamp(_kMinSlotScale, _kMaxSlotScale),
-          );
-        }
-      },
+      // Wire move/resize/pinch ONLY when selected: an unwired scale recognizer
+      // would still win the arena over the canvas pan, dragging an unselected
+      // element. With these null, an unselected slot only taps (to select) and
+      // drags fall through to the canvas pan/zoom.
+      onScaleStart: widget.selected ? _onScaleStart : null,
+      onScaleUpdate: widget.selected ? _onScaleUpdate : null,
       child: widget.child,
     );
   }

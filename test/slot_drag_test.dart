@@ -19,14 +19,17 @@ void main() {
   Future<void> pump(WidgetTester tester, Widget child) async {
     tester.view.physicalSize = const Size(540, 960);
     tester.view.devicePixelRatio = 1;
-    await tester.pumpWidget(MaterialApp(
-      debugShowCheckedModeBanner: false,
-      home: Center(child: child),
-    ));
+    await tester.pumpWidget(
+      MaterialApp(
+        debugShowCheckedModeBanner: false,
+        home: Center(child: child),
+      ),
+    );
   }
 
-  testWidgets('SlotContent offsets shift the render by offset * scale',
-      (tester) async {
+  testWidgets('SlotContent offsets shift the render by offset * scale', (
+    tester,
+  ) async {
     await pump(
       tester,
       TemplateCanvas(template: template, fontResolver: testFontResolver),
@@ -46,8 +49,8 @@ void main() {
     expect(after - before, const Offset(50, 30));
   });
 
-  testWidgets('panning a slot reports template-space deltas and moves it',
-      (tester) async {
+  testWidgets('panning a selected slot reports template-space deltas and '
+      'moves it', (tester) async {
     var content = const SlotContent();
     await pump(
       tester,
@@ -56,9 +59,13 @@ void main() {
           template: template,
           content: content,
           fontResolver: testFontResolver,
+          // Move/resize gestures are only wired on the selected slot.
+          selectedSlotId: 'hero_image',
           onSlotDrag: (slotId, delta) => setState(() {
             content = content.withOffset(
-                slotId, content.offsetFor(slotId) + delta);
+              slotId,
+              content.offsetFor(slotId) + delta,
+            );
           }),
         ),
       ),
@@ -82,8 +89,46 @@ void main() {
     expect(content.offsetFor('hero_image').dx, greaterThan(0));
   });
 
-  testWidgets('SlotContent scales resize the slot around its center',
-      (tester) async {
+  testWidgets('an unselected slot is not draggable', (tester) async {
+    var content = const SlotContent();
+    var dragged = false;
+    await pump(
+      tester,
+      StatefulBuilder(
+        builder: (context, setState) => TemplateCanvas(
+          template: template,
+          content: content,
+          fontResolver: testFontResolver,
+          // No selectedSlotId: the slot only taps to select; a drag must fall
+          // through (to the canvas pan) instead of moving the element.
+          onSlotDrag: (slotId, delta) {
+            dragged = true;
+            setState(
+              () => content = content.withOffset(
+                slotId,
+                content.offsetFor(slotId) + delta,
+              ),
+            );
+          },
+        ),
+      ),
+    );
+
+    final start = tester.getCenter(find.text('hero_image'));
+    final g = await tester.startGesture(start);
+    await g.moveBy(const Offset(40, 0));
+    await tester.pump();
+    await g.moveBy(const Offset(50, 30));
+    await tester.pump();
+    await g.up();
+
+    expect(dragged, isFalse);
+    expect(content.offsetFor('hero_image'), Offset.zero);
+  });
+
+  testWidgets('SlotContent scales resize the slot around its center', (
+    tester,
+  ) async {
     await pump(
       tester,
       TemplateCanvas(template: template, fontResolver: testFontResolver),
@@ -106,7 +151,7 @@ void main() {
     expect(after.dy, lessThan(before.dy));
   });
 
-  testWidgets('pinching a slot updates its scale', (tester) async {
+  testWidgets('pinching a selected slot updates its scale', (tester) async {
     var content = const SlotContent();
     await pump(
       tester,
@@ -115,6 +160,8 @@ void main() {
           template: template,
           content: content,
           fontResolver: testFontResolver,
+          // Pinch-resize is only wired on the selected slot.
+          selectedSlotId: 'title',
           onSlotScale: (slotId, scale) =>
               setState(() => content = content.withScale(slotId, scale)),
         ),
@@ -134,8 +181,9 @@ void main() {
     expect(content.scaleFor('title'), closeTo(2.0, 0.25));
   });
 
-  testWidgets('tap selects a slot; canvas tap clears the selection',
-      (tester) async {
+  testWidgets('tap selects a slot; canvas tap clears the selection', (
+    tester,
+  ) async {
     final taps = <String>[];
     var canvasTaps = 0;
     await pump(
@@ -156,8 +204,9 @@ void main() {
     expect(canvasTaps, 1);
   });
 
-  testWidgets('selected slot shows handles and corner drag resizes it',
-      (tester) async {
+  testWidgets('selected slot shows handles and corner drag resizes it', (
+    tester,
+  ) async {
     var content = const SlotContent();
     await pump(
       tester,
@@ -195,8 +244,7 @@ void main() {
     expect(grown, greaterThan(1.0));
 
     // And back inward shrinks.
-    final cornerNow =
-        tester.getCenter(find.byKey(const ValueKey('handle_br')));
+    final cornerNow = tester.getCenter(find.byKey(const ValueKey('handle_br')));
     final shrink = await tester.startGesture(cornerNow);
     await shrink.moveBy(const Offset(-8, -4));
     await tester.pump();
@@ -206,8 +254,9 @@ void main() {
     expect(content.scaleFor('title'), lessThan(grown));
   });
 
-  testWidgets('dragging the interior moves the selected slot, not resize',
-      (tester) async {
+  testWidgets('dragging the interior moves the selected slot, not resize', (
+    tester,
+  ) async {
     var content = const SlotContent();
     await pump(
       tester,
@@ -219,8 +268,12 @@ void main() {
           selectedSlotId: 'title',
           onSlotScale: (slotId, scale) =>
               setState(() => content = content.withScale(slotId, scale)),
-          onSlotDrag: (slotId, delta) => setState(() => content =
-              content.withOffset(slotId, content.offsetFor(slotId) + delta)),
+          onSlotDrag: (slotId, delta) => setState(
+            () => content = content.withOffset(
+              slotId,
+              content.offsetFor(slotId) + delta,
+            ),
+          ),
         ),
       ),
     );
