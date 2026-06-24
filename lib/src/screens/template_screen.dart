@@ -89,10 +89,9 @@ class _TemplateScreenState extends State<TemplateScreen> {
     setState(() => _content = _content.withImage(slotId, MemoryImage(bytes)));
   }
 
-  /// First tap selects (shows the handles); the second tap acts on the
-  /// content — image slots open the picker, text slots start inline
-  /// editing. Empty image slots open the picker right away — filling the
-  /// slot is what the user almost certainly wants.
+  /// Tapping a slot selects it (shows the handles for move/resize). A text
+  /// slot's second tap starts inline editing. An image slot's gallery is NOT
+  /// opened here — only its photo icon opens it (see [_onPickImage]).
   void _handleSlotTap(Template template, String slotId) {
     final isImage = template.layers.any(
       (l) => l is ImageLayer && l.slotId == slotId,
@@ -104,11 +103,20 @@ class _TemplateScreenState extends State<TemplateScreen> {
         _editingSlot = null;
       });
     }
-    if (isImage && (wasSelected || _content.imageFor(slotId) == null)) {
-      _pickImage(slotId);
-    } else if (!isImage && wasSelected) {
+    if (!isImage && wasSelected) {
       setState(() => _editingSlot = slotId);
     }
+  }
+
+  /// Opens the gallery for an image slot — triggered only by tapping the
+  /// slot's photo icon. Also selects the slot so its handles are ready when
+  /// the user returns from the picker.
+  void _onPickImage(String slotId) {
+    setState(() {
+      _selectedSlot = slotId;
+      _editingSlot = null;
+    });
+    _pickImage(slotId);
   }
 
   Future<void> _exportPng(Template template) async {
@@ -283,6 +291,10 @@ class _TemplateScreenState extends State<TemplateScreen> {
                                   onSlotTap: (slotId) {
                                     _focusedPanelId = panel.id;
                                     _handleSlotTap(template, slotId);
+                                  },
+                                  onPickImage: (slotId) {
+                                    _focusedPanelId = panel.id;
+                                    _onPickImage(slotId);
                                   },
                                   onCanvasTap: () => setState(() {
                                     _focusedPanelId = panel.id;

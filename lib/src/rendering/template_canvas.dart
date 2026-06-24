@@ -98,6 +98,11 @@ class PanelCanvas extends StatelessWidget {
   /// SlotContent.scales.
   final void Function(String slotId, double scale)? onSlotScale;
 
+  /// Tap on an image slot's photo icon — the ONLY way to open the gallery, so
+  /// tapping the element itself just selects it (for move/resize). Empty slots
+  /// show the icon inline; a filled, selected slot shows a "replace" overlay.
+  final void Function(String slotId)? onPickImage;
+
   const PanelCanvas({
     super.key,
     required this.panel,
@@ -112,6 +117,7 @@ class PanelCanvas extends StatelessWidget {
     this.onTextChanged,
     this.onSlotDrag,
     this.onSlotScale,
+    this.onPickImage,
     this.editingFieldKey,
   });
 
@@ -148,6 +154,7 @@ class PanelCanvas extends StatelessWidget {
                     onSlotTap: onSlotTap,
                     onSlotDrag: onSlotDrag,
                     onSlotScale: onSlotScale,
+                    onPickImage: onPickImage,
                     onTextChanged: onTextChanged,
                     selected:
                         layer is ImageLayer && layer.slotId == selectedSlotId ||
@@ -222,6 +229,7 @@ class _LayerWidget extends StatelessWidget {
   final void Function(String slotId)? onSlotTap;
   final void Function(String slotId, Offset delta)? onSlotDrag;
   final void Function(String slotId, double scale)? onSlotScale;
+  final void Function(String slotId)? onPickImage;
   final void Function(String slotId, String value)? onTextChanged;
   final bool selected;
   final bool editing;
@@ -234,6 +242,7 @@ class _LayerWidget extends StatelessWidget {
     this.onSlotTap,
     this.onSlotDrag,
     this.onSlotScale,
+    this.onPickImage,
     this.onTextChanged,
     this.selected = false,
     this.editing = false,
@@ -255,6 +264,8 @@ class _LayerWidget extends StatelessWidget {
               layer: l,
               content: content,
               interactive: onSlotTap != null,
+              selected: selected,
+              onPick: onPickImage,
             ),
           ),
         ),
@@ -572,25 +583,47 @@ class _ImageSlot extends StatelessWidget {
   /// placeholders then advertise themselves with a photo icon.
   final bool interactive;
 
+  /// Whether this image slot is the selected one (shows the replace overlay).
+  final bool selected;
+
+  /// Opens the gallery for this slot. Wired to the photo icon only — a tap on
+  /// the image elsewhere selects it (move/resize) without opening the gallery.
+  final void Function(String slotId)? onPick;
+
   const _ImageSlot({
     required this.layer,
     required this.content,
     this.interactive = false,
+    this.selected = false,
+    this.onPick,
   });
 
   @override
   Widget build(BuildContext context) {
     final image = content.imageFor(layer.slotId);
+    final pick = (interactive && onPick != null)
+        ? () => onPick!(layer.slotId)
+        : null;
     return Opacity(
       opacity: layer.opacity,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(layer.borderRadius),
         child: image != null
-            ? Image(
-                image: image,
-                width: layer.width,
-                height: layer.height,
-                fit: BoxFit.cover,
+            ? Stack(
+                children: [
+                  Image(
+                    image: image,
+                    width: layer.width,
+                    height: layer.height,
+                    fit: BoxFit.cover,
+                  ),
+                  // A filled image is replaced by tapping the overlay icon
+                  // (only while selected); a tap anywhere else just moves it.
+                  if (selected && pick != null)
+                    Positioned.fill(
+                      child: Center(child: _PickIcon(onTap: pick)),
+                    ),
+                ],
               )
             : Container(
                 width: layer.width,
@@ -600,12 +633,9 @@ class _ImageSlot extends StatelessWidget {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    if (interactive)
-                      const Icon(
-                        Icons.add_photo_alternate_outlined,
-                        size: 96,
-                        color: Color(0xFF71717A),
-                      ),
+                    // Tapping the icon opens the gallery; tapping the rest of
+                    // the placeholder falls through to select the slot.
+                    if (pick != null) _PickIcon(onTap: pick),
                     Text(
                       layer.slotId,
                       style: const TextStyle(
@@ -616,6 +646,35 @@ class _ImageSlot extends StatelessWidget {
                   ],
                 ),
               ),
+      ),
+    );
+  }
+}
+
+/// The photo-picker affordance: a round, padded "add photo" icon that is its
+/// own tap target so only it — not the whole slot — opens the gallery.
+class _PickIcon extends StatelessWidget {
+  final VoidCallback onTap;
+
+  const _PickIcon({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      // Opaque so the padding around the glyph is part of the tap target.
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        padding: const EdgeInsets.all(24),
+        decoration: const BoxDecoration(
+          color: Colors.black54,
+          shape: BoxShape.circle,
+        ),
+        child: const Icon(
+          Icons.add_photo_alternate_outlined,
+          size: 96,
+          color: Colors.white,
+        ),
       ),
     );
   }

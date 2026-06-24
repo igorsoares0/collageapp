@@ -126,6 +126,33 @@ void main() {
     expect(content.offsetFor('hero_image'), Offset.zero);
   });
 
+  testWidgets('image gallery opens from the photo icon, not the element', (
+    tester,
+  ) async {
+    final taps = <String>[];
+    final picks = <String>[];
+    await pump(
+      tester,
+      PanelCanvas(
+        panel: template.panels.first,
+        canvasWidth: template.canvasWidth,
+        canvasHeight: template.canvasHeight,
+        fontResolver: testFontResolver,
+        onSlotTap: taps.add,
+        onPickImage: picks.add,
+      ),
+    );
+
+    // Tapping the slot body (its label) selects it — it must NOT open gallery.
+    await tester.tap(find.text('hero_image'));
+    expect(picks, isEmpty);
+    expect(taps, contains('hero_image'));
+
+    // Tapping the photo icon is the only thing that opens the gallery.
+    await tester.tap(find.byIcon(Icons.add_photo_alternate_outlined));
+    expect(picks, ['hero_image']);
+  });
+
   testWidgets('SlotContent scales resize the slot around its center', (
     tester,
   ) async {
