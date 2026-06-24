@@ -22,6 +22,12 @@ class TemplateScreen extends StatefulWidget {
   State<TemplateScreen> createState() => _TemplateScreenState();
 }
 
+/// Fixed height of the bottom styling-bar strip (content only; the safe-area
+/// inset is added at build time). Sized to the TALLEST bar (the text styling
+/// bar) and reserved in EVERY state, so the canvas area — and thus the canvas
+/// size — never changes when a different bar shows or a slot is selected.
+const double _kBottomBarHeight = 164;
+
 class _TemplateScreenState extends State<TemplateScreen> {
   final _store = TemplateStore();
   final _picker = ImagePicker();
@@ -63,8 +69,9 @@ class _TemplateScreenState extends State<TemplateScreen> {
   /// editing. Empty image slots open the picker right away — filling the
   /// slot is what the user almost certainly wants.
   void _handleSlotTap(Template template, String slotId) {
-    final isImage = template.layers
-        .any((l) => l is ImageLayer && l.slotId == slotId);
+    final isImage = template.layers.any(
+      (l) => l is ImageLayer && l.slotId == slotId,
+    );
     final wasSelected = _selectedSlot == slotId;
     if (!wasSelected) {
       setState(() {
@@ -95,20 +102,26 @@ class _TemplateScreenState extends State<TemplateScreen> {
       final files = <XFile>[];
       for (var i = 0; i < template.panels.length; i++) {
         final panel = template.panels[i];
-        final bytes = await capturePng(_panelKey(panel.id), template.canvasWidth);
-        files.add(XFile.fromData(
-          bytes,
-          mimeType: 'image/png',
-          name: template.panels.length == 1
-              ? '${template.id}.png'
-              : '${template.id}_${i + 1}.png',
-        ));
+        final bytes = await capturePng(
+          _panelKey(panel.id),
+          template.canvasWidth,
+        );
+        files.add(
+          XFile.fromData(
+            bytes,
+            mimeType: 'image/png',
+            name: template.panels.length == 1
+                ? '${template.id}.png'
+                : '${template.id}_${i + 1}.png',
+          ),
+        );
       }
       await Share.shareXFiles(files);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Export failed: $e')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Export failed: $e')));
     } finally {
       if (mounted) setState(() => _exporting = false);
     }
@@ -120,6 +133,13 @@ class _TemplateScreenState extends State<TemplateScreen> {
       future: _template,
       builder: (context, snapshot) {
         final template = snapshot.data;
+        // Read the keyboard/safe-area insets HERE, above the Scaffold: the
+        // Scaffold consumes the keyboard inset and hands its body a MediaQuery
+        // with viewInsets.bottom == 0, so reading it inside _buildBody would
+        // always see zero.
+        final media = MediaQuery.of(context);
+        final keyboardInset = media.viewInsets.bottom;
+        final safeBottom = media.viewPadding.bottom;
         return Scaffold(
           appBar: AppBar(
             title: Text(template?.name ?? '…'),
@@ -134,17 +154,22 @@ class _TemplateScreenState extends State<TemplateScreen> {
                         )
                       : const Icon(Icons.ios_share),
                   tooltip: 'Export PNG',
-                  onPressed:
-                      _exporting ? null : () => _exportPng(template),
+                  onPressed: _exporting ? null : () => _exportPng(template),
                 ),
             ],
           ),
           body: switch (snapshot.connectionState) {
             ConnectionState.done when snapshot.hasError => Center(
-                child: Text('Could not load template.\n${snapshot.error}',
-                    textAlign: TextAlign.center),
+              child: Text(
+                'Could not load template.\n${snapshot.error}',
+                textAlign: TextAlign.center,
               ),
-            ConnectionState.done => _buildBody(template!),
+            ),
+            ConnectionState.done => _buildBody(
+              template!,
+              keyboardInset,
+              safeBottom,
+            ),
             _ => const Center(child: CircularProgressIndicator()),
           },
         );
@@ -163,116 +188,180 @@ class _TemplateScreenState extends State<TemplateScreen> {
     return null;
   }
 
-  Widget _buildBody(Template template) {
+  Widget _buildBody(
+    Template template,
+    double keyboardInset,
+    double safeBottom,
+  ) {
     final textLayer = _selectedTextLayer(template);
     final focusedId = _focusedPanelId ?? template.panels.first.id;
     final focusedPanel = template.panels.firstWhere(
       (p) => p.id == focusedId,
       orElse: () => template.panels.first,
     );
+
+    final bottomBar = _buildBottomBar(textLayer, focusedPanel);
+    // Constant height for the bar strip (incl. the home-indicator inset), so
+    // the canvas area is a fixed size regardless of which bar shows.
+    final barArea = _kBottomBarHeight + safeBottom;
+
     return Column(
       children: [
         Expanded(
-          child: Container(
+          child: ColoredBox(
             color: const Color(0xFF18181B),
             child: LayoutBuilder(
               builder: (context, constraints) {
+                // resizeToAvoidBottomInset shrinks this viewport by exactly the
+                // keyboard height, so adding the inset back recovers the
+                // keyboard-free height: the canvas keeps that fixed size and
+                // the extra overflows into the scroll view, which the framework
+                // scrolls to keep the focused text field above the keyboard.
+                // (keyboardInset comes from above the Scaffold — see build().)
+                final canvasHeight = constraints.maxHeight + keyboardInset;
                 // Panels sit side by side; with more than one, each is a bit
                 // narrower than the viewport so the next one peeks in.
-                final panelWidth = constraints.maxWidth *
+                final panelWidth =
+                    constraints.maxWidth *
                     (template.panels.length == 1 ? 1.0 : 0.82);
                 // While a slot is selected or being edited, freeze the panel
                 // scroll so its drag doesn't steal the resize/move gestures
                 // (otherwise grabbing a handle just scrolls the strip).
                 final locked = _selectedSlot != null || _editingSlot != null;
                 return SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  physics: locked
-                      ? const NeverScrollableScrollPhysics()
-                      : const ClampingScrollPhysics(),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                  child: Row(
-                    children: [
-                      for (final panel in template.panels)
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 6),
-                          child: SizedBox(
-                            width: panelWidth,
-                            child: RepaintBoundary(
-                              key: _panelKey(panel.id),
-                              child: PanelCanvas(
-                                panel: panel,
-                                canvasWidth: template.canvasWidth,
-                                canvasHeight: template.canvasHeight,
-                                content: _content,
-                                selectedSlotId: _selectedSlot,
-                                editingSlotId: _editingSlot,
-                                onSlotTap: (slotId) {
-                                  _focusedPanelId = panel.id;
-                                  _handleSlotTap(template, slotId);
-                                },
-                                onCanvasTap: () => setState(() {
-                                  _focusedPanelId = panel.id;
-                                  _selectedSlot = null;
-                                  _editingSlot = null;
-                                }),
-                                onTextChanged: (slotId, value) => setState(() {
-                                  _content = _content.withText(slotId, value);
-                                }),
-                                onSlotDrag: (slotId, delta) => setState(() {
-                                  _content = _content.withOffset(slotId,
-                                      _content.offsetFor(slotId) + delta);
-                                }),
-                                onSlotScale: (slotId, scale) => setState(() {
-                                  _content = _content.withScale(slotId, scale);
-                                }),
+                  // Vertical scroll only while editing — that's when the
+                  // framework needs to lift the focused field above the
+                  // keyboard. Otherwise frozen so slot drags don't scroll it.
+                  physics: _editingSlot != null
+                      ? const ClampingScrollPhysics()
+                      : const NeverScrollableScrollPhysics(),
+                  child: SizedBox(
+                    height: canvasHeight,
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      physics: locked
+                          ? const NeverScrollableScrollPhysics()
+                          : const ClampingScrollPhysics(),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 16,
+                      ),
+                      child: Row(
+                        children: [
+                          for (final panel in template.panels)
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                              ),
+                              child: SizedBox(
+                                width: panelWidth,
+                                child: RepaintBoundary(
+                                  key: _panelKey(panel.id),
+                                  child: PanelCanvas(
+                                    panel: panel,
+                                    canvasWidth: template.canvasWidth,
+                                    canvasHeight: template.canvasHeight,
+                                    content: _content,
+                                    selectedSlotId: _selectedSlot,
+                                    editingSlotId: _editingSlot,
+                                    onSlotTap: (slotId) {
+                                      _focusedPanelId = panel.id;
+                                      _handleSlotTap(template, slotId);
+                                    },
+                                    onCanvasTap: () => setState(() {
+                                      _focusedPanelId = panel.id;
+                                      _selectedSlot = null;
+                                      _editingSlot = null;
+                                    }),
+                                    onTextChanged: (slotId, value) =>
+                                        setState(() {
+                                          _content = _content.withText(
+                                            slotId,
+                                            value,
+                                          );
+                                        }),
+                                    onSlotDrag: (slotId, delta) => setState(() {
+                                      _content = _content.withOffset(
+                                        slotId,
+                                        _content.offsetFor(slotId) + delta,
+                                      );
+                                    }),
+                                    onSlotScale: (slotId, scale) =>
+                                        setState(() {
+                                          _content = _content.withScale(
+                                            slotId,
+                                            scale,
+                                          );
+                                        }),
+                                  ),
+                                ),
                               ),
                             ),
-                          ),
-                        ),
-                    ],
+                        ],
+                      ),
+                    ),
                   ),
                 );
               },
             ),
           ),
         ),
-        if (textLayer == null && _selectedSlot == null)
-          BackgroundColorBar(
-            currentColor: _content.backgroundFor(focusedPanel.id) ??
-                focusedPanel.backgroundColor,
-            onColor: (color) => setState(() => _content =
-                _content.withPanelBackground(focusedPanel.id, color)),
+        // The bar strip: fixed height (so the canvas area never changes) and
+        // bottom-aligned, sitting just above the keyboard when it's open
+        // (resizeToAvoidBottomInset pushes it up).
+        ColoredBox(
+          color: const Color(0xFF18181B),
+          child: SizedBox(
+            height: barArea,
+            width: double.infinity,
+            child: bottomBar == null
+                ? null
+                : Align(alignment: Alignment.bottomCenter, child: bottomBar),
           ),
-        if (textLayer != null)
-          Builder(builder: (context) {
-            final weight =
-                _content.weightFor(textLayer.slotId) ?? textLayer.fontWeight;
-            return TextStyleBar(
-              currentFont:
-                  _content.fontFor(textLayer.slotId) ?? textLayer.fontFamily,
-              currentColor:
-                  _content.colorFor(textLayer.slotId) ?? textLayer.color,
-              currentAlignment: _content.alignmentFor(textLayer.slotId) ??
-                  textLayer.alignment,
-              isBold: weight >= 700,
-              onFont: (font) => setState(() {
-                _content = _content.withFont(textLayer.slotId, font);
-              }),
-              onColor: (color) => setState(() {
-                _content = _content.withColor(textLayer.slotId, color);
-              }),
-              onAlignment: (align) => setState(() {
-                _content = _content.withAlignment(textLayer.slotId, align);
-              }),
-              onBoldToggle: () => setState(() {
-                _content = _content.withWeight(
-                    textLayer.slotId, weight >= 700 ? 400 : 700);
-              }),
-            );
-          }),
+        ),
       ],
     );
+  }
+
+  /// The bar shown under the canvas: background colors when nothing is
+  /// selected, text styling when a text slot is, and nothing for image slots.
+  Widget? _buildBottomBar(TextLayer? textLayer, Panel focusedPanel) {
+    if (textLayer == null && _selectedSlot == null) {
+      return BackgroundColorBar(
+        currentColor:
+            _content.backgroundFor(focusedPanel.id) ??
+            focusedPanel.backgroundColor,
+        onColor: (color) => setState(
+          () => _content = _content.withPanelBackground(focusedPanel.id, color),
+        ),
+      );
+    }
+    if (textLayer != null) {
+      final weight =
+          _content.weightFor(textLayer.slotId) ?? textLayer.fontWeight;
+      return TextStyleBar(
+        currentFont: _content.fontFor(textLayer.slotId) ?? textLayer.fontFamily,
+        currentColor: _content.colorFor(textLayer.slotId) ?? textLayer.color,
+        currentAlignment:
+            _content.alignmentFor(textLayer.slotId) ?? textLayer.alignment,
+        isBold: weight >= 700,
+        onFont: (font) => setState(() {
+          _content = _content.withFont(textLayer.slotId, font);
+        }),
+        onColor: (color) => setState(() {
+          _content = _content.withColor(textLayer.slotId, color);
+        }),
+        onAlignment: (align) => setState(() {
+          _content = _content.withAlignment(textLayer.slotId, align);
+        }),
+        onBoldToggle: () => setState(() {
+          _content = _content.withWeight(
+            textLayer.slotId,
+            weight >= 700 ? 400 : 700,
+          );
+        }),
+      );
+    }
+    return null;
   }
 }

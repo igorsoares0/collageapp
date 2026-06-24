@@ -78,6 +78,11 @@ class PanelCanvas extends StatelessWidget {
   /// SlotContent.texts.
   final void Function(String slotId, String value)? onTextChanged;
 
+  /// Attached to the inline editor of the [editingSlotId] text slot so the
+  /// screen can measure its on-screen rect and lift the canvas above the
+  /// keyboard. Only the panel holding that slot uses it.
+  final GlobalKey? editingFieldKey;
+
   /// When set, slot layers (image/text — the user's content) become
   /// draggable. [delta] arrives in template space: gesture events are
   /// transformed into the listener's local coordinates, so the FittedBox
@@ -106,6 +111,7 @@ class PanelCanvas extends StatelessWidget {
     this.onTextChanged,
     this.onSlotDrag,
     this.onSlotScale,
+    this.editingFieldKey,
   });
 
   @override
@@ -128,7 +134,8 @@ class PanelCanvas extends StatelessWidget {
               Positioned.fill(
                 child: ColoredBox(
                   key: const ValueKey('canvas-background'),
-                  color: content.backgroundFor(panel.id) ?? panel.backgroundColor,
+                  color:
+                      content.backgroundFor(panel.id) ?? panel.backgroundColor,
                 ),
               ),
               for (final layer in panel.layers)
@@ -141,11 +148,15 @@ class PanelCanvas extends StatelessWidget {
                     onSlotDrag: onSlotDrag,
                     onSlotScale: onSlotScale,
                     onTextChanged: onTextChanged,
-                    selected: layer is ImageLayer &&
-                            layer.slotId == selectedSlotId ||
+                    selected:
+                        layer is ImageLayer && layer.slotId == selectedSlotId ||
                         layer is TextLayer && layer.slotId == selectedSlotId,
-                    editing: layer is TextLayer &&
-                        layer.slotId == editingSlotId,
+                    editing:
+                        layer is TextLayer && layer.slotId == editingSlotId,
+                    fieldKey:
+                        layer is TextLayer && layer.slotId == editingSlotId
+                        ? editingFieldKey
+                        : null,
                   ),
             ],
           ),
@@ -213,6 +224,7 @@ class _LayerWidget extends StatelessWidget {
   final void Function(String slotId, String value)? onTextChanged;
   final bool selected;
   final bool editing;
+  final GlobalKey? fieldKey;
 
   const _LayerWidget({
     required this.layer,
@@ -224,39 +236,51 @@ class _LayerWidget extends StatelessWidget {
     this.onTextChanged,
     this.selected = false,
     this.editing = false,
+    this.fieldKey,
   });
 
   @override
   Widget build(BuildContext context) {
     return switch (layer) {
       ImageLayer l => _slot(
-          l.slotId,
-          l.x,
-          l.y,
-          _rotated(
-              l.rotation,
-              _chromed(
-                  l.slotId,
-                  _ImageSlot(
-                      layer: l,
-                      content: content,
-                      interactive: onSlotTap != null)))),
-      TextLayer l => _slot(
-          l.slotId,
-          l.x,
-          l.y,
+        l.slotId,
+        l.x,
+        l.y,
+        _rotated(
+          l.rotation,
           _chromed(
-              l.slotId,
-              _TextSlot(
-                  layer: l,
-                  content: content,
-                  fontResolver: fontResolver,
-                  editing: editing,
-                  onTextChanged: onTextChanged)),
-          // The TextField owns cursor/selection gestures while editing.
-          gestures: !editing),
+            l.slotId,
+            _ImageSlot(
+              layer: l,
+              content: content,
+              interactive: onSlotTap != null,
+            ),
+          ),
+        ),
+      ),
+      TextLayer l => _slot(
+        l.slotId,
+        l.x,
+        l.y,
+        _chromed(
+          l.slotId,
+          _TextSlot(
+            layer: l,
+            content: content,
+            fontResolver: fontResolver,
+            editing: editing,
+            fieldKey: fieldKey,
+            onTextChanged: onTextChanged,
+          ),
+        ),
+        // The TextField owns cursor/selection gestures while editing.
+        gestures: !editing,
+      ),
       ShapeLayer l => _positioned(
-          l.x, l.y, Container(width: l.width, height: l.height, color: l.fill)),
+        l.x,
+        l.y,
+        Container(width: l.width, height: l.height, color: l.fill),
+      ),
       StickerLayer l => _positioned(l.x, l.y, _StickerPlaceholder(layer: l)),
     };
   }
@@ -275,8 +299,13 @@ class _LayerWidget extends StatelessWidget {
   /// so its hit area grows with the element (otherwise a scaled-up element
   /// would extend past its own touch region). Translation is applied before
   /// rotation, so dragging a rotated slot still follows the finger.
-  Widget _slot(String slotId, double x, double y, Widget child,
-      {bool gestures = true}) {
+  Widget _slot(
+    String slotId,
+    double x,
+    double y,
+    Widget child, {
+    bool gestures = true,
+  }) {
     final offset = content.offsetFor(slotId);
     final scale = content.scaleFor(slotId);
     // When selected the chrome floats a _kChromePad margin around the element
@@ -307,10 +336,10 @@ class _LayerWidget extends StatelessWidget {
       Positioned(left: x, top: y, child: child);
 
   Widget _rotated(double degrees, Widget child) => Transform.rotate(
-        angle: degrees * math.pi / 180,
-        alignment: Alignment.topLeft,
-        child: child,
-      );
+    angle: degrees * math.pi / 180,
+    alignment: Alignment.topLeft,
+    child: child,
+  );
 }
 
 /// The single gesture surface for a slot: tap, move, pinch AND resize, all
@@ -391,14 +420,16 @@ class _SlotGesturesState extends State<_SlotGestures> {
         _startScale = widget.currentScale;
         _pointerCount = d.pointerCount;
         final size = context.size;
-        _isResizing = widget.resizeEnabled &&
+        _isResizing =
+            widget.resizeEnabled &&
             d.pointerCount == 1 &&
             size != null &&
             _nearCorner(d.localFocalPoint, size);
         if (_isResizing) {
           final center = _centerGlobal();
-          _startDistance =
-              center == null ? null : (d.focalPoint - center).distance;
+          _startDistance = center == null
+              ? null
+              : (d.focalPoint - center).distance;
         }
       },
       onScaleUpdate: (d) {
@@ -410,12 +441,16 @@ class _SlotGesturesState extends State<_SlotGestures> {
         }
         if (_isResizing && d.pointerCount == 1) {
           final center = _centerGlobal();
-          if (center != null && _startDistance != null && _startDistance! >= 1) {
+          if (center != null &&
+              _startDistance != null &&
+              _startDistance! >= 1) {
             final distance = (d.focalPoint - center).distance;
             widget.onScaleChange?.call(
               widget.slotId,
-              (_startScale * distance / _startDistance!)
-                  .clamp(_kMinSlotScale, _kMaxSlotScale),
+              (_startScale * distance / _startDistance!).clamp(
+                _kMinSlotScale,
+                _kMaxSlotScale,
+              ),
             );
           }
           return;
@@ -472,18 +507,20 @@ class _SelectionChrome extends StatelessWidget {
         ),
         Positioned.fill(
           child: IgnorePointer(
-            child: LayoutBuilder(builder: (context, constraints) {
-              final w = constraints.maxWidth - 2 * pad;
-              final h = constraints.maxHeight - 2 * pad;
-              return Stack(
-                children: [
-                  _corner('tl', pad, pad),
-                  _corner('tr', pad + w, pad),
-                  _corner('bl', pad, pad + h),
-                  _corner('br', pad + w, pad + h),
-                ],
-              );
-            }),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final w = constraints.maxWidth - 2 * pad;
+                final h = constraints.maxHeight - 2 * pad;
+                return Stack(
+                  children: [
+                    _corner('tl', pad, pad),
+                    _corner('tr', pad + w, pad),
+                    _corner('bl', pad, pad + h),
+                    _corner('br', pad + w, pad + h),
+                  ],
+                );
+              },
+            ),
           ),
         ),
       ],
@@ -503,7 +540,10 @@ class _SelectionChrome extends StatelessWidget {
         decoration: BoxDecoration(
           color: Colors.white,
           shape: BoxShape.circle,
-          border: Border.all(color: const Color(0xFFD4D4D8), width: 1.5 / scale),
+          border: Border.all(
+            color: const Color(0xFFD4D4D8),
+            width: 1.5 / scale,
+          ),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withValues(alpha: 0.25),
@@ -579,6 +619,7 @@ class _TextSlot extends StatelessWidget {
   final SlotContent content;
   final FontResolver fontResolver;
   final bool editing;
+  final Key? fieldKey;
   final void Function(String slotId, String value)? onTextChanged;
 
   const _TextSlot({
@@ -586,6 +627,7 @@ class _TextSlot extends StatelessWidget {
     required this.content,
     required this.fontResolver,
     this.editing = false,
+    this.fieldKey,
     this.onTextChanged,
   });
 
@@ -596,15 +638,19 @@ class _TextSlot extends StatelessWidget {
       fontWeight: _weight(content.weightFor(layer.slotId) ?? layer.fontWeight),
       color: content.colorFor(layer.slotId) ?? layer.color,
     );
-    final style =
-        fontResolver(content.fontFor(layer.slotId) ?? layer.fontFamily, base);
-    final align = switch (content.alignmentFor(layer.slotId) ?? layer.alignment) {
+    final style = fontResolver(
+      content.fontFor(layer.slotId) ?? layer.fontFamily,
+      base,
+    );
+    final align = switch (content.alignmentFor(layer.slotId) ??
+        layer.alignment) {
       'center' => TextAlign.center,
       'right' => TextAlign.right,
       _ => TextAlign.left,
     };
     if (editing) {
       return SizedBox(
+        key: fieldKey,
         width: layer.width,
         child: _InlineTextEditor(
           initial: content.textFor(layer.slotId) ?? '',
@@ -652,8 +698,9 @@ class _InlineTextEditor extends StatefulWidget {
 }
 
 class _InlineTextEditorState extends State<_InlineTextEditor> {
-  late final TextEditingController _controller =
-      TextEditingController(text: widget.initial);
+  late final TextEditingController _controller = TextEditingController(
+    text: widget.initial,
+  );
 
   @override
   void dispose() {
