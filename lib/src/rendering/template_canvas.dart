@@ -37,12 +37,13 @@ const double _kMaxSlotScale = 4.0;
 /// corner handles — which sit on the element corners and spill outward — are
 /// fully touchable. `_slot` shifts the element back by the same amount so it
 /// doesn't move on selection. Must exceed _kCornerReach.
-const double _kChromePad = 64.0;
+const double _kChromePad = 80.0;
 
 /// Radius of each corner's resize touch zone (pre-scale template px / scale).
 /// Starting a one-finger drag within this distance of a corner resizes;
-/// anywhere else moves.
-const double _kCornerReach = 56.0;
+/// anywhere else moves. Generous so the handles are easy to grab even when the
+/// whole canvas is scaled down to fit the screen.
+const double _kCornerReach = 72.0;
 
 /// Renders ONE panel (a carousel slide) in template space. The screen lays
 /// out several of these side by side; tests and single-panel templates use the

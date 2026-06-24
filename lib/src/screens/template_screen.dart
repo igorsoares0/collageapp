@@ -249,102 +249,108 @@ class _TemplateScreenState extends State<TemplateScreen> {
                 final panelWidth =
                     constraints.maxWidth *
                     (template.panels.length == 1 ? 1.0 : 0.82);
-                // Pinch-to-zoom is live only when nothing is selected; a
-                // selected slot's pinch resizes the slot instead, so disable
-                // the viewer's pan/scale then (the zoom transform stays put).
+                // With nothing selected the surface is an InteractiveViewer
+                // (pinch zoom + pan). With a slot selected it becomes a STATIC
+                // transform — same matrix and layout, but NO gesture detector:
+                // InteractiveViewer's detector stays opaque even when pan/scale
+                // are off and would otherwise fight the selection handles.
                 final interacting =
                     _selectedSlot != null || _editingSlot != null;
+                final strip = SizedBox(
+                  height: canvasHeight,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 16,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        for (final panel in template.panels)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 6),
+                            child: SizedBox(
+                              width: panelWidth,
+                              child: RepaintBoundary(
+                                key: _panelKey(panel.id),
+                                child: PanelCanvas(
+                                  panel: panel,
+                                  canvasWidth: template.canvasWidth,
+                                  canvasHeight: template.canvasHeight,
+                                  content: _content,
+                                  selectedSlotId: _selectedSlot,
+                                  editingSlotId: _editingSlot,
+                                  onSlotTap: (slotId) {
+                                    _focusedPanelId = panel.id;
+                                    _handleSlotTap(template, slotId);
+                                  },
+                                  onCanvasTap: () => setState(() {
+                                    _focusedPanelId = panel.id;
+                                    _selectedSlot = null;
+                                    _editingSlot = null;
+                                  }),
+                                  onTextChanged: (slotId, value) =>
+                                      setState(() {
+                                        _content = _content.withText(
+                                          slotId,
+                                          value,
+                                        );
+                                      }),
+                                  onSlotDrag: (slotId, delta) => setState(() {
+                                    _content = _content.withOffset(
+                                      slotId,
+                                      _content.offsetFor(slotId) + delta,
+                                    );
+                                  }),
+                                  onSlotScale: (slotId, scale) => setState(() {
+                                    _content = _content.withScale(
+                                      slotId,
+                                      scale,
+                                    );
+                                  }),
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                );
+                // Same matrix + layout in both branches (constrained:false →
+                // content-sized, top-left aligned, clipped), so toggling on
+                // selection never shifts the canvas.
+                final Widget surface = interacting
+                    ? ClipRect(
+                        child: OverflowBox(
+                          alignment: Alignment.topLeft,
+                          minWidth: 0,
+                          minHeight: 0,
+                          maxWidth: double.infinity,
+                          maxHeight: double.infinity,
+                          child: Transform(
+                            transform: _zoom.value,
+                            child: strip,
+                          ),
+                        ),
+                      )
+                    : InteractiveViewer(
+                        transformationController: _zoom,
+                        constrained: false,
+                        // Horizontal-only at 1x (browse panels); free once
+                        // zoomed in so every corner is reachable.
+                        panAxis: _isZoomed ? PanAxis.free : PanAxis.horizontal,
+                        minScale: 1,
+                        maxScale: 4,
+                        boundaryMargin: const EdgeInsets.all(64),
+                        child: strip,
+                      );
                 return SingleChildScrollView(
-                  // Vertical scroll only while editing — that's when the
-                  // framework needs to lift the focused field above the
-                  // keyboard. Otherwise frozen so slot drags don't scroll it.
+                  // Vertical scroll only while editing — the framework lifts the
+                  // focused field above the keyboard then. Frozen otherwise.
                   physics: _editingSlot != null
                       ? const ClampingScrollPhysics()
                       : const NeverScrollableScrollPhysics(),
-                  child: SizedBox(
-                    height: canvasHeight,
-                    child: InteractiveViewer(
-                      transformationController: _zoom,
-                      // The strip is wider than the viewport (panels side by
-                      // side), so it sizes to its content, not the viewport;
-                      // panning then moves between panels and around when
-                      // zoomed in.
-                      constrained: false,
-                      panEnabled: !interacting,
-                      scaleEnabled: !interacting,
-                      // Horizontal-only at 1x (browse panels); free once zoomed
-                      // in so every corner is reachable.
-                      panAxis: _isZoomed ? PanAxis.free : PanAxis.horizontal,
-                      minScale: 1,
-                      maxScale: 4,
-                      boundaryMargin: const EdgeInsets.all(64),
-                      child: SizedBox(
-                        height: canvasHeight,
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 16,
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              for (final panel in template.panels)
-                                Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 6,
-                                  ),
-                                  child: SizedBox(
-                                    width: panelWidth,
-                                    child: RepaintBoundary(
-                                      key: _panelKey(panel.id),
-                                      child: PanelCanvas(
-                                        panel: panel,
-                                        canvasWidth: template.canvasWidth,
-                                        canvasHeight: template.canvasHeight,
-                                        content: _content,
-                                        selectedSlotId: _selectedSlot,
-                                        editingSlotId: _editingSlot,
-                                        onSlotTap: (slotId) {
-                                          _focusedPanelId = panel.id;
-                                          _handleSlotTap(template, slotId);
-                                        },
-                                        onCanvasTap: () => setState(() {
-                                          _focusedPanelId = panel.id;
-                                          _selectedSlot = null;
-                                          _editingSlot = null;
-                                        }),
-                                        onTextChanged: (slotId, value) =>
-                                            setState(() {
-                                              _content = _content.withText(
-                                                slotId,
-                                                value,
-                                              );
-                                            }),
-                                        onSlotDrag: (slotId, delta) =>
-                                            setState(() {
-                                              _content = _content.withOffset(
-                                                slotId,
-                                                _content.offsetFor(slotId) +
-                                                    delta,
-                                              );
-                                            }),
-                                        onSlotScale: (slotId, scale) =>
-                                            setState(() {
-                                              _content = _content.withScale(
-                                                slotId,
-                                                scale,
-                                              );
-                                            }),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
+                  child: SizedBox(height: canvasHeight, child: surface),
                 );
               },
             ),
