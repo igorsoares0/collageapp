@@ -1,5 +1,7 @@
 import 'package:flutter/widgets.dart';
 
+import 'template.dart';
+
 /// User content injected into template slots (spec §12). Templates never
 /// contain user content; this map is the app-side counterpart of slotIds.
 /// [offsets] (template space) and [scales] are user position/size
@@ -31,6 +33,13 @@ class SlotContent {
   /// template (the change rides into the export like every other override).
   final Map<String, bool> hiddenLayers;
 
+  /// Layers the user added on top of the template, keyed by panel id (in the
+  /// order they were added — newest on top). Templates never gain layers; the
+  /// app stacks these above the template's own and treats them exactly like
+  /// template slots (same select/move/resize/style/hide/reorder/export path),
+  /// so they carry their own SlotContent overrides under their slot ids.
+  final Map<String, List<Layer>> addedLayers;
+
   const SlotContent({
     this.texts = const {},
     this.images = const {},
@@ -43,6 +52,7 @@ class SlotContent {
     this.panelBackgrounds = const {},
     this.layerOrders = const {},
     this.hiddenLayers = const {},
+    this.addedLayers = const {},
   });
 
   String? textFor(String slotId) => texts[slotId];
@@ -59,6 +69,16 @@ class SlotContent {
   /// flag as the fallback when the user hasn't overridden it.
   bool layerHidden(String layerId, bool templateHidden) =>
       hiddenLayers[layerId] ?? templateHidden;
+
+  /// User-added layers for [panelId], stacked above the template's own.
+  List<Layer> addedLayersFor(String panelId) =>
+      addedLayers[panelId] ?? const [];
+
+  /// Every user-added layer across all panels (slot/layer ids are globally
+  /// unique, so this is safe for id-based lookups).
+  List<Layer> get allAddedLayers => [
+    for (final layers in addedLayers.values) ...layers,
+  ];
 
   /// The panel's layer ids in effective stack order (index 0 = bottom),
   /// applying the user's reorder override over [naturalOrder]. Any layer the
@@ -112,6 +132,36 @@ class SlotContent {
   SlotContent withLayerOrder(String panelId, List<String> ids) =>
       _copy(layerOrders: {...layerOrders, panelId: ids});
 
+  SlotContent withAddedLayer(String panelId, Layer layer) => _copy(
+    addedLayers: {
+      ...addedLayers,
+      panelId: [...addedLayersFor(panelId), layer],
+    },
+  );
+
+  /// Removes a user-added layer (and its order override, which would otherwise
+  /// pin a now-missing id). Per-slot overrides under its slotId become inert
+  /// once nothing references them, so they need no cleanup.
+  SlotContent withoutAddedLayer(String panelId, String layerId) {
+    final remaining = [
+      for (final l in addedLayersFor(panelId))
+        if (l.id != layerId) l,
+    ];
+    final order = layerOrders[panelId];
+    return _copy(
+      addedLayers: {...addedLayers, panelId: remaining},
+      layerOrders: order == null
+          ? null
+          : {
+              ...layerOrders,
+              panelId: [
+                for (final id in order)
+                  if (id != layerId) id,
+              ],
+            },
+    );
+  }
+
   /// Moves [layerId] one step toward the front ([toFront] true) or back
   /// within its panel's stack. A no-op at the corresponding end. [naturalOrder]
   /// seeds the order when no override exists yet.
@@ -145,6 +195,7 @@ class SlotContent {
     Map<String, Color>? panelBackgrounds,
     Map<String, List<String>>? layerOrders,
     Map<String, bool>? hiddenLayers,
+    Map<String, List<Layer>>? addedLayers,
   }) => SlotContent(
     texts: texts ?? this.texts,
     images: images ?? this.images,
@@ -157,5 +208,6 @@ class SlotContent {
     panelBackgrounds: panelBackgrounds ?? this.panelBackgrounds,
     layerOrders: layerOrders ?? this.layerOrders,
     hiddenLayers: hiddenLayers ?? this.hiddenLayers,
+    addedLayers: addedLayers ?? this.addedLayers,
   );
 }

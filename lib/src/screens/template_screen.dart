@@ -55,6 +55,124 @@ class _TemplateScreenState extends State<TemplateScreen> {
   GlobalKey _panelKey(String panelId) =>
       _panelKeys.putIfAbsent(panelId, () => GlobalKey());
 
+  /// The panel with the user's added layers stacked on top — what the canvas,
+  /// the layer sheet and the export all render. The template itself is never
+  /// touched; added layers live in [_content].
+  Panel _effectivePanel(Panel panel) {
+    final added = _content.addedLayersFor(panel.id);
+    if (added.isEmpty) return panel;
+    return Panel(
+      id: panel.id,
+      backgroundColor: panel.backgroundColor,
+      layers: [...panel.layers, ...added],
+    );
+  }
+
+  /// All layers visible to lookups: the template's plus everything the user
+  /// added (slot ids are globally unique, so a flat list is fine).
+  List<Layer> _allLayers(Template template) => [
+    ...template.layers,
+    ..._content.allAddedLayers,
+  ];
+
+  /// A slot/layer id not used by the template or any added layer, so a new
+  /// element never collides with an existing slot's overrides.
+  String _uniqueToken(String base, Template template) {
+    final used = {
+      for (final l in _allLayers(template)) l.id,
+      ...template.slotIds,
+    };
+    var n = 1;
+    while (used.contains('${base}_$n')) {
+      n++;
+    }
+    return '${base}_$n';
+  }
+
+  /// Adds a fresh text element to the focused panel, centered, and drops the
+  /// user straight into inline editing so they can type immediately.
+  void _addTextLayer(Template template) {
+    final panelId = _focusedPanelId ?? template.panels.first.id;
+    final panel = template.panels.firstWhere(
+      (p) => p.id == panelId,
+      orElse: () => template.panels.first,
+    );
+    final token = _uniqueToken('text', template);
+    final bg = _content.backgroundFor(panel.id) ?? panel.backgroundColor;
+    // Pick a default ink that reads against the current background.
+    final color = bg.computeLuminance() > 0.5
+        ? const Color(0xFF111111)
+        : const Color(0xFFFAFAFA);
+    final width = template.canvasWidth * 0.8;
+    final layer = TextLayer(
+      id: token,
+      hidden: false,
+      slotId: token,
+      x: (template.canvasWidth - width) / 2,
+      y: template.canvasHeight * 0.42,
+      width: width,
+      fontFamily: 'Inter',
+      fontSize: 88,
+      fontWeight: 400,
+      color: color,
+      alignment: 'center',
+    );
+    setState(() {
+      _content = _content.withAddedLayer(panel.id, layer);
+      _focusedPanelId = panel.id;
+      _selectedSlot = token;
+      _editingSlot = token;
+    });
+  }
+
+  /// Adds a fresh image element to the focused panel, centered, and opens the
+  /// gallery right away (an empty image element is useless on its own).
+  void _addImageLayer(Template template) {
+    final panelId = _focusedPanelId ?? template.panels.first.id;
+    final panel = template.panels.firstWhere(
+      (p) => p.id == panelId,
+      orElse: () => template.panels.first,
+    );
+    final token = _uniqueToken('image', template);
+    final side = template.canvasWidth * 0.5;
+    final layer = ImageLayer(
+      id: token,
+      hidden: false,
+      slotId: token,
+      x: (template.canvasWidth - side) / 2,
+      y: (template.canvasHeight - side) / 2,
+      width: side,
+      height: side,
+      rotation: 0,
+      opacity: 1,
+      borderRadius: 0,
+    );
+    setState(() {
+      _content = _content.withAddedLayer(panel.id, layer);
+      _focusedPanelId = panel.id;
+      _selectedSlot = token;
+      _editingSlot = null;
+    });
+    _pickImage(token);
+  }
+
+  /// Deletes a user-added layer (template layers can only be hidden, not
+  /// removed). Clears the selection if it pointed at the removed element.
+  void _removeAddedLayer(String panelId, Layer layer) {
+    setState(() {
+      _content = _content.withoutAddedLayer(panelId, layer.id);
+      final slotId = switch (layer) {
+        ImageLayer l => l.slotId,
+        TextLayer l => l.slotId,
+        _ => null,
+      };
+      if (slotId != null && _selectedSlot == slotId) {
+        _selectedSlot = null;
+        _editingSlot = null;
+      }
+    });
+  }
+
   @override
   void initState() {
     super.initState();
@@ -94,9 +212,9 @@ class _TemplateScreenState extends State<TemplateScreen> {
   /// slot's second tap starts inline editing. An image slot's gallery is NOT
   /// opened here — only its photo icon opens it (see [_onPickImage]).
   void _handleSlotTap(Template template, String slotId) {
-    final isImage = template.layers.any(
-      (l) => l is ImageLayer && l.slotId == slotId,
-    );
+    final isImage = _allLayers(
+      template,
+    ).any((l) => l is ImageLayer && l.slotId == slotId);
     final wasSelected = _selectedSlot == slotId;
     if (!wasSelected) {
       setState(() {
@@ -126,59 +244,72 @@ class _TemplateScreenState extends State<TemplateScreen> {
   /// updates underneath.
   void _showLayersSheet(Template template) {
     final panelId = _focusedPanelId ?? template.panels.first.id;
-    final panel = template.panels.firstWhere(
+    final templatePanel = template.panels.firstWhere(
       (p) => p.id == panelId,
       orElse: () => template.panels.first,
     );
-    final natural = [for (final l in panel.layers) l.id];
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: const Color(0xFF27272A),
       builder: (sheetContext) {
-        // A StatefulBuilder so reorder/hide repaint the sheet rows; the screen
-        // keeps the canonical state (_content) and rebuilds the canvas too.
+        // A StatefulBuilder so reorder/hide/remove repaint the sheet rows; the
+        // screen keeps the canonical state (_content) and rebuilds the canvas.
         return StatefulBuilder(
-          builder: (context, setSheetState) => LayersSheet(
-            panel: panel,
-            content: _content,
-            onSelect: (slotId) {
-              Navigator.pop(sheetContext);
-              setState(() {
-                _selectedSlot = slotId;
-                _editingSlot = null;
-              });
-            },
-            onToggleHidden: (layer) {
-              final nowHidden = !_content.layerHidden(layer.id, layer.hidden);
-              setState(() {
-                _content = _content.withLayerHidden(layer.id, nowHidden);
-                // A hidden element can't stay selected/edited.
-                if (nowHidden) {
-                  final slotId = switch (layer) {
-                    ImageLayer l => l.slotId,
-                    TextLayer l => l.slotId,
-                    _ => null,
-                  };
-                  if (slotId != null && _selectedSlot == slotId) {
-                    _selectedSlot = null;
-                    _editingSlot = null;
+          builder: (context, setSheetState) {
+            // Recompute each rebuild so an added/removed layer shows up live.
+            final panel = _effectivePanel(templatePanel);
+            final natural = [for (final l in panel.layers) l.id];
+            return LayersSheet(
+              panel: panel,
+              content: _content,
+              // Only the user's own added layers can be deleted; template
+              // layers can be hidden but not removed.
+              removableLayerIds: {
+                for (final l in _content.addedLayersFor(panel.id)) l.id,
+              },
+              onRemove: (layer) {
+                _removeAddedLayer(panel.id, layer);
+                setSheetState(() {});
+              },
+              onSelect: (slotId) {
+                Navigator.pop(sheetContext);
+                setState(() {
+                  _selectedSlot = slotId;
+                  _editingSlot = null;
+                });
+              },
+              onToggleHidden: (layer) {
+                final nowHidden = !_content.layerHidden(layer.id, layer.hidden);
+                setState(() {
+                  _content = _content.withLayerHidden(layer.id, nowHidden);
+                  // A hidden element can't stay selected/edited.
+                  if (nowHidden) {
+                    final slotId = switch (layer) {
+                      ImageLayer l => l.slotId,
+                      TextLayer l => l.slotId,
+                      _ => null,
+                    };
+                    if (slotId != null && _selectedSlot == slotId) {
+                      _selectedSlot = null;
+                      _editingSlot = null;
+                    }
                   }
-                }
-              });
-              setSheetState(() {});
-            },
-            onReorder: (layer, {required toFront}) {
-              setState(() {
-                _content = _content.withLayerMoved(
-                  panel.id,
-                  natural,
-                  layer.id,
-                  toFront: toFront,
-                );
-              });
-              setSheetState(() {});
-            },
-          ),
+                });
+                setSheetState(() {});
+              },
+              onReorder: (layer, {required toFront}) {
+                setState(() {
+                  _content = _content.withLayerMoved(
+                    panel.id,
+                    natural,
+                    layer.id,
+                    toFront: toFront,
+                  );
+                });
+                setSheetState(() {});
+              },
+            );
+          },
         );
       },
     );
@@ -243,6 +374,33 @@ class _TemplateScreenState extends State<TemplateScreen> {
             title: Text(template?.name ?? '…'),
             actions: [
               if (template != null)
+                PopupMenuButton<String>(
+                  icon: const Icon(Icons.add),
+                  tooltip: 'Add element',
+                  onSelected: (value) {
+                    if (value == 'text') _addTextLayer(template);
+                    if (value == 'image') _addImageLayer(template);
+                  },
+                  itemBuilder: (context) => const [
+                    PopupMenuItem(
+                      value: 'text',
+                      child: ListTile(
+                        leading: Icon(Icons.title),
+                        title: Text('Text'),
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: 'image',
+                      child: ListTile(
+                        leading: Icon(Icons.image_outlined),
+                        title: Text('Image'),
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+                  ],
+                ),
+              if (template != null)
                 IconButton(
                   icon: const Icon(Icons.layers_outlined),
                   tooltip: 'Layers',
@@ -286,7 +444,7 @@ class _TemplateScreenState extends State<TemplateScreen> {
   TextLayer? _selectedTextLayer(Template template) {
     final slot = _selectedSlot;
     if (slot == null) return null;
-    for (final layer in template.layers) {
+    for (final layer in _allLayers(template)) {
       if (layer is TextLayer && layer.slotId == slot) return layer;
     }
     return null;
@@ -345,7 +503,9 @@ class _TemplateScreenState extends State<TemplateScreen> {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        for (final panel in template.panels)
+                        for (final panel in template.panels.map(
+                          _effectivePanel,
+                        ))
                           Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 6),
                             child: SizedBox(

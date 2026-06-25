@@ -26,6 +26,13 @@ class LayersSheet extends StatelessWidget {
   /// Moves the layer one step toward the front ([toFront] true) or back.
   final void Function(Layer layer, {required bool toFront}) onReorder;
 
+  /// Ids of layers the user added (and may therefore delete). Template layers
+  /// are absent here — they can be hidden but not removed.
+  final Set<String> removableLayerIds;
+
+  /// Deletes a user-added layer. Required only for [removableLayerIds].
+  final void Function(Layer layer)? onRemove;
+
   const LayersSheet({
     super.key,
     required this.panel,
@@ -33,6 +40,8 @@ class LayersSheet extends StatelessWidget {
     required this.onSelect,
     required this.onToggleHidden,
     required this.onReorder,
+    this.removableLayerIds = const {},
+    this.onRemove,
   });
 
   static String? _slotIdOf(Layer layer) => switch (layer) {
@@ -103,6 +112,10 @@ class LayersSheet extends StatelessWidget {
                     onToggleHidden: () => onToggleHidden(layer),
                     onMoveFront: () => onReorder(layer, toFront: true),
                     onMoveBack: () => onReorder(layer, toFront: false),
+                    onRemove:
+                        removableLayerIds.contains(layer.id) && onRemove != null
+                        ? () => onRemove!(layer)
+                        : null,
                   );
                 },
               ),
@@ -125,6 +138,9 @@ class _LayerRow extends StatelessWidget {
   final VoidCallback onMoveFront;
   final VoidCallback onMoveBack;
 
+  /// Non-null only for user-added layers, which can be deleted.
+  final VoidCallback? onRemove;
+
   const _LayerRow({
     required this.layer,
     required this.hidden,
@@ -135,6 +151,7 @@ class _LayerRow extends StatelessWidget {
     required this.onToggleHidden,
     required this.onMoveFront,
     required this.onMoveBack,
+    this.onRemove,
   });
 
   @override
@@ -186,6 +203,13 @@ class _LayerRow extends StatelessWidget {
               color: hidden ? _muted : _accent,
               onTap: onToggleHidden,
             ),
+            if (onRemove != null)
+              _RowButton(
+                icon: Icons.delete_outline,
+                tooltip: 'Delete',
+                color: const Color(0xFFEF4444),
+                onTap: onRemove!,
+              ),
           ],
         ),
       ),

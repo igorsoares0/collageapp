@@ -75,6 +75,49 @@ void main() {
       expect(order.take(2), ['txt_title', 'img_hero']);
     });
 
+    test('added layers stack on top and can be removed', () {
+      const text = TextLayer(
+        id: 'text_1',
+        hidden: false,
+        slotId: 'text_1',
+        x: 0,
+        y: 0,
+        width: 100,
+        fontFamily: 'Inter',
+        fontSize: 40,
+        fontWeight: 400,
+        color: Color(0xFF000000),
+        alignment: 'center',
+      );
+      final added = const SlotContent().withAddedLayer(panel.id, text);
+      expect(added.addedLayersFor(panel.id).single.id, 'text_1');
+      expect(added.allAddedLayers, hasLength(1));
+
+      final removed = added.withoutAddedLayer(panel.id, 'text_1');
+      expect(removed.addedLayersFor(panel.id), isEmpty);
+    });
+
+    test('removing an added layer drops it from the order override', () {
+      const text = TextLayer(
+        id: 'text_1',
+        hidden: false,
+        slotId: 'text_1',
+        x: 0,
+        y: 0,
+        width: 100,
+        fontFamily: 'Inter',
+        fontSize: 40,
+        fontWeight: 400,
+        color: Color(0xFF000000),
+        alignment: 'center',
+      );
+      final withOrder = const SlotContent()
+          .withAddedLayer(panel.id, text)
+          .withLayerOrder(panel.id, [...natural, 'text_1']);
+      final removed = withOrder.withoutAddedLayer(panel.id, 'text_1');
+      expect(removed.layerOrders[panel.id], isNot(contains('text_1')));
+    });
+
     test('layerHidden defers to the template flag, then to the override', () {
       const content = SlotContent();
       // shape_hidden carries editor.hidden:true in the fixture.
@@ -178,6 +221,47 @@ void main() {
       expect(find.byTooltip('Hide'), findsWidgets);
       await tester.tap(find.byTooltip('Hide').first);
       expect(toggled, isNotEmpty);
+    });
+
+    testWidgets('only user-added layers expose a delete button', (
+      tester,
+    ) async {
+      const added = TextLayer(
+        id: 'text_1',
+        hidden: false,
+        slotId: 'text_1',
+        x: 0,
+        y: 0,
+        width: 100,
+        fontFamily: 'Inter',
+        fontSize: 40,
+        fontWeight: 400,
+        color: Color(0xFF000000),
+        alignment: 'center',
+      );
+      final effective = Panel(
+        id: panel.id,
+        backgroundColor: panel.backgroundColor,
+        layers: [...panel.layers, added],
+      );
+      final removed = <String>[];
+      await pump(
+        tester,
+        LayersSheet(
+          panel: effective,
+          content: const SlotContent(),
+          onSelect: (_) {},
+          onToggleHidden: (_) {},
+          onReorder: (_, {required toFront}) {},
+          removableLayerIds: const {'text_1'},
+          onRemove: (l) => removed.add(l.id),
+        ),
+      );
+
+      // Exactly one row (the added one) is deletable.
+      expect(find.byTooltip('Delete'), findsOneWidget);
+      await tester.tap(find.byTooltip('Delete'));
+      expect(removed, ['text_1']);
     });
   });
 }
