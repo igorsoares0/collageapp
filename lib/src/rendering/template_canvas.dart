@@ -123,6 +123,17 @@ class PanelCanvas extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Stack order and visibility honour the user's per-layer overrides
+    // (SlotContent), falling back to the template's own order/hidden flags.
+    final byId = {for (final l in panel.layers) l.id: l};
+    final orderedIds = content.orderedLayerIds(panel.id, [
+      for (final l in panel.layers) l.id,
+    ]);
+    final visibleLayers = [
+      for (final id in orderedIds)
+        if (byId[id] case final layer?)
+          if (!content.layerHidden(layer.id, layer.hidden)) layer,
+    ];
     return FittedBox(
       child: SizedBox(
         width: canvasWidth,
@@ -145,27 +156,24 @@ class PanelCanvas extends StatelessWidget {
                       content.backgroundFor(panel.id) ?? panel.backgroundColor,
                 ),
               ),
-              for (final layer in panel.layers)
-                if (!layer.hidden)
-                  _LayerWidget(
-                    layer: layer,
-                    content: content,
-                    fontResolver: fontResolver,
-                    onSlotTap: onSlotTap,
-                    onSlotDrag: onSlotDrag,
-                    onSlotScale: onSlotScale,
-                    onPickImage: onPickImage,
-                    onTextChanged: onTextChanged,
-                    selected:
-                        layer is ImageLayer && layer.slotId == selectedSlotId ||
-                        layer is TextLayer && layer.slotId == selectedSlotId,
-                    editing:
-                        layer is TextLayer && layer.slotId == editingSlotId,
-                    fieldKey:
-                        layer is TextLayer && layer.slotId == editingSlotId
-                        ? editingFieldKey
-                        : null,
-                  ),
+              for (final layer in visibleLayers)
+                _LayerWidget(
+                  layer: layer,
+                  content: content,
+                  fontResolver: fontResolver,
+                  onSlotTap: onSlotTap,
+                  onSlotDrag: onSlotDrag,
+                  onSlotScale: onSlotScale,
+                  onPickImage: onPickImage,
+                  onTextChanged: onTextChanged,
+                  selected:
+                      layer is ImageLayer && layer.slotId == selectedSlotId ||
+                      layer is TextLayer && layer.slotId == selectedSlotId,
+                  editing: layer is TextLayer && layer.slotId == editingSlotId,
+                  fieldKey: layer is TextLayer && layer.slotId == editingSlotId
+                      ? editingFieldKey
+                      : null,
+                ),
             ],
           ),
         ),

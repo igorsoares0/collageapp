@@ -7,6 +7,7 @@ import '../model/slot_content.dart';
 import '../model/template.dart';
 import '../rendering/export.dart';
 import '../rendering/template_canvas.dart';
+import '../widgets/layers_sheet.dart';
 import '../widgets/text_style_bar.dart';
 
 /// Renders one template and lets the user fill its slots (spec §12),
@@ -119,6 +120,70 @@ class _TemplateScreenState extends State<TemplateScreen> {
     _pickImage(slotId);
   }
 
+  /// Opens the layer manager for the focused panel: select an element (useful
+  /// when slots overlap), reorder its z-position, or hide/show it. All edits
+  /// are SlotContent overrides, so the sheet reflects them live and the canvas
+  /// updates underneath.
+  void _showLayersSheet(Template template) {
+    final panelId = _focusedPanelId ?? template.panels.first.id;
+    final panel = template.panels.firstWhere(
+      (p) => p.id == panelId,
+      orElse: () => template.panels.first,
+    );
+    final natural = [for (final l in panel.layers) l.id];
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: const Color(0xFF27272A),
+      builder: (sheetContext) {
+        // A StatefulBuilder so reorder/hide repaint the sheet rows; the screen
+        // keeps the canonical state (_content) and rebuilds the canvas too.
+        return StatefulBuilder(
+          builder: (context, setSheetState) => LayersSheet(
+            panel: panel,
+            content: _content,
+            onSelect: (slotId) {
+              Navigator.pop(sheetContext);
+              setState(() {
+                _selectedSlot = slotId;
+                _editingSlot = null;
+              });
+            },
+            onToggleHidden: (layer) {
+              final nowHidden = !_content.layerHidden(layer.id, layer.hidden);
+              setState(() {
+                _content = _content.withLayerHidden(layer.id, nowHidden);
+                // A hidden element can't stay selected/edited.
+                if (nowHidden) {
+                  final slotId = switch (layer) {
+                    ImageLayer l => l.slotId,
+                    TextLayer l => l.slotId,
+                    _ => null,
+                  };
+                  if (slotId != null && _selectedSlot == slotId) {
+                    _selectedSlot = null;
+                    _editingSlot = null;
+                  }
+                }
+              });
+              setSheetState(() {});
+            },
+            onReorder: (layer, {required toFront}) {
+              setState(() {
+                _content = _content.withLayerMoved(
+                  panel.id,
+                  natural,
+                  layer.id,
+                  toFront: toFront,
+                );
+              });
+              setSheetState(() {});
+            },
+          ),
+        );
+      },
+    );
+  }
+
   Future<void> _exportPng(Template template) async {
     // Deselect first: the handles (and the inline editor's cursor) are
     // widgets inside the RepaintBoundary and would end up in the PNG.
@@ -177,6 +242,12 @@ class _TemplateScreenState extends State<TemplateScreen> {
           appBar: AppBar(
             title: Text(template?.name ?? '…'),
             actions: [
+              if (template != null)
+                IconButton(
+                  icon: const Icon(Icons.layers_outlined),
+                  tooltip: 'Layers',
+                  onPressed: () => _showLayersSheet(template),
+                ),
               if (template != null)
                 IconButton(
                   icon: _exporting
