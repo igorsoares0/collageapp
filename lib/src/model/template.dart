@@ -24,20 +24,21 @@ class Panel {
     final bg = json['backgroundColor'];
     return Panel(
       id: json['id'] as String,
-      backgroundColor:
-          bg is String ? parseHexColor(bg) : const Color(0xFFFFFFFF),
+      backgroundColor: bg is String
+          ? parseHexColor(bg)
+          : const Color(0xFFFFFFFF),
       layers: _parseLayers(json['layers']),
     );
   }
 
   /// Slot ids of this panel's layers that accept user content, in stack order.
   List<String> get slotIds => [
-        for (final layer in layers)
-          if (layer is ImageLayer)
-            layer.slotId
-          else if (layer is TextLayer)
-            layer.slotId,
-      ];
+    for (final layer in layers)
+      if (layer is ImageLayer)
+        layer.slotId
+      else if (layer is TextLayer)
+        layer.slotId,
+  ];
 }
 
 List<Layer> _parseLayers(dynamic value) => (value as List<dynamic>)
@@ -85,8 +86,9 @@ class Template {
       panels = [
         Panel(
           id: 'panel_0',
-          backgroundColor:
-              bg is String ? parseHexColor(bg) : const Color(0xFFFFFFFF),
+          backgroundColor: bg is String
+              ? parseHexColor(bg)
+              : const Color(0xFFFFFFFF),
           layers: _parseLayers(json['layers']),
         ),
       ];

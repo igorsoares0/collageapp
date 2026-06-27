@@ -551,6 +551,13 @@ class _TemplateScreenState extends State<TemplateScreen> {
                                       scale,
                                     );
                                   }),
+                                  onSlotRotate: (slotId, degrees) =>
+                                      setState(() {
+                                        _content = _content.withRotation(
+                                          slotId,
+                                          degrees,
+                                        );
+                                      }),
                                 ),
                               ),
                             ),

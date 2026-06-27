@@ -35,7 +35,7 @@ class TemplateStore {
   Future<void>? pendingPrefetch;
 
   TemplateStore({TemplateApi? api, this.cacheDirOverride})
-      : api = api ?? TemplateApi();
+    : api = api ?? TemplateApi();
 
   Future<IndexResult> loadIndex() async {
     String body;
@@ -94,9 +94,11 @@ class TemplateStore {
 
   Future<File> _file(String name) async {
     if (_dir == null) {
-      final base = cacheDirOverride ??
+      final base =
+          cacheDirOverride ??
           Directory(
-              '${(await getApplicationSupportDirectory()).path}/template_cache');
+            '${(await getApplicationSupportDirectory()).path}/template_cache',
+          );
       _dir = await base.create(recursive: true);
     }
     return File('${_dir!.path}/$name');

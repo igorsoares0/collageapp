@@ -13,6 +13,12 @@ class SlotContent {
   final Map<String, ImageProvider> images;
   final Map<String, Offset> offsets;
   final Map<String, double> scales;
+
+  /// User rotation override per slot, in degrees clockwise. This is added on
+  /// top of the layer's own template rotation (image layers carry one; text
+  /// layers don't), so the slot rotates from wherever the designer placed it.
+  final Map<String, double> rotations;
+
   final Map<String, Color> colors;
   final Map<String, String> fonts;
   final Map<String, String> alignments;
@@ -45,6 +51,7 @@ class SlotContent {
     this.images = const {},
     this.offsets = const {},
     this.scales = const {},
+    this.rotations = const {},
     this.colors = const {},
     this.fonts = const {},
     this.alignments = const {},
@@ -59,6 +66,11 @@ class SlotContent {
   ImageProvider? imageFor(String slotId) => images[slotId];
   Offset offsetFor(String slotId) => offsets[slotId] ?? Offset.zero;
   double scaleFor(String slotId) => scales[slotId] ?? 1.0;
+
+  /// The user's rotation override for [slotId] in degrees (0 = none). Added to
+  /// the layer's own template rotation at render time.
+  double rotationFor(String slotId) => rotations[slotId] ?? 0.0;
+
   Color? colorFor(String slotId) => colors[slotId];
   String? fontFor(String slotId) => fonts[slotId];
   String? alignmentFor(String slotId) => alignments[slotId];
@@ -110,6 +122,9 @@ class SlotContent {
 
   SlotContent withScale(String slotId, double value) =>
       _copy(scales: {...scales, slotId: value});
+
+  SlotContent withRotation(String slotId, double degrees) =>
+      _copy(rotations: {...rotations, slotId: degrees});
 
   SlotContent withColor(String slotId, Color value) =>
       _copy(colors: {...colors, slotId: value});
@@ -188,6 +203,7 @@ class SlotContent {
     Map<String, ImageProvider>? images,
     Map<String, Offset>? offsets,
     Map<String, double>? scales,
+    Map<String, double>? rotations,
     Map<String, Color>? colors,
     Map<String, String>? fonts,
     Map<String, String>? alignments,
@@ -201,6 +217,7 @@ class SlotContent {
     images: images ?? this.images,
     offsets: offsets ?? this.offsets,
     scales: scales ?? this.scales,
+    rotations: rotations ?? this.rotations,
     colors: colors ?? this.colors,
     fonts: fonts ?? this.fonts,
     alignments: alignments ?? this.alignments,

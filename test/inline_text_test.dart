@@ -18,14 +18,17 @@ void main() {
   Future<void> pump(WidgetTester tester, Widget child) async {
     tester.view.physicalSize = const Size(540, 960);
     tester.view.devicePixelRatio = 1;
-    await tester.pumpWidget(MaterialApp(
-      debugShowCheckedModeBanner: false,
-      home: Center(child: child),
-    ));
+    await tester.pumpWidget(
+      MaterialApp(
+        debugShowCheckedModeBanner: false,
+        home: Center(child: child),
+      ),
+    );
   }
 
-  testWidgets('no TextField is rendered when nothing is being edited',
-      (tester) async {
+  testWidgets('no TextField is rendered when nothing is being edited', (
+    tester,
+  ) async {
     await pump(
       tester,
       TemplateCanvas(template: template, fontResolver: testFontResolver),
@@ -33,8 +36,9 @@ void main() {
     expect(find.byType(TextField), findsNothing);
   });
 
-  testWidgets('editing slot renders an inline TextField that streams changes',
-      (tester) async {
+  testWidgets('editing slot renders an inline TextField that streams changes', (
+    tester,
+  ) async {
     final changes = <String, String>{};
     await pump(
       tester,
@@ -58,8 +62,9 @@ void main() {
     expect(changes['title'], 'Verão 2026');
   });
 
-  testWidgets('per-slot color and font overrides reach the rendered text',
-      (tester) async {
+  testWidgets('per-slot color and font overrides reach the rendered text', (
+    tester,
+  ) async {
     final familiesSeen = <String>[];
     TextStyle capturingResolver(String family, TextStyle base) {
       familiesSeen.add(family);
@@ -86,8 +91,9 @@ void main() {
     expect(text.style!.color, const Color(0xFF3B82F6));
   });
 
-  testWidgets('alignment and weight overrides reach the rendered text',
-      (tester) async {
+  testWidgets('alignment and weight overrides reach the rendered text', (
+    tester,
+  ) async {
     await pump(
       tester,
       TemplateCanvas(

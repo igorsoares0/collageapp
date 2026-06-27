@@ -11,9 +11,9 @@ TextStyle testFontResolver(String family, TextStyle base) => base;
 
 void main() {
   Template fixture({String? backgroundColor}) {
-    final json = jsonDecode(
-      File('test/fixtures/fashion_story.json').readAsStringSync(),
-    ) as Map<String, dynamic>;
+    final json =
+        jsonDecode(File('test/fixtures/fashion_story.json').readAsStringSync())
+            as Map<String, dynamic>;
     if (backgroundColor != null) {
       (json['canvas'] as Map<String, dynamic>)['backgroundColor'] =
           backgroundColor;
@@ -44,7 +44,9 @@ void main() {
     expect(backgroundOf(tester), const Color(0xFF1C1917));
   });
 
-  testWidgets('user background override wins over the template', (tester) async {
+  testWidgets('user background override wins over the template', (
+    tester,
+  ) async {
     // Classic fixture reads as one panel with id 'panel_0'.
     await pump(
       tester,
@@ -59,12 +61,17 @@ void main() {
     expect(backgroundOf(tester), const Color(0xFF2563EB));
   });
 
-  testWidgets('per-panel override only affects the keyed panel', (tester) async {
+  testWidgets('per-panel override only affects the keyed panel', (
+    tester,
+  ) async {
     await pump(
       tester,
       PanelCanvas(
-        panel:
-            const Panel(id: 'p2', backgroundColor: Color(0xFF111111), layers: []),
+        panel: const Panel(
+          id: 'p2',
+          backgroundColor: Color(0xFF111111),
+          layers: [],
+        ),
         canvasWidth: 1080,
         canvasHeight: 1920,
         // Override is keyed to a different panel, so it must not apply here.

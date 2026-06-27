@@ -17,28 +17,28 @@ void main() {
     await tmp.delete(recursive: true);
   });
 
-  final fixture =
-      File('test/fixtures/fashion_story.json').readAsStringSync();
-  const indexBody = '[{"id":"tpl_1","name":"Fashion","schemaVersion":1,'
+  final fixture = File('test/fixtures/fashion_story.json').readAsStringSync();
+  const indexBody =
+      '[{"id":"tpl_1","name":"Fashion","schemaVersion":1,'
       '"aspectRatio":"9:16","category":null,"premium":false,'
       '"thumbnailDataUrl":null}]';
   final recordBody = '{"template": $fixture}';
 
   TemplateStore storeWith(http.Client client) => TemplateStore(
-        api: TemplateApi(client: client),
-        cacheDirOverride: tmp,
-      );
+    api: TemplateApi(client: client),
+    cacheDirOverride: tmp,
+  );
 
-  http.Client onlineClient() => MockClient((req) async =>
-      req.url.path == '/api/templates'
-          ? http.Response(indexBody, 200)
-          : http.Response(recordBody, 200));
+  http.Client onlineClient() => MockClient(
+    (req) async => req.url.path == '/api/templates'
+        ? http.Response(indexBody, 200)
+        : http.Response(recordBody, 200),
+  );
 
   http.Client offlineClient() =>
       MockClient((req) async => throw const SocketException('offline'));
 
-  test('online: serves the network and prefetches templates to disk',
-      () async {
+  test('online: serves the network and prefetches templates to disk', () async {
     final store = storeWith(onlineClient());
     final result = await store.loadIndex();
 
@@ -69,6 +69,8 @@ void main() {
     final store = storeWith(offlineClient());
     await expectLater(store.loadIndex(), throwsA(isA<SocketException>()));
     await expectLater(
-        store.loadTemplate('tpl_1'), throwsA(isA<SocketException>()));
+      store.loadTemplate('tpl_1'),
+      throwsA(isA<SocketException>()),
+    );
   });
 }

@@ -48,7 +48,7 @@ class TemplateApi {
   final http.Client _client;
 
   TemplateApi({this.baseUrl = kApiBase, http.Client? client})
-      : _client = client ?? http.Client();
+    : _client = client ?? http.Client();
 
   /// Template index (spec §26 step 1). Templates whose schema is newer than
   /// this renderer understands are filtered out, never rendered wrong.
@@ -67,8 +67,9 @@ class TemplateApi {
   }
 
   Future<String> fetchTemplateBody(String id) async {
-    final res = await _client
-        .get(Uri.parse('$baseUrl/api/templates/${Uri.encodeComponent(id)}'));
+    final res = await _client.get(
+      Uri.parse('$baseUrl/api/templates/${Uri.encodeComponent(id)}'),
+    );
     _ensureOk(res);
     return res.body;
   }

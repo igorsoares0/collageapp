@@ -45,8 +45,10 @@ class _GalleryScreenState extends State<GalleryScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text('Could not load templates.\n${snapshot.error}',
-                        textAlign: TextAlign.center),
+                    Text(
+                      'Could not load templates.\n${snapshot.error}',
+                      textAlign: TextAlign.center,
+                    ),
                     const SizedBox(height: 12),
                     FilledButton(
                       onPressed: _refresh,
@@ -65,8 +67,10 @@ class _GalleryScreenState extends State<GalleryScreen> {
                 Container(
                   width: double.infinity,
                   color: const Color(0xFF78350F),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
                   child: const Text(
                     'Offline — showing downloaded templates',
                     textAlign: TextAlign.center,
@@ -82,11 +86,11 @@ class _GalleryScreenState extends State<GalleryScreen> {
                           padding: const EdgeInsets.all(12),
                           gridDelegate:
                               const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 2,
-                            childAspectRatio: 0.62,
-                            crossAxisSpacing: 12,
-                            mainAxisSpacing: 12,
-                          ),
+                                crossAxisCount: 2,
+                                childAspectRatio: 0.62,
+                                crossAxisSpacing: 12,
+                                mainAxisSpacing: 12,
+                              ),
                           itemCount: templates.length,
                           itemBuilder: (context, i) => _TemplateCard(
                             summary: templates[i],
@@ -140,10 +144,12 @@ class _TemplateCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(summary.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.titleSmall),
+                  Text(
+                    summary.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
                   Text(
                     [
                       summary.aspectRatio,

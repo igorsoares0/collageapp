@@ -13,23 +13,22 @@ import 'package:flutter_test/flutter_test.dart';
 TextStyle testFontResolver(String family, TextStyle base) => base;
 
 void main() {
-
   final template = Template.fromJson(
     jsonDecode(File('test/fixtures/fashion_story.json').readAsStringSync())
         as Map<String, dynamic>,
   );
 
   Widget host(Widget child) => MaterialApp(
-        debugShowCheckedModeBanner: false,
-        home: Center(child: child),
-      );
+    debugShowCheckedModeBanner: false,
+    home: Center(child: child),
+  );
 
   testWidgets('renders the fixture template (empty slots)', (tester) async {
     tester.view.physicalSize = const Size(540, 960);
     tester.view.devicePixelRatio = 1;
-    await tester.pumpWidget(host(
-      TemplateCanvas(template: template, fontResolver: testFontResolver),
-    ));
+    await tester.pumpWidget(
+      host(TemplateCanvas(template: template, fontResolver: testFontResolver)),
+    );
 
     await expectLater(
       find.byType(TemplateCanvas),
@@ -40,17 +39,18 @@ void main() {
   testWidgets('renders user content injected into slots', (tester) async {
     tester.view.physicalSize = const Size(540, 960);
     tester.view.devicePixelRatio = 1;
-    const content = SlotContent(texts: {
-      'title': 'Verão 2026',
-      'subtitle': 'nova coleção · em breve',
-    });
-    await tester.pumpWidget(host(
-      TemplateCanvas(
-        template: template,
-        content: content,
-        fontResolver: testFontResolver,
+    const content = SlotContent(
+      texts: {'title': 'Verão 2026', 'subtitle': 'nova coleção · em breve'},
+    );
+    await tester.pumpWidget(
+      host(
+        TemplateCanvas(
+          template: template,
+          content: content,
+          fontResolver: testFontResolver,
+        ),
       ),
-    ));
+    );
 
     await expectLater(
       find.byType(TemplateCanvas),

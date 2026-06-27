@@ -21,18 +21,20 @@ void main() {
     tester.view.physicalSize = const Size(540, 960);
     tester.view.devicePixelRatio = 1;
     final key = GlobalKey();
-    await tester.pumpWidget(MaterialApp(
-      debugShowCheckedModeBanner: false,
-      home: Center(
-        child: RepaintBoundary(
-          key: key,
-          child: TemplateCanvas(
-            template: template,
-            fontResolver: testFontResolver,
+    await tester.pumpWidget(
+      MaterialApp(
+        debugShowCheckedModeBanner: false,
+        home: Center(
+          child: RepaintBoundary(
+            key: key,
+            child: TemplateCanvas(
+              template: template,
+              fontResolver: testFontResolver,
+            ),
           ),
         ),
       ),
-    ));
+    );
 
     // toImage/instantiateImageCodec are real engine async work and never
     // complete inside testWidgets' fake-async zone — hence runAsync.
@@ -40,10 +42,7 @@ void main() {
       final bytes = await capturePng(key, template.canvasWidth);
       final codec = await ui.instantiateImageCodec(bytes);
       final frame = await codec.getNextFrame();
-      return Size(
-        frame.image.width.toDouble(),
-        frame.image.height.toDouble(),
-      );
+      return Size(frame.image.width.toDouble(), frame.image.height.toDouble());
     });
 
     expect(size!.width, template.canvasWidth);

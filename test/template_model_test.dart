@@ -6,9 +6,9 @@ import 'package:collageapp/src/model/template.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  final json = jsonDecode(
-    File('test/fixtures/fashion_story.json').readAsStringSync(),
-  ) as Map<String, dynamic>;
+  final json =
+      jsonDecode(File('test/fixtures/fashion_story.json').readAsStringSync())
+          as Map<String, dynamic>;
 
   test('parses the editor fixture template', () {
     final template = Template.fromJson(json);

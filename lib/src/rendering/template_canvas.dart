@@ -45,6 +45,11 @@ const double _kChromePad = 80.0;
 /// whole canvas is scaled down to fit the screen.
 const double _kCornerReach = 72.0;
 
+/// How far below the element's bottom edge the rotation handle floats (pre-
+/// scale template px / scale). Kept under [_kChromePad] so the handle — and its
+/// touch zone — stay inside the chrome's hit region that _SlotGestures covers.
+const double _kRotateHandleDrop = 44.0;
+
 /// Renders ONE panel (a carousel slide) in template space. The screen lays
 /// out several of these side by side; tests and single-panel templates use the
 /// [TemplateCanvas] convenience wrapper below.
@@ -98,6 +103,12 @@ class PanelCanvas extends StatelessWidget {
   /// SlotContent.scales.
   final void Function(String slotId, double scale)? onSlotScale;
 
+  /// When set, slot layers can be rotated by dragging the rotation handle
+  /// below the element. [degrees] is the new absolute USER rotation for the
+  /// slot (added on top of any template rotation); store it in
+  /// SlotContent.rotations.
+  final void Function(String slotId, double degrees)? onSlotRotate;
+
   /// Tap on an image slot's photo icon — the ONLY way to open the gallery, so
   /// tapping the element itself just selects it (for move/resize). Empty slots
   /// show the icon inline; a filled, selected slot shows a "replace" overlay.
@@ -117,6 +128,7 @@ class PanelCanvas extends StatelessWidget {
     this.onTextChanged,
     this.onSlotDrag,
     this.onSlotScale,
+    this.onSlotRotate,
     this.onPickImage,
     this.editingFieldKey,
   });
@@ -164,6 +176,7 @@ class PanelCanvas extends StatelessWidget {
                   onSlotTap: onSlotTap,
                   onSlotDrag: onSlotDrag,
                   onSlotScale: onSlotScale,
+                  onSlotRotate: onSlotRotate,
                   onPickImage: onPickImage,
                   onTextChanged: onTextChanged,
                   selected:
@@ -196,6 +209,7 @@ class TemplateCanvas extends StatelessWidget {
   final void Function(String slotId, String value)? onTextChanged;
   final void Function(String slotId, Offset delta)? onSlotDrag;
   final void Function(String slotId, double scale)? onSlotScale;
+  final void Function(String slotId, double degrees)? onSlotRotate;
 
   const TemplateCanvas({
     super.key,
@@ -209,6 +223,7 @@ class TemplateCanvas extends StatelessWidget {
     this.onTextChanged,
     this.onSlotDrag,
     this.onSlotScale,
+    this.onSlotRotate,
   });
 
   @override
@@ -226,6 +241,7 @@ class TemplateCanvas extends StatelessWidget {
       onTextChanged: onTextChanged,
       onSlotDrag: onSlotDrag,
       onSlotScale: onSlotScale,
+      onSlotRotate: onSlotRotate,
     );
   }
 }
@@ -237,6 +253,7 @@ class _LayerWidget extends StatelessWidget {
   final void Function(String slotId)? onSlotTap;
   final void Function(String slotId, Offset delta)? onSlotDrag;
   final void Function(String slotId, double scale)? onSlotScale;
+  final void Function(String slotId, double degrees)? onSlotRotate;
   final void Function(String slotId)? onPickImage;
   final void Function(String slotId, String value)? onTextChanged;
   final bool selected;
@@ -250,6 +267,7 @@ class _LayerWidget extends StatelessWidget {
     this.onSlotTap,
     this.onSlotDrag,
     this.onSlotScale,
+    this.onSlotRotate,
     this.onPickImage,
     this.onTextChanged,
     this.selected = false,
@@ -264,16 +282,22 @@ class _LayerWidget extends StatelessWidget {
         l.slotId,
         l.x,
         l.y,
-        _rotated(
-          l.rotation,
-          _chromed(
-            l.slotId,
-            _ImageSlot(
-              layer: l,
-              content: content,
-              interactive: onSlotTap != null,
-              selected: selected,
-              onPick: onPickImage,
+        // User rotation pivots around the element center (Canva-style); it
+        // wraps the designer's template rotation, which keeps its top-left
+        // origin (the Konva contract shared with the web editor).
+        _userRotated(
+          l.slotId,
+          _rotated(
+            l.rotation,
+            _chromed(
+              l.slotId,
+              _ImageSlot(
+                layer: l,
+                content: content,
+                interactive: onSlotTap != null,
+                selected: selected,
+                onPick: onPickImage,
+              ),
             ),
           ),
         ),
@@ -282,15 +306,19 @@ class _LayerWidget extends StatelessWidget {
         l.slotId,
         l.x,
         l.y,
-        _chromed(
+        // Text layers carry no template rotation; only the user's.
+        _userRotated(
           l.slotId,
-          _TextSlot(
-            layer: l,
-            content: content,
-            fontResolver: fontResolver,
-            editing: editing,
-            fieldKey: fieldKey,
-            onTextChanged: onTextChanged,
+          _chromed(
+            l.slotId,
+            _TextSlot(
+              layer: l,
+              content: content,
+              fontResolver: fontResolver,
+              editing: editing,
+              fieldKey: fieldKey,
+              onTextChanged: onTextChanged,
+            ),
           ),
         ),
         // The TextField owns cursor/selection gestures while editing.
@@ -334,14 +362,19 @@ class _LayerWidget extends StatelessWidget {
     final pad = selected ? _kChromePad / scale : 0.0;
     Widget inner = child;
     if (gestures &&
-        (onSlotTap != null || onSlotDrag != null || onSlotScale != null)) {
+        (onSlotTap != null ||
+            onSlotDrag != null ||
+            onSlotScale != null ||
+            onSlotRotate != null)) {
       inner = _SlotGestures(
         slotId: slotId,
         currentScale: scale,
+        currentRotation: content.rotationFor(slotId),
         selected: selected,
         onTap: onSlotTap,
         onDrag: onSlotDrag,
         onScaleChange: onSlotScale,
+        onRotateChange: onSlotRotate,
         child: inner,
       );
     }
@@ -360,36 +393,54 @@ class _LayerWidget extends StatelessWidget {
     alignment: Alignment.topLeft,
     child: child,
   );
+
+  /// The user's rotation override, pivoting around the element CENTER (default
+  /// Transform.rotate alignment) so dragging the rotation handle spins the
+  /// element in place — the matching pivot is [_SlotGesturesState._centerGlobal].
+  Widget _userRotated(String slotId, Widget child) {
+    final degrees = content.rotationFor(slotId);
+    if (degrees == 0) return child;
+    return Transform.rotate(angle: degrees * math.pi / 180, child: child);
+  }
 }
 
-/// The single gesture surface for a slot: tap, move, pinch AND resize, all
-/// in one ScaleGestureRecognizer so nothing competes in the gesture arena
-/// (nested resize/move recognizers were the source of dropped touches).
+/// The single gesture surface for a slot: tap, move, pinch, resize AND rotate,
+/// all in one ScaleGestureRecognizer so nothing competes in the gesture arena
+/// (nested recognizers were the source of dropped touches).
 ///
-/// One finger near the element's edge (the resize band, only when selected)
-/// resizes by tracking the finger's distance to the element center in global
-/// coordinates — the edge sticks to the finger, size-independent. One finger
-/// in the interior moves. Two fingers pinch. d.scale is a ratio relative to
-/// the gesture start, re-based whenever the finger count changes.
+/// One finger near a corner (only when selected) resizes by tracking the
+/// finger's distance to the element center in global coordinates. One finger
+/// on the rotation handle (below bottom-center, only when selected) rotates by
+/// tracking the finger's angle around that same center. One finger in the
+/// interior moves. Two fingers pinch. d.scale is a ratio relative to the
+/// gesture start, re-based whenever the finger count changes.
 class _SlotGestures extends StatefulWidget {
   final String slotId;
   final double currentScale;
-  // Move/resize/pinch are wired only when the slot is selected; otherwise the
-  // detector exposes just the tap (to select) and lets drags fall through to
-  // the canvas pan/zoom instead of moving an unselected element.
+
+  /// The slot's current user rotation in degrees — the base a two-finger
+  /// twist adds onto.
+  final double currentRotation;
+  // Move/resize/pinch/rotate are wired only when the slot is selected;
+  // otherwise the detector exposes just the tap (to select) and lets drags
+  // fall through to the canvas pan/zoom instead of moving an unselected
+  // element.
   final bool selected;
   final void Function(String slotId)? onTap;
   final void Function(String slotId, Offset delta)? onDrag;
   final void Function(String slotId, double scale)? onScaleChange;
+  final void Function(String slotId, double degrees)? onRotateChange;
   final Widget child;
 
   const _SlotGestures({
     required this.slotId,
     required this.currentScale,
+    required this.currentRotation,
     required this.selected,
     required this.onTap,
     required this.onDrag,
     required this.onScaleChange,
+    required this.onRotateChange,
     required this.child,
   });
 
@@ -403,6 +454,12 @@ class _SlotGesturesState extends State<_SlotGestures> {
   bool _isResizing = false;
   double _startScale = 1.0;
   double? _startDistance;
+  // Rotation handle drag: the user rotation when the drag began, and the angle
+  // (radians) from the element center to the finger at that moment. The element
+  // rotation tracks the change in that angle, so it follows the finger exactly.
+  bool _isRotating = false;
+  double _baseRotation = 0.0;
+  double? _startAngle;
 
   /// Element center in global coordinates. This widget sits inside
   /// Transform.scale, so localToGlobal already accounts for the scale; the
@@ -411,6 +468,21 @@ class _SlotGesturesState extends State<_SlotGestures> {
     final box = context.findRenderObject();
     if (box is! RenderBox || !box.hasSize) return null;
     return box.localToGlobal(box.size.center(Offset.zero));
+  }
+
+  /// Maps a point from the element's UNROTATED layout space into where it
+  /// actually paints, by spinning it around the box center by the current user
+  /// rotation — matching `_userRotated` (Transform.rotate, center alignment).
+  /// The handles/corners orbit the center as the element rotates, so their
+  /// touch zones must follow or only the first (rotation==0) grab would land.
+  Offset _toRotated(Offset p, Size size) {
+    final rad = widget.currentRotation * math.pi / 180;
+    if (rad == 0) return p;
+    final center = Offset(size.width / 2, size.height / 2);
+    final d = p - center;
+    final cos = math.cos(rad);
+    final sin = math.sin(rad);
+    return center + Offset(d.dx * cos - d.dy * sin, d.dx * sin + d.dy * cos);
   }
 
   /// True when [local] (in this widget's padded coordinate space) is within
@@ -426,11 +498,28 @@ class _SlotGesturesState extends State<_SlotGestures> {
       Offset(pad, pad + h),
       Offset(pad + w, pad + h),
     ];
-    return corners.any((c) => (local - c).distanceSquared <= reach * reach);
+    return corners.any(
+      (c) => (local - _toRotated(c, size)).distanceSquared <= reach * reach,
+    );
+  }
+
+  /// True when [local] (this widget's padded coordinate space) is within reach
+  /// of the rotation handle, which floats below the element's bottom-center.
+  bool _nearRotationHandle(Offset local, Size size) {
+    final pad = _kChromePad / widget.currentScale;
+    final reach = _kCornerReach / widget.currentScale;
+    final w = size.width - 2 * pad;
+    final h = size.height - 2 * pad;
+    final handle = _toRotated(
+      Offset(pad + w / 2, pad + h + _kRotateHandleDrop / widget.currentScale),
+      size,
+    );
+    return (local - handle).distanceSquared <= reach * reach;
   }
 
   void _onScaleStart(ScaleStartDetails d) {
     _baseScale = widget.currentScale;
+    _baseRotation = widget.currentRotation;
     _startScale = widget.currentScale;
     _pointerCount = d.pointerCount;
     final size = context.size;
@@ -438,9 +527,20 @@ class _SlotGesturesState extends State<_SlotGestures> {
         d.pointerCount == 1 &&
         size != null &&
         _nearCorner(d.localFocalPoint, size);
+    // The rotation handle wins only where it sits (below bottom-center); a
+    // corner grab still resizes, everything else moves.
+    _isRotating =
+        !_isResizing &&
+        d.pointerCount == 1 &&
+        size != null &&
+        _nearRotationHandle(d.localFocalPoint, size);
     if (_isResizing) {
       final center = _centerGlobal();
       _startDistance = center == null ? null : (d.focalPoint - center).distance;
+    }
+    if (_isRotating) {
+      final center = _centerGlobal();
+      _startAngle = center == null ? null : (d.focalPoint - center).direction;
     }
   }
 
@@ -448,8 +548,12 @@ class _SlotGesturesState extends State<_SlotGestures> {
     if (d.pointerCount != _pointerCount) {
       _baseScale = widget.currentScale;
       _pointerCount = d.pointerCount;
-      // A second finger turns the gesture into a pinch/move.
-      if (d.pointerCount >= 2) _isResizing = false;
+      // A second finger turns the gesture into a pinch/move (never resize or
+      // rotate — those are one-finger handle drags).
+      if (d.pointerCount >= 2) {
+        _isResizing = false;
+        _isRotating = false;
+      }
     }
     if (_isResizing && d.pointerCount == 1) {
       final center = _centerGlobal();
@@ -461,6 +565,17 @@ class _SlotGesturesState extends State<_SlotGestures> {
             _kMinSlotScale,
             _kMaxSlotScale,
           ),
+        );
+      }
+      return;
+    }
+    if (_isRotating && d.pointerCount == 1) {
+      final center = _centerGlobal();
+      if (center != null && _startAngle != null) {
+        final angle = (d.focalPoint - center).direction;
+        widget.onRotateChange?.call(
+          widget.slotId,
+          _baseRotation + (angle - _startAngle!) * 180 / math.pi,
         );
       }
       return;
@@ -537,12 +652,23 @@ class _SelectionChrome extends StatelessWidget {
               builder: (context, constraints) {
                 final w = constraints.maxWidth - 2 * pad;
                 final h = constraints.maxHeight - 2 * pad;
+                final drop = _kRotateHandleDrop / scale;
                 return Stack(
+                  clipBehavior: Clip.none,
                   children: [
+                    // Stem connecting the element's bottom-center to the handle.
+                    Positioned(
+                      left: pad + w / 2 - stroke / 2,
+                      top: pad + h,
+                      width: stroke,
+                      height: drop,
+                      child: const ColoredBox(color: Colors.white),
+                    ),
                     _corner('tl', pad, pad),
                     _corner('tr', pad + w, pad),
                     _corner('bl', pad, pad + h),
                     _corner('br', pad + w, pad + h),
+                    _rotateHandle(pad + w / 2, pad + h + drop),
                   ],
                 );
               },
@@ -550,6 +676,43 @@ class _SelectionChrome extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+
+  /// The rotation handle: a round button with a rotate glyph, centered at
+  /// ([cx], [cy]). Purely visual (the chrome is wrapped in IgnorePointer) —
+  /// the drag is recognized by _SlotGestures' _nearRotationHandle zone, which
+  /// is positioned to match.
+  Widget _rotateHandle(double cx, double cy) {
+    final dot = 60.0 / scale;
+    return Positioned(
+      left: cx - dot / 2,
+      top: cy - dot / 2,
+      width: dot,
+      height: dot,
+      child: Container(
+        key: const ValueKey('handle_rotate'),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: const Color(0xFFD4D4D8),
+            width: 1.5 / scale,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.25),
+              blurRadius: 6 / scale,
+              offset: Offset(0, 2 / scale),
+            ),
+          ],
+        ),
+        child: Icon(
+          Icons.rotate_right,
+          size: 40 / scale,
+          color: const Color(0xFF3F3F46),
+        ),
+      ),
     );
   }
 

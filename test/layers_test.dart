@@ -118,6 +118,15 @@ void main() {
       expect(removed.layerOrders[panel.id], isNot(contains('text_1')));
     });
 
+    test('rotationFor defaults to 0 and withRotation overrides it', () {
+      const content = SlotContent();
+      expect(content.rotationFor('txt_title'), 0.0);
+      final rotated = content.withRotation('txt_title', 35);
+      expect(rotated.rotationFor('txt_title'), 35);
+      // Other slots are untouched.
+      expect(rotated.rotationFor('img_hero'), 0.0);
+    });
+
     test('layerHidden defers to the template flag, then to the override', () {
       const content = SlotContent();
       // shape_hidden carries editor.hidden:true in the fixture.

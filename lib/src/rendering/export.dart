@@ -11,8 +11,9 @@ import 'package:flutter/widgets.dart';
 Future<Uint8List> capturePng(GlobalKey boundaryKey, double targetWidth) async {
   final boundary =
       boundaryKey.currentContext!.findRenderObject() as RenderRepaintBoundary;
-  final image =
-      await boundary.toImage(pixelRatio: targetWidth / boundary.size.width);
+  final image = await boundary.toImage(
+    pixelRatio: targetWidth / boundary.size.width,
+  );
   try {
     final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
     return byteData!.buffer.asUint8List();
