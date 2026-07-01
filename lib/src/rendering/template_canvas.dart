@@ -120,6 +120,12 @@ class PanelCanvas extends StatelessWidget {
   /// against this plus the bundled seeds; empty = seeds only.
   final List<AssetRecord> assetCatalog;
 
+  /// Dragging a grid divider reports the grid layer's id, whether the COLUMN
+  /// tracks changed (else rows), and the new full fraction list. Store it as a
+  /// SlotContent grid override. Wired only when a grid cell is selected.
+  final void Function(String gridId, bool columns, List<double> fractions)?
+  onGridFractions;
+
   const PanelCanvas({
     super.key,
     required this.panel,
@@ -138,6 +144,7 @@ class PanelCanvas extends StatelessWidget {
     this.onPickImage,
     this.editingFieldKey,
     this.assetCatalog = const [],
+    this.onGridFractions,
   });
 
   @override
@@ -187,6 +194,8 @@ class PanelCanvas extends StatelessWidget {
                   onPickImage: onPickImage,
                   onTextChanged: onTextChanged,
                   assetCatalog: assetCatalog,
+                  selectedSlotId: selectedSlotId,
+                  onGridFractions: onGridFractions,
                   selected:
                       layer is ImageLayer && layer.slotId == selectedSlotId ||
                       layer is TextLayer && layer.slotId == selectedSlotId,
@@ -268,6 +277,13 @@ class _LayerWidget extends StatelessWidget {
   final void Function(String slotId)? onPickImage;
   final void Function(String slotId, String value)? onTextChanged;
   final List<AssetRecord> assetCatalog;
+
+  /// The globally selected slot id — grids need it to know which cell (if any)
+  /// is active, since one grid layer holds many cells. Image/text use the
+  /// derived [selected] bool instead.
+  final String? selectedSlotId;
+  final void Function(String gridId, bool columns, List<double> fractions)?
+  onGridFractions;
   final bool selected;
   final bool editing;
   final GlobalKey? fieldKey;
@@ -283,6 +299,8 @@ class _LayerWidget extends StatelessWidget {
     this.onPickImage,
     this.onTextChanged,
     this.assetCatalog = const [],
+    this.selectedSlotId,
+    this.onGridFractions,
     this.selected = false,
     this.editing = false,
     this.fieldKey,
@@ -336,6 +354,28 @@ class _LayerWidget extends StatelessWidget {
         Container(width: l.width, height: l.height, color: l.fill),
       ),
       StickerLayer l => _positioned(l.x, l.y, _StickerPlaceholder(layer: l)),
+      // The grid is placed and rotated by the designer (top-left pivot, Konva
+      // contract); the end-user only fills/crops its cells, so it doesn't go
+      // through _slot (no whole-grid move/resize/rotate gestures here).
+      GridLayer l => _positioned(
+        l.x,
+        l.y,
+        _rotated(
+          l.rotation,
+          _GridSlot(
+            grid: l,
+            content: content,
+            assetCatalog: assetCatalog,
+            interactive: onSlotTap != null,
+            selectedSlotId: selectedSlotId,
+            onSlotTap: onSlotTap,
+            onPickImage: onPickImage,
+            onSlotDrag: onSlotDrag,
+            onSlotScale: onSlotScale,
+            onGridFractions: onGridFractions,
+          ),
+        ),
+      ),
     };
   }
 
@@ -879,6 +919,373 @@ class _ImageSlot extends StatelessWidget {
             style: const TextStyle(color: Color(0xFF71717A), fontSize: 40),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// A photo grid: tiles its box into fixed cells (from the layer's fraction
+/// tracks). Each cell is a fillable photo slot the user can pan/zoom within.
+/// The grid element itself isn't moved/rotated by the user here (that's the
+/// designer's job) — only the cell photos are edited.
+class _GridSlot extends StatelessWidget {
+  final GridLayer grid;
+  final SlotContent content;
+  final List<AssetRecord> assetCatalog;
+  final bool interactive;
+  final String? selectedSlotId;
+  final void Function(String slotId)? onSlotTap;
+  final void Function(String slotId)? onPickImage;
+  final void Function(String slotId, Offset delta)? onSlotDrag;
+  final void Function(String slotId, double scale)? onSlotScale;
+  final void Function(String gridId, bool columns, List<double> fractions)?
+  onGridFractions;
+
+  const _GridSlot({
+    required this.grid,
+    required this.content,
+    this.assetCatalog = const [],
+    this.interactive = false,
+    this.selectedSlotId,
+    this.onSlotTap,
+    this.onPickImage,
+    this.onSlotDrag,
+    this.onSlotScale,
+    this.onGridFractions,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    // Effective (user-overridden) grid values; falling back to the template's.
+    final gutter = content.gridGutter(grid.id, grid.gutter);
+    final corner = content.gridCornerRadius(grid.id, grid.cornerRadius);
+    final colF = content.gridColFractions(grid.id, grid.colFractions);
+    final rowF = content.gridRowFractions(grid.id, grid.rowFractions);
+
+    // Dividers appear once one of this grid's cells is selected (so the user is
+    // "in" the grid), and only when a fraction handler is wired.
+    final active =
+        onGridFractions != null &&
+        selectedSlotId != null &&
+        grid.cells.any((c) => c.slotId == selectedSlotId);
+
+    Rect rectOf(GridCell cell) => cellRect(
+      grid,
+      cell,
+      colFractions: colF,
+      rowFractions: rowF,
+      gutter: gutter,
+    );
+
+    return SizedBox(
+      width: grid.width,
+      height: grid.height,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          // Gutter colour paints behind the cells and shows through the gaps;
+          // absent = transparent (the panel background shows through).
+          if (grid.gutterColor != null)
+            Positioned.fill(child: ColoredBox(color: grid.gutterColor!)),
+          for (final cell in grid.cells)
+            Positioned.fromRect(
+              rect: rectOf(cell),
+              child: _GridCell(
+                slotId: cell.slotId,
+                radius: cell.borderRadius ?? corner,
+                image: content.imageFor(cell.slotId),
+                cropOffset: content.offsetFor(cell.slotId),
+                cropScale: content.scaleFor(cell.slotId),
+                selected: cell.slotId == selectedSlotId,
+                interactive: interactive,
+                onTap: onSlotTap,
+                onPick: onPickImage,
+                onDrag: onSlotDrag,
+                onScale: onSlotScale,
+              ),
+            ),
+          if (active) ..._dividers(colF, rowF, gutter),
+        ],
+      ),
+    );
+  }
+
+  /// One draggable handle per interior column/row boundary. Handles sit in the
+  /// grid's local (unrotated) frame, and a drag's local delta is in that same
+  /// frame, so shifting a boundary is a direct px→fraction conversion — no
+  /// rotation math even when the grid is rotated.
+  List<Widget> _dividers(List<double> colF, List<double> rowF, double gutter) {
+    const handleW = 40.0;
+    double colCenter(int i) =>
+        cellRect(
+          grid,
+          GridCell(slotId: '', col: i, row: 0),
+          colFractions: colF,
+          rowFractions: rowF,
+          gutter: gutter,
+        ).right +
+        gutter / 2;
+    double rowCenter(int j) =>
+        cellRect(
+          grid,
+          GridCell(slotId: '', col: 0, row: j),
+          colFractions: colF,
+          rowFractions: rowF,
+          gutter: gutter,
+        ).bottom +
+        gutter / 2;
+
+    return [
+      for (var i = 0; i < grid.cols - 1; i++)
+        Positioned(
+          left: colCenter(i) - handleW / 2,
+          top: 0,
+          width: handleW,
+          height: grid.height,
+          child: _GridDivider(
+            key: ValueKey('grid_div_col_$i'),
+            vertical: true,
+            onDelta: (d) => _shift(true, colF, gutter, i, d),
+          ),
+        ),
+      for (var j = 0; j < grid.rows - 1; j++)
+        Positioned(
+          left: 0,
+          top: rowCenter(j) - handleW / 2,
+          width: grid.width,
+          height: handleW,
+          child: _GridDivider(
+            key: ValueKey('grid_div_row_$j'),
+            vertical: false,
+            onDelta: (d) => _shift(false, rowF, gutter, j, d),
+          ),
+        ),
+    ];
+  }
+
+  /// Moves the boundary between tracks [i] and [i+1] by [deltaPx] (grid-local),
+  /// transferring fraction between the two while keeping their sum — clamped so
+  /// neither track collapses.
+  void _shift(
+    bool columns,
+    List<double> fractions,
+    double gutter,
+    int i,
+    double deltaPx,
+  ) {
+    final tracks = columns ? grid.cols : grid.rows;
+    final box = columns ? grid.width : grid.height;
+    final usable = math.max(1.0, box - gutter * (tracks + 1));
+    final s = fractions.fold(0.0, (a, b) => a + b);
+    final total = s == 0 ? 1.0 : s;
+    final pairFrac = fractions[i] + fractions[i + 1];
+    final pairPx = usable * (pairFrac / total);
+    if (pairPx <= 0) return;
+    final wi = (usable * (fractions[i] / total) + deltaPx).clamp(
+      pairPx * 0.1,
+      pairPx * 0.9,
+    );
+    final fi = wi / pairPx * pairFrac;
+    final next = List<double>.from(fractions);
+    next[i] = fi;
+    next[i + 1] = pairFrac - fi;
+    onGridFractions!(grid.id, columns, next);
+  }
+}
+
+/// A thin, draggable divider between two grid tracks. Visual pill sits on the
+/// boundary; a pan reports its local delta along the relevant axis.
+class _GridDivider extends StatelessWidget {
+  final bool vertical;
+  final void Function(double deltaPx) onDelta;
+
+  const _GridDivider({
+    super.key,
+    required this.vertical,
+    required this.onDelta,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    // A short capsule centred on the boundary hints at the drag direction.
+    final pill = Container(
+      width: vertical ? 8 : 64,
+      height: vertical ? 64 : 8,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(4),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.3),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+    );
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onVerticalDragUpdate: vertical
+          ? null
+          : (d) => onDelta(d.delta.dy),
+      onHorizontalDragUpdate: vertical
+          ? (d) => onDelta(d.delta.dx)
+          : null,
+      child: Center(child: pill),
+    );
+  }
+}
+
+/// One grid cell: a fixed rounded box holding the user's photo (cover-fit) with
+/// pan/zoom WITHIN it (a crop), reusing SlotContent.offsets/scales keyed by the
+/// cell's slotId. Tap selects (its icon opens the picker); once selected, a
+/// one-finger drag pans and a pinch zooms the photo, clamped so the cell stays
+/// fully covered. Empty cells show the placeholder + pick icon.
+class _GridCell extends StatefulWidget {
+  final String slotId;
+  final double radius;
+  final ImageProvider? image;
+  final Offset cropOffset;
+  final double cropScale;
+  final bool selected;
+  final bool interactive;
+  final void Function(String slotId)? onTap;
+  final void Function(String slotId)? onPick;
+  final void Function(String slotId, Offset delta)? onDrag;
+  final void Function(String slotId, double scale)? onScale;
+
+  const _GridCell({
+    required this.slotId,
+    required this.radius,
+    required this.image,
+    required this.cropOffset,
+    required this.cropScale,
+    required this.selected,
+    required this.interactive,
+    this.onTap,
+    this.onPick,
+    this.onDrag,
+    this.onScale,
+  });
+
+  @override
+  State<_GridCell> createState() => _GridCellState();
+}
+
+class _GridCellState extends State<_GridCell> {
+  // Min 1.0: the photo may never shrink below cover, or a gap would show.
+  static const double _kMinCropScale = 1.0;
+  static const double _kMaxCropScale = 4.0;
+
+  double _baseScale = 1.0;
+
+  /// Clamp a pan offset so the (scaled) photo still covers the whole cell — the
+  /// overhang on each axis is half the amount the photo overflows the box.
+  Offset _clampPan(Offset o, double scale, Size size) {
+    final ox = size.width * (scale - 1) / 2;
+    final oy = size.height * (scale - 1) / 2;
+    return Offset(o.dx.clamp(-ox, ox), o.dy.clamp(-oy, oy));
+  }
+
+  void _onStart(ScaleStartDetails d) => _baseScale = widget.cropScale;
+
+  void _onUpdate(ScaleUpdateDetails d) {
+    final size = context.size;
+    if (size == null) return;
+    // Pinch: zoom relative to the gesture start, then re-clamp the pan since a
+    // smaller scale shrinks the allowed overhang.
+    if (d.pointerCount >= 2 && d.scale != 1.0) {
+      final scale = (_baseScale * d.scale).clamp(_kMinCropScale, _kMaxCropScale);
+      widget.onScale?.call(widget.slotId, scale);
+      final clamped = _clampPan(widget.cropOffset, scale, size);
+      if (clamped != widget.cropOffset) {
+        widget.onDrag?.call(widget.slotId, clamped - widget.cropOffset);
+      }
+      return;
+    }
+    // Pan: emit the delta needed to reach the clamped target, so the stored
+    // offset never drifts out of range.
+    if (d.focalPointDelta != Offset.zero) {
+      final clamped = _clampPan(
+        widget.cropOffset + d.focalPointDelta,
+        widget.cropScale,
+        size,
+      );
+      if (clamped != widget.cropOffset) {
+        widget.onDrag?.call(widget.slotId, clamped - widget.cropOffset);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final pick = (widget.interactive && widget.onPick != null)
+        ? () => widget.onPick!(widget.slotId)
+        : null;
+    return GestureDetector(
+      // Opaque so the whole cell (photo + gaps) is a tap/gesture target; an
+      // unselected cell only taps (drags fall through to the canvas pan).
+      behavior: HitTestBehavior.opaque,
+      onTap: widget.onTap == null ? null : () => widget.onTap!(widget.slotId),
+      onScaleStart: widget.selected ? _onStart : null,
+      onScaleUpdate: widget.selected ? _onUpdate : null,
+      child: widget.image != null ? _filled(pick) : _empty(pick),
+    );
+  }
+
+  Widget _filled(VoidCallback? pick) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final size = constraints.biggest;
+        // Clamp at render too, so even after a scale change the cell can never
+        // show a gap regardless of the stored offset.
+        final o = _clampPan(widget.cropOffset, widget.cropScale, size);
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(widget.radius),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              Transform(
+                alignment: Alignment.center,
+                transform: Matrix4.identity()
+                  ..translateByDouble(o.dx, o.dy, 0, 1)
+                  ..scaleByDouble(widget.cropScale, widget.cropScale, 1, 1),
+                child: Image(image: widget.image!, fit: BoxFit.cover),
+              ),
+              if (widget.selected)
+                IgnorePointer(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.white, width: 3),
+                    ),
+                  ),
+                ),
+              // Replace overlay (only when selected); a plain tap moves nothing.
+              if (widget.selected && pick != null)
+                Center(child: _PickIcon(onTap: pick)),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _empty(VoidCallback? pick) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(widget.radius),
+      child: Container(
+        color: const Color(0xFFE4E4E7),
+        alignment: Alignment.center,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (pick != null) _PickIcon(onTap: pick),
+            Text(
+              widget.slotId,
+              style: const TextStyle(color: Color(0xFF71717A), fontSize: 32),
+            ),
+          ],
+        ),
       ),
     );
   }

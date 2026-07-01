@@ -352,6 +352,174 @@ void main() {
     expect(content.offsetFor('rot_img'), Offset.zero);
   });
 
+  // A 1x1 transparent PNG so MemoryImage decodes in the filled-cell test.
+  final onePixelPng = base64Decode(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYPhfDwAChwGA'
+    '60e6kgAAAABJRU5ErkJggg==',
+  );
+
+  Template gridTemplate({required bool single}) => Template.fromJson({
+    'id': 'grid_t',
+    'schemaVersion': 3,
+    'version': 0,
+    'name': 'Grid',
+    'aspectRatio': 'story',
+    'canvas': {'width': 1080, 'height': 1920, 'backgroundColor': '#FFFFFF'},
+    'layers': [
+      single
+          ? {
+              'type': 'grid',
+              'id': 'g',
+              'x': 40,
+              'y': 40,
+              'width': 1000,
+              'height': 1000,
+              'rotation': 0,
+              'cols': 1,
+              'rows': 1,
+              'colFractions': [1],
+              'rowFractions': [1],
+              'gutter': 0,
+              'cornerRadius': 0,
+              'cells': [
+                {'slotId': 'cell_1', 'col': 0, 'row': 0},
+              ],
+            }
+          : {
+              'type': 'grid',
+              'id': 'g',
+              'x': 40,
+              'y': 400,
+              'width': 1000,
+              'height': 1000,
+              'rotation': 0,
+              'cols': 2,
+              'rows': 2,
+              'colFractions': [1, 1],
+              'rowFractions': [1, 1],
+              'gutter': 20,
+              'cornerRadius': 0,
+              'cells': [
+                {'slotId': 'cell_1', 'col': 0, 'row': 0},
+                {'slotId': 'cell_2', 'col': 1, 'row': 0},
+                {'slotId': 'cell_3', 'col': 0, 'row': 1},
+                {'slotId': 'cell_4', 'col': 1, 'row': 1},
+              ],
+            },
+    ],
+  });
+
+  testWidgets('an empty grid cell opens the picker from its icon', (
+    tester,
+  ) async {
+    final picks = <String>[];
+    final template = gridTemplate(single: false);
+    await pump(
+      tester,
+      PanelCanvas(
+        panel: template.panels.first,
+        canvasWidth: template.canvasWidth,
+        canvasHeight: template.canvasHeight,
+        fontResolver: testFontResolver,
+        onSlotTap: (_) {},
+        onPickImage: picks.add,
+      ),
+    );
+
+    // Empty cells advertise the add-photo icon; tapping it opens the gallery
+    // for that cell's slot.
+    expect(find.byIcon(Icons.add_photo_alternate_outlined), findsWidgets);
+    await tester.tap(find.byIcon(Icons.add_photo_alternate_outlined).first);
+    expect(picks, isNotEmpty);
+    expect(picks.first, startsWith('cell_'));
+  });
+
+  testWidgets('dragging a selected, zoomed grid cell pans the photo (crop)', (
+    tester,
+  ) async {
+    final template = gridTemplate(single: true);
+    // Zoomed in (scale 2) so the pan has room to move before clamping.
+    var content = SlotContent(
+      images: {'cell_1': MemoryImage(onePixelPng)},
+      scales: const {'cell_1': 2.0},
+    );
+    await pump(
+      tester,
+      StatefulBuilder(
+        builder: (context, setState) => PanelCanvas(
+          panel: template.panels.first,
+          canvasWidth: template.canvasWidth,
+          canvasHeight: template.canvasHeight,
+          fontResolver: testFontResolver,
+          content: content,
+          selectedSlotId: 'cell_1',
+          onSlotTap: (_) {},
+          onSlotScale: (id, s) =>
+              setState(() => content = content.withScale(id, s)),
+          onSlotDrag: (id, d) => setState(
+            () => content = content.withOffset(id, content.offsetFor(id) + d),
+          ),
+        ),
+      ),
+    );
+
+    // Drag inside the (only) cell: the photo pans within it (crop), NOT the
+    // whole element. First move eats the recognizer's slop.
+    final start = tester.getCenter(find.byType(Image));
+    final g = await tester.startGesture(start);
+    await g.moveBy(const Offset(30, 0));
+    await tester.pump();
+    await g.moveBy(const Offset(40, 0));
+    await tester.pump();
+    await g.up();
+    expect(content.offsetFor('cell_1'), isNot(Offset.zero));
+  });
+
+  testWidgets('dragging a grid divider re-splits the column fractions', (
+    tester,
+  ) async {
+    final template = gridTemplate(single: false); // 2x2, one column divider
+    final calls = <List<double>>[];
+    bool? sawColumns;
+    await pump(
+      tester,
+      PanelCanvas(
+        panel: template.panels.first,
+        canvasWidth: template.canvasWidth,
+        canvasHeight: template.canvasHeight,
+        fontResolver: testFontResolver,
+        // A selected cell puts the grid in "active" mode → dividers appear.
+        selectedSlotId: 'cell_1',
+        onSlotTap: (_) {},
+        onGridFractions: (id, columns, fractions) {
+          sawColumns = columns;
+          calls.add(fractions);
+        },
+      ),
+    );
+
+    final handle = find.byKey(const ValueKey('grid_div_col_0'));
+    expect(handle, findsOneWidget);
+    // Grab near the top of the column divider, away from where the row divider
+    // crosses it at the grid centre.
+    final rect = tester.getRect(handle);
+    final g = await tester.startGesture(
+      Offset(rect.center.dx, rect.top + rect.height * 0.2),
+    );
+    await g.moveBy(const Offset(30, 0));
+    await tester.pump();
+    await g.moveBy(const Offset(40, 0));
+    await tester.pump();
+    await g.up();
+
+    expect(calls, isNotEmpty);
+    expect(sawColumns, isTrue);
+    // The boundary moved right → the left track grew past its original half.
+    expect(calls.last[0], greaterThan(1.0));
+    // Sum is preserved (fraction is transferred between the pair).
+    expect(calls.last[0] + calls.last[1], closeTo(2.0, 0.0001));
+  });
+
   testWidgets('dragging the interior moves the selected slot, not resize', (
     tester,
   ) async {

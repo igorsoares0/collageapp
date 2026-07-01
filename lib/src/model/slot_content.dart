@@ -2,6 +2,36 @@ import 'package:flutter/widgets.dart';
 
 import 'template.dart';
 
+/// The user's tweaks to a grid layer (keyed by the grid's layer id). The
+/// template is immutable, so a resized gutter / rounded corner / dragged
+/// divider rides here like every other override. Any field left null falls back
+/// to the grid's own template value.
+class GridOverride {
+  final double? gutter;
+  final double? cornerRadius;
+  final List<double>? colFractions;
+  final List<double>? rowFractions;
+
+  const GridOverride({
+    this.gutter,
+    this.cornerRadius,
+    this.colFractions,
+    this.rowFractions,
+  });
+
+  GridOverride copyWith({
+    double? gutter,
+    double? cornerRadius,
+    List<double>? colFractions,
+    List<double>? rowFractions,
+  }) => GridOverride(
+    gutter: gutter ?? this.gutter,
+    cornerRadius: cornerRadius ?? this.cornerRadius,
+    colFractions: colFractions ?? this.colFractions,
+    rowFractions: rowFractions ?? this.rowFractions,
+  );
+}
+
 /// User content injected into template slots (spec §12). Templates never
 /// contain user content; this map is the app-side counterpart of slotIds.
 /// [offsets] (template space) and [scales] are user position/size
@@ -39,6 +69,10 @@ class SlotContent {
   /// template (the change rides into the export like every other override).
   final Map<String, bool> hiddenLayers;
 
+  /// Per-grid tweaks (gutter/corner/fraction tracks), keyed by grid layer id.
+  /// A missing entry means the grid renders exactly as the designer authored it.
+  final Map<String, GridOverride> gridOverrides;
+
   /// Layers the user added on top of the template, keyed by panel id (in the
   /// order they were added — newest on top). Templates never gain layers; the
   /// app stacks these above the template's own and treats them exactly like
@@ -59,6 +93,7 @@ class SlotContent {
     this.panelBackgrounds = const {},
     this.layerOrders = const {},
     this.hiddenLayers = const {},
+    this.gridOverrides = const {},
     this.addedLayers = const {},
   });
 
@@ -76,6 +111,17 @@ class SlotContent {
   String? alignmentFor(String slotId) => alignments[slotId];
   int? weightFor(String slotId) => weights[slotId];
   Color? backgroundFor(String panelId) => panelBackgrounds[panelId];
+
+  /// Effective grid values for [gridId], falling back to the layer's own value
+  /// when the user hasn't overridden that field.
+  double gridGutter(String gridId, double fallback) =>
+      gridOverrides[gridId]?.gutter ?? fallback;
+  double gridCornerRadius(String gridId, double fallback) =>
+      gridOverrides[gridId]?.cornerRadius ?? fallback;
+  List<double> gridColFractions(String gridId, List<double> fallback) =>
+      gridOverrides[gridId]?.colFractions ?? fallback;
+  List<double> gridRowFractions(String gridId, List<double> fallback) =>
+      gridOverrides[gridId]?.rowFractions ?? fallback;
 
   /// Whether [layerId] is hidden, given the template's own [templateHidden]
   /// flag as the fallback when the user hasn't overridden it.
@@ -140,6 +186,37 @@ class SlotContent {
 
   SlotContent withPanelBackground(String panelId, Color value) =>
       _copy(panelBackgrounds: {...panelBackgrounds, panelId: value});
+
+  GridOverride _grid(String gridId) =>
+      gridOverrides[gridId] ?? const GridOverride();
+
+  SlotContent withGridGutter(String gridId, double value) => _copy(
+    gridOverrides: {
+      ...gridOverrides,
+      gridId: _grid(gridId).copyWith(gutter: value),
+    },
+  );
+
+  SlotContent withGridCornerRadius(String gridId, double value) => _copy(
+    gridOverrides: {
+      ...gridOverrides,
+      gridId: _grid(gridId).copyWith(cornerRadius: value),
+    },
+  );
+
+  SlotContent withGridColFractions(String gridId, List<double> value) => _copy(
+    gridOverrides: {
+      ...gridOverrides,
+      gridId: _grid(gridId).copyWith(colFractions: value),
+    },
+  );
+
+  SlotContent withGridRowFractions(String gridId, List<double> value) => _copy(
+    gridOverrides: {
+      ...gridOverrides,
+      gridId: _grid(gridId).copyWith(rowFractions: value),
+    },
+  );
 
   SlotContent withLayerHidden(String layerId, bool hidden) =>
       _copy(hiddenLayers: {...hiddenLayers, layerId: hidden});
@@ -211,6 +288,7 @@ class SlotContent {
     Map<String, Color>? panelBackgrounds,
     Map<String, List<String>>? layerOrders,
     Map<String, bool>? hiddenLayers,
+    Map<String, GridOverride>? gridOverrides,
     Map<String, List<Layer>>? addedLayers,
   }) => SlotContent(
     texts: texts ?? this.texts,
@@ -225,6 +303,7 @@ class SlotContent {
     panelBackgrounds: panelBackgrounds ?? this.panelBackgrounds,
     layerOrders: layerOrders ?? this.layerOrders,
     hiddenLayers: hiddenLayers ?? this.hiddenLayers,
+    gridOverrides: gridOverrides ?? this.gridOverrides,
     addedLayers: addedLayers ?? this.addedLayers,
   );
 }

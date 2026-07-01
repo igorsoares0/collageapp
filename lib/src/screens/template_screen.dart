@@ -8,6 +8,7 @@ import '../model/slot_content.dart';
 import '../model/template.dart';
 import '../rendering/export.dart';
 import '../rendering/template_canvas.dart';
+import '../widgets/grid_style_bar.dart';
 import '../widgets/layers_sheet.dart';
 import '../widgets/text_style_bar.dart';
 
@@ -224,12 +225,12 @@ class _TemplateScreenState extends State<TemplateScreen> {
   }
 
   /// Tapping a slot selects it (shows the handles for move/resize). A text
-  /// slot's second tap starts inline editing. An image slot's gallery is NOT
-  /// opened here — only its photo icon opens it (see [_onPickImage]).
+  /// slot's second tap starts inline editing. Image slots and grid cells never
+  /// edit — their photo icon opens the gallery instead (see [_onPickImage]).
   void _handleSlotTap(Template template, String slotId) {
-    final isImage = _allLayers(
+    final isText = _allLayers(
       template,
-    ).any((l) => l is ImageLayer && l.slotId == slotId);
+    ).any((l) => l is TextLayer && l.slotId == slotId);
     final wasSelected = _selectedSlot == slotId;
     if (!wasSelected) {
       setState(() {
@@ -237,7 +238,7 @@ class _TemplateScreenState extends State<TemplateScreen> {
         _editingSlot = null;
       });
     }
-    if (!isImage && wasSelected) {
+    if (isText && wasSelected) {
       setState(() => _editingSlot = slotId);
     }
   }
@@ -465,6 +466,19 @@ class _TemplateScreenState extends State<TemplateScreen> {
     return null;
   }
 
+  /// The GridLayer owning the selected cell (or null). Drives the grid bar and
+  /// tells us a grid cell — not a plain image/text slot — is selected.
+  GridLayer? _selectedGridLayer(Template template) {
+    final slot = _selectedSlot;
+    if (slot == null) return null;
+    for (final layer in _allLayers(template)) {
+      if (layer is GridLayer && layer.cells.any((c) => c.slotId == slot)) {
+        return layer;
+      }
+    }
+    return null;
+  }
+
   Widget _buildBody(
     Template template,
     double keyboardInset,
@@ -477,7 +491,8 @@ class _TemplateScreenState extends State<TemplateScreen> {
       orElse: () => template.panels.first,
     );
 
-    final bottomBar = _buildBottomBar(textLayer, focusedPanel);
+    final gridLayer = _selectedGridLayer(template);
+    final bottomBar = _buildBottomBar(textLayer, focusedPanel, gridLayer);
     // Constant height for the bar strip (incl. the home-indicator inset), so
     // the canvas area is a fixed size regardless of which bar shows.
     final barArea = _kBottomBarHeight + safeBottom;
@@ -574,6 +589,19 @@ class _TemplateScreenState extends State<TemplateScreen> {
                                           degrees,
                                         );
                                       }),
+                                  onGridFractions:
+                                      (gridId, columns, fractions) => setState(() {
+                                        _focusedPanelId = panel.id;
+                                        _content = columns
+                                            ? _content.withGridColFractions(
+                                                gridId,
+                                                fractions,
+                                              )
+                                            : _content.withGridRowFractions(
+                                                gridId,
+                                                fractions,
+                                              );
+                                      }),
                                 ),
                               ),
                             ),
@@ -640,8 +668,13 @@ class _TemplateScreenState extends State<TemplateScreen> {
   }
 
   /// The bar shown under the canvas: background colors when nothing is
-  /// selected, text styling when a text slot is, and nothing for image slots.
-  Widget? _buildBottomBar(TextLayer? textLayer, Panel focusedPanel) {
+  /// selected, text styling for a text slot, grid spacing/corners for a grid
+  /// cell, and nothing for a plain image slot.
+  Widget? _buildBottomBar(
+    TextLayer? textLayer,
+    Panel focusedPanel,
+    GridLayer? gridLayer,
+  ) {
     if (textLayer == null && _selectedSlot == null) {
       return BackgroundColorBar(
         currentColor:
@@ -676,6 +709,21 @@ class _TemplateScreenState extends State<TemplateScreen> {
             weight >= 700 ? 400 : 700,
           );
         }),
+      );
+    }
+    if (gridLayer != null) {
+      final g = gridLayer;
+      final minSide = g.width < g.height ? g.width : g.height;
+      return GridStyleBar(
+        gutter: _content.gridGutter(g.id, g.gutter),
+        cornerRadius: _content.gridCornerRadius(g.id, g.cornerRadius),
+        // Caps relative to the grid's own size so the sliders stay sensible.
+        maxGutter: minSide * 0.2,
+        maxCorner: minSide * 0.25,
+        onGutter: (v) =>
+            setState(() => _content = _content.withGridGutter(g.id, v)),
+        onCorner: (v) =>
+            setState(() => _content = _content.withGridCornerRadius(g.id, v)),
       );
     }
     return null;

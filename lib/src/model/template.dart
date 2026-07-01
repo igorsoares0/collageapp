@@ -1,10 +1,11 @@
+import 'dart:math' as math;
 import 'dart:ui';
 
 /// Highest template schema this renderer understands. Templates above this
 /// are filtered out during sync instead of being rendered incorrectly.
 /// Mirror of CURRENT_SCHEMA_VERSION in the editor (lib/template/types.ts).
-/// v2 added multi-panel ("panels"); single-panel templates stay v1.
-const int kSupportedSchemaVersion = 2;
+/// v2 added multi-panel ("panels"); v3 added the grid layer ("type":"grid").
+const int kSupportedSchemaVersion = 3;
 
 /// One slide of a carousel template: its own background and layer stack. All
 /// panels share the template's canvas size. Classic single-canvas templates
@@ -32,12 +33,15 @@ class Panel {
   }
 
   /// Slot ids of this panel's layers that accept user content, in stack order.
+  /// A grid contributes one slot per cell (each cell is a fillable photo slot).
   List<String> get slotIds => [
     for (final layer in layers)
-      if (layer is ImageLayer)
-        layer.slotId
-      else if (layer is TextLayer)
-        layer.slotId,
+      ...switch (layer) {
+        ImageLayer l => [l.slotId],
+        TextLayer l => [l.slotId],
+        GridLayer l => [for (final c in l.cells) c.slotId],
+        _ => const <String>[],
+      },
   ];
 }
 
@@ -176,6 +180,29 @@ sealed class Layer {
           width: (json['width'] as num).toDouble(),
           height: (json['height'] as num).toDouble(),
         );
+      case 'grid':
+        final gutterColor = json['gutterColor'];
+        return GridLayer(
+          id: json['id'] as String,
+          hidden: hidden,
+          x: (json['x'] as num).toDouble(),
+          y: (json['y'] as num).toDouble(),
+          width: (json['width'] as num).toDouble(),
+          height: (json['height'] as num).toDouble(),
+          rotation: (json['rotation'] as num?)?.toDouble() ?? 0,
+          cols: (json['cols'] as num).toInt(),
+          rows: (json['rows'] as num).toInt(),
+          colFractions: _doubleList(json['colFractions']),
+          rowFractions: _doubleList(json['rowFractions']),
+          gutter: (json['gutter'] as num?)?.toDouble() ?? 0,
+          cornerRadius: (json['cornerRadius'] as num?)?.toDouble() ?? 0,
+          gutterColor: gutterColor is String
+              ? parseHexColor(gutterColor)
+              : null,
+          cells: (json['cells'] as List<dynamic>)
+              .map((c) => GridCell.fromJson(c as Map<String, dynamic>))
+              .toList(),
+        );
       default:
         return null;
     }
@@ -257,6 +284,110 @@ class StickerLayer extends Layer {
     required this.height,
   });
 }
+
+/// One fillable photo slot of a grid. Its pixel rect is derived from the grid's
+/// fraction tracks by [cellRect]; the user's photo (keyed by [slotId], like an
+/// ImageLayer) is drawn cover-fit inside it and can be panned/zoomed within.
+class GridCell {
+  final String slotId;
+  final int col, row, colSpan, rowSpan;
+
+  /// Per-cell corner radius override; null = use the grid's cornerRadius.
+  final double? borderRadius;
+
+  const GridCell({
+    required this.slotId,
+    required this.col,
+    required this.row,
+    this.colSpan = 1,
+    this.rowSpan = 1,
+    this.borderRadius,
+  });
+
+  factory GridCell.fromJson(Map<String, dynamic> json) => GridCell(
+    slotId: json['slotId'] as String,
+    col: (json['col'] as num).toInt(),
+    row: (json['row'] as num).toInt(),
+    colSpan: (json['colSpan'] as num?)?.toInt() ?? 1,
+    rowSpan: (json['rowSpan'] as num?)?.toInt() ?? 1,
+    borderRadius: (json['borderRadius'] as num?)?.toDouble(),
+  );
+}
+
+/// A unified photo grid (schemaVersion 3): one placeable/rotatable element that
+/// tiles its box into cells sized by fraction tracks and separated by a uniform
+/// gutter. Mirrors GridLayer in the editor (lib/template/types.ts). The user
+/// fills each cell and pans/zooms the photo within it; the designer sets the
+/// layout. Rotation follows the Konva contract (clockwise, top-left pivot).
+class GridLayer extends Layer {
+  final double x, y, width, height, rotation, gutter, cornerRadius;
+  final int cols, rows;
+  final List<double> colFractions, rowFractions;
+  final Color? gutterColor;
+  final List<GridCell> cells;
+
+  const GridLayer({
+    required super.id,
+    required super.hidden,
+    required this.x,
+    required this.y,
+    required this.width,
+    required this.height,
+    required this.rotation,
+    required this.cols,
+    required this.rows,
+    required this.colFractions,
+    required this.rowFractions,
+    required this.gutter,
+    required this.cornerRadius,
+    required this.gutterColor,
+    required this.cells,
+  });
+}
+
+/// Pixel rect of [cell] inside [grid]'s local box (origin at the grid's x/y).
+/// A track's size is its fraction of the usable length (box minus every
+/// gutter); gutters sit on both outer edges and between tracks, and a spanning
+/// cell also eats the internal gutters it straddles. Mirrors cellRect() in the
+/// editor (lib/template/grid.ts) so both sides tile a grid identically.
+/// [colFractions]/[rowFractions] overrides let a user tweak (Phase 3) recompute
+/// without mutating the layer.
+Rect cellRect(
+  GridLayer grid,
+  GridCell cell, {
+  List<double>? colFractions,
+  List<double>? rowFractions,
+  double? gutter,
+}) {
+  final colF = colFractions ?? grid.colFractions;
+  final rowF = rowFractions ?? grid.rowFractions;
+  final cs = cell.colSpan < 1 ? 1 : cell.colSpan;
+  final rs = cell.rowSpan < 1 ? 1 : cell.rowSpan;
+  final g = gutter ?? grid.gutter;
+
+  final usableW = math.max(0.0, grid.width - g * (grid.cols + 1));
+  final usableH = math.max(0.0, grid.height - g * (grid.rows + 1));
+  final sc = _sum(colF) == 0 ? 1.0 : _sum(colF);
+  final sr = _sum(rowF) == 0 ? 1.0 : _sum(rowF);
+
+  final x = g * (cell.col + 1) + usableW * (_sumRange(colF, 0, cell.col) / sc);
+  final y = g * (cell.row + 1) + usableH * (_sumRange(rowF, 0, cell.row) / sr);
+  final w = usableW * (_sumRange(colF, cell.col, cell.col + cs) / sc) + g * (cs - 1);
+  final h = usableH * (_sumRange(rowF, cell.row, cell.row + rs) / sr) + g * (rs - 1);
+  return Rect.fromLTWH(x, y, w, h);
+}
+
+double _sum(List<double> xs) => xs.fold(0.0, (a, b) => a + b);
+double _sumRange(List<double> xs, int start, int end) {
+  var total = 0.0;
+  for (var i = start; i < end && i < xs.length; i++) {
+    total += xs[i];
+  }
+  return total;
+}
+
+List<double> _doubleList(dynamic value) =>
+    (value as List<dynamic>).map((e) => (e as num).toDouble()).toList();
 
 /// Parses "#RRGGBB" (the editor's color format). Falls back to black so a
 /// malformed color degrades visibly instead of crashing the render.

@@ -214,6 +214,93 @@ void main() {
       expect(remote.windowIn(1000, 1000).width, closeTo(800, 0.1));
     });
 
+    test('grid layer parses and cellRect tiles the box (with a span)', () {
+      final grid =
+          Layer.fromJson({
+                'type': 'grid',
+                'id': 'g1',
+                'x': 0,
+                'y': 0,
+                'width': 210,
+                'height': 210,
+                'rotation': 0,
+                'cols': 2,
+                'rows': 2,
+                'colFractions': [1, 1],
+                'rowFractions': [1, 1],
+                'gutter': 10,
+                'cornerRadius': 4,
+                'cells': [
+                  {'slotId': 'cell_1', 'col': 0, 'row': 0, 'rowSpan': 2},
+                  {'slotId': 'cell_2', 'col': 1, 'row': 0},
+                  {'slotId': 'cell_3', 'col': 1, 'row': 1},
+                ],
+              })
+              as GridLayer;
+      expect(grid.cols, 2);
+      expect(grid.cells, hasLength(3));
+      // usable = 210 - 10*3 = 180; each track = 90.
+      final b = cellRect(grid, grid.cells[1]);
+      expect(b.left, closeTo(110, 0.001));
+      expect(b.top, closeTo(10, 0.001));
+      expect(b.width, closeTo(90, 0.001));
+      expect(b.height, closeTo(90, 0.001));
+      // The spanning cell eats the internal gutter: height = 90 + 10 + 90.
+      final span = cellRect(grid, grid.cells[0]);
+      expect(span.height, closeTo(190, 0.001));
+    });
+
+    test('grid cells join the panel slot namespace', () {
+      final t = Template.fromJson({
+        'id': 't',
+        'schemaVersion': 3,
+        'version': 0,
+        'name': 'g',
+        'aspectRatio': 'story',
+        'canvas': {'width': 1080, 'height': 1920, 'backgroundColor': '#FFFFFF'},
+        'layers': [
+          {
+            'type': 'grid',
+            'id': 'g1',
+            'x': 0,
+            'y': 0,
+            'width': 200,
+            'height': 200,
+            'rotation': 0,
+            'cols': 1,
+            'rows': 2,
+            'colFractions': [1],
+            'rowFractions': [1, 1],
+            'gutter': 0,
+            'cornerRadius': 0,
+            'cells': [
+              {'slotId': 'cell_1', 'col': 0, 'row': 0},
+              {'slotId': 'cell_2', 'col': 0, 'row': 1},
+            ],
+          },
+        ],
+      });
+      expect(t.slotIds, containsAll(['cell_1', 'cell_2']));
+    });
+
+    test('grid overrides fall back to the layer, then to the user value', () {
+      const content = SlotContent();
+      expect(content.gridGutter('g', 12), 12);
+      expect(content.gridCornerRadius('g', 0), 0);
+      expect(content.gridColFractions('g', const [1, 1]), [1, 1]);
+
+      final c = content
+          .withGridGutter('g', 40)
+          .withGridCornerRadius('g', 8)
+          .withGridColFractions('g', const [2, 1]);
+      expect(c.gridGutter('g', 12), 40);
+      expect(c.gridCornerRadius('g', 0), 8);
+      expect(c.gridColFractions('g', const [1, 1]), [2, 1]);
+      // Rows still fall back; a different grid is untouched.
+      expect(c.gridRowFractions('g', const [1, 1]), [1, 1]);
+      expect(c.gridGutter('other', 12), 12);
+    });
+
     test('layerHidden defers to the template flag, then to the override', () {
       const content = SlotContent();
       // shape_hidden carries editor.hidden:true in the fixture.

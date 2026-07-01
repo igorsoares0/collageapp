@@ -55,6 +55,7 @@ class LayersSheet extends StatelessWidget {
     TextLayer l => (Icons.title, l.slotId),
     ShapeLayer _ => (Icons.crop_square, 'Shape'),
     StickerLayer l => (Icons.star_outline, l.assetId),
+    GridLayer l => (Icons.grid_view, '${l.cols}×${l.rows} grid'),
   };
 
   @override
