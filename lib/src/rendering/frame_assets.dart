@@ -1,4 +1,6 @@
-import 'dart:ui' show Rect;
+import 'package:flutter/widgets.dart';
+
+import '../model/asset_record.dart';
 
 /// A photo frame (polaroid, etc.): a bundled PNG with a transparent window the
 /// user's photo shows through. Mirrors the editor's FRAME_ASSETS catalog
@@ -62,6 +64,58 @@ const List<FrameAsset> kFrameAssets = [
 
 final Map<String, FrameAsset> _byId = {for (final f in kFrameAssets) f.id: f};
 
-/// The frame for [id], or null when unset/unknown (older renderers just draw a
-/// bare photo — the field is additive).
+/// The seed frame for [id], or null when unset/unknown.
 FrameAsset? frameAsset(String? id) => id == null ? null : _byId[id];
+
+/// A frame ready to render, whatever its source. Seeds (bundled assets) and
+/// uploaded catalog frames (base64 → MemoryImage) collapse to the same shape so
+/// [_ImageSlot] doesn't care which it is.
+class ResolvedFrame {
+  final ImageProvider image;
+  final double aspect;
+  final double winX, winY, winW, winH;
+
+  const ResolvedFrame({
+    required this.image,
+    required this.aspect,
+    required this.winX,
+    required this.winY,
+    required this.winW,
+    required this.winH,
+  });
+
+  Rect windowIn(double w, double h) =>
+      Rect.fromLTWH(winX * w, winY * h, winW * w, winH * h);
+}
+
+/// Resolves [id] against the bundled seeds first (so older templates and the
+/// offline path keep working), then the remote [catalog]. Null when unset or
+/// unknown — the slot then draws a bare photo (the field is additive).
+ResolvedFrame? resolveFrame(String? id, List<AssetRecord> catalog) {
+  if (id == null) return null;
+  final seed = _byId[id];
+  if (seed != null) {
+    return ResolvedFrame(
+      image: AssetImage(seed.asset),
+      aspect: seed.aspect,
+      winX: seed.winX,
+      winY: seed.winY,
+      winW: seed.winW,
+      winH: seed.winH,
+    );
+  }
+  for (final a in catalog) {
+    if (a.id == id && a.type == 'frame' && a.window != null) {
+      final win = a.window!;
+      return ResolvedFrame(
+        image: a.image,
+        aspect: a.aspect,
+        winX: win.x,
+        winY: win.y,
+        winW: win.w,
+        winH: win.h,
+      );
+    }
+  }
+  return null;
+}

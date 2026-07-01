@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 
+import '../model/asset_record.dart';
 import '../model/template.dart';
 import 'template_api.dart';
 
@@ -19,6 +20,13 @@ class TemplateResult {
   final bool fromCache;
 
   const TemplateResult(this.template, {required this.fromCache});
+}
+
+class AssetsResult {
+  final List<AssetRecord> assets;
+  final bool fromCache;
+
+  const AssetsResult(this.assets, {required this.fromCache});
 }
 
 /// Network-first cache (spec §26/§27): every successful response is written
@@ -72,6 +80,23 @@ class TemplateStore {
     );
   }
 
+  /// The asset catalog (frames/stickers), network-first with the same on-disk
+  /// cache as templates, so uploaded frames render offline once fetched. On a
+  /// cold offline start it throws (like loadIndex) and the caller falls back to
+  /// the bundled seeds.
+  Future<AssetsResult> loadAssets() async {
+    String body;
+    try {
+      body = await api.fetchAssetsBody();
+    } catch (_) {
+      final cached = await _readCache(_assetsFile);
+      if (cached == null) rethrow;
+      return AssetsResult(TemplateApi.parseAssets(cached), fromCache: true);
+    }
+    await _writeCache(_assetsFile, body);
+    return AssetsResult(TemplateApi.parseAssets(body), fromCache: false);
+  }
+
   /// Spec §26 step 3: after a fresh index, download templates not cached yet
   /// so they open offline later. Opportunistic — failures are ignored, and
   /// already-cached templates are refreshed only when actually opened.
@@ -88,6 +113,7 @@ class TemplateStore {
   }
 
   static const _indexFile = 'index.json';
+  static const _assetsFile = 'assets.json';
 
   String _templateFile(String id) =>
       'tpl_${id.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_')}.json';

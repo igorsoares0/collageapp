@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:collageapp/src/model/asset_record.dart';
 import 'package:collageapp/src/model/slot_content.dart';
 import 'package:collageapp/src/model/template.dart';
 import 'package:collageapp/src/rendering/frame_assets.dart';
@@ -160,6 +161,57 @@ void main() {
       expect(win.left, closeTo(49.2, 0.1));
       expect(win.width, closeTo(902.4, 0.1));
       expect(win.right, lessThan(1000));
+    });
+
+    test('AssetRecord parses a frame window and a null-window sticker', () {
+      final frame = AssetRecord.fromJson({
+        'id': 'a1',
+        'type': 'frame',
+        'name': 'My frame',
+        'dataUrl': 'data:image/png;base64,AAAA',
+        'aspect': 0.7,
+        'window': {'x': 0.05, 'y': 0.02, 'w': 0.9, 'h': 0.82},
+      });
+      expect(frame.window, isNotNull);
+      expect(frame.window!.w, 0.9);
+      final sticker = AssetRecord.fromJson({
+        'id': 'a2',
+        'type': 'sticker',
+        'name': 'St',
+        'dataUrl': 'data:image/png;base64,AAAA',
+        'aspect': 1,
+        'window': null,
+      });
+      expect(sticker.window, isNull);
+    });
+
+    test('resolveFrame falls back to seeds, then the remote catalog', () {
+      // Unset / unknown → null.
+      expect(resolveFrame(null, const []), isNull);
+      expect(resolveFrame('nope', const []), isNull);
+
+      // A bundled seed resolves with no catalog.
+      final seed = resolveFrame('frame_polaroid_v', const [])!;
+      expect(seed.image, isA<AssetImage>());
+      final w = seed.windowIn(1000, 1000);
+      expect(w.left, closeTo(49.2, 0.1));
+
+      // An uploaded frame resolves from the catalog as a MemoryImage, using its
+      // own window. (1x1 transparent PNG so the decode is valid.)
+      const png =
+          'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+      final record = AssetRecord.fromJson({
+        'id': 'frame_custom',
+        'type': 'frame',
+        'name': 'Custom',
+        'dataUrl': png,
+        'aspect': 1.5,
+        'window': {'x': 0.1, 'y': 0.1, 'w': 0.8, 'h': 0.8},
+      });
+      final remote = resolveFrame('frame_custom', [record])!;
+      expect(remote.image, isA<MemoryImage>());
+      expect(remote.aspect, 1.5);
+      expect(remote.windowIn(1000, 1000).width, closeTo(800, 0.1));
     });
 
     test('layerHidden defers to the template flag, then to the override', () {

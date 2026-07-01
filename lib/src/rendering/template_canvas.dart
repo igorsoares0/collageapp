@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../model/asset_record.dart';
 import '../model/slot_content.dart';
 import '../model/template.dart';
 import 'frame_assets.dart';
@@ -115,6 +116,10 @@ class PanelCanvas extends StatelessWidget {
   /// show the icon inline; a filled, selected slot shows a "replace" overlay.
   final void Function(String slotId)? onPickImage;
 
+  /// Remote asset catalog (frames/stickers). A slot's frameAssetId resolves
+  /// against this plus the bundled seeds; empty = seeds only.
+  final List<AssetRecord> assetCatalog;
+
   const PanelCanvas({
     super.key,
     required this.panel,
@@ -132,6 +137,7 @@ class PanelCanvas extends StatelessWidget {
     this.onSlotRotate,
     this.onPickImage,
     this.editingFieldKey,
+    this.assetCatalog = const [],
   });
 
   @override
@@ -180,6 +186,7 @@ class PanelCanvas extends StatelessWidget {
                   onSlotRotate: onSlotRotate,
                   onPickImage: onPickImage,
                   onTextChanged: onTextChanged,
+                  assetCatalog: assetCatalog,
                   selected:
                       layer is ImageLayer && layer.slotId == selectedSlotId ||
                       layer is TextLayer && layer.slotId == selectedSlotId,
@@ -211,6 +218,7 @@ class TemplateCanvas extends StatelessWidget {
   final void Function(String slotId, Offset delta)? onSlotDrag;
   final void Function(String slotId, double scale)? onSlotScale;
   final void Function(String slotId, double degrees)? onSlotRotate;
+  final List<AssetRecord> assetCatalog;
 
   const TemplateCanvas({
     super.key,
@@ -225,6 +233,7 @@ class TemplateCanvas extends StatelessWidget {
     this.onSlotDrag,
     this.onSlotScale,
     this.onSlotRotate,
+    this.assetCatalog = const [],
   });
 
   @override
@@ -243,6 +252,7 @@ class TemplateCanvas extends StatelessWidget {
       onSlotDrag: onSlotDrag,
       onSlotScale: onSlotScale,
       onSlotRotate: onSlotRotate,
+      assetCatalog: assetCatalog,
     );
   }
 }
@@ -257,6 +267,7 @@ class _LayerWidget extends StatelessWidget {
   final void Function(String slotId, double degrees)? onSlotRotate;
   final void Function(String slotId)? onPickImage;
   final void Function(String slotId, String value)? onTextChanged;
+  final List<AssetRecord> assetCatalog;
   final bool selected;
   final bool editing;
   final GlobalKey? fieldKey;
@@ -271,6 +282,7 @@ class _LayerWidget extends StatelessWidget {
     this.onSlotRotate,
     this.onPickImage,
     this.onTextChanged,
+    this.assetCatalog = const [],
     this.selected = false,
     this.editing = false,
     this.fieldKey,
@@ -295,6 +307,7 @@ class _LayerWidget extends StatelessWidget {
               _ImageSlot(
                 layer: l,
                 content: content,
+                assetCatalog: assetCatalog,
                 interactive: onSlotTap != null,
                 selected: selected,
                 onPick: onPickImage,
@@ -750,6 +763,7 @@ class _SelectionChrome extends StatelessWidget {
 class _ImageSlot extends StatelessWidget {
   final ImageLayer layer;
   final SlotContent content;
+  final List<AssetRecord> assetCatalog;
 
   /// Whether the canvas is interactive (tap handlers installed) — empty
   /// placeholders then advertise themselves with a photo icon.
@@ -765,6 +779,7 @@ class _ImageSlot extends StatelessWidget {
   const _ImageSlot({
     required this.layer,
     required this.content,
+    this.assetCatalog = const [],
     this.interactive = false,
     this.selected = false,
     this.onPick,
@@ -775,7 +790,7 @@ class _ImageSlot extends StatelessWidget {
     final pick = (interactive && onPick != null)
         ? () => onPick!(layer.slotId)
         : null;
-    final frame = frameAsset(layer.frameAssetId);
+    final frame = resolveFrame(layer.frameAssetId, assetCatalog);
 
     if (frame == null) {
       // Bare photo: fills the whole slot box (unchanged behavior).
@@ -806,7 +821,7 @@ class _ImageSlot extends StatelessWidget {
             ),
             Positioned.fill(
               child: IgnorePointer(
-                child: Image.asset(frame.asset, fit: BoxFit.fill),
+                child: Image(image: frame.image, fit: BoxFit.fill),
               ),
             ),
           ],

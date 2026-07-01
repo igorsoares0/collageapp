@@ -3,6 +3,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../api/template_store.dart';
+import '../model/asset_record.dart';
 import '../model/slot_content.dart';
 import '../model/template.dart';
 import '../rendering/export.dart';
@@ -45,6 +46,8 @@ class _TemplateScreenState extends State<TemplateScreen> {
   // can reach every corner of the magnified panel.
   bool _isZoomed = false;
   late Future<Template> _template;
+  // Remote frame/sticker catalog; empty until loaded (seeds still resolve).
+  List<AssetRecord> _catalog = const [];
   SlotContent _content = const SlotContent();
   String? _selectedSlot;
   String? _editingSlot;
@@ -178,6 +181,18 @@ class _TemplateScreenState extends State<TemplateScreen> {
     super.initState();
     _zoom.addListener(_onZoomChange);
     _template = _store.loadTemplate(widget.id).then((r) => r.template);
+    _loadCatalog();
+  }
+
+  /// Fetches the frame/sticker catalog so uploaded frames resolve. Best-effort:
+  /// on a cold offline start it just stays empty and bundled seeds are used.
+  Future<void> _loadCatalog() async {
+    try {
+      final result = await _store.loadAssets();
+      if (mounted) setState(() => _catalog = result.assets);
+    } catch (_) {
+      // Seeds only.
+    }
   }
 
   @override
@@ -517,6 +532,7 @@ class _TemplateScreenState extends State<TemplateScreen> {
                                   canvasWidth: template.canvasWidth,
                                   canvasHeight: template.canvasHeight,
                                   content: _content,
+                                  assetCatalog: _catalog,
                                   selectedSlotId: _selectedSlot,
                                   editingSlotId: _editingSlot,
                                   onSlotTap: (slotId) {

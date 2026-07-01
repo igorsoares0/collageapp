@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import '../model/asset_record.dart';
 import '../model/template.dart';
 
 /// Base URL of the Collage Studio backend. Android emulators reach the host
@@ -74,6 +75,14 @@ class TemplateApi {
     return res.body;
   }
 
+  /// The uploadable asset catalog (frames/stickers). Frames referenced by a
+  /// template's frameAssetId are resolved against this (plus bundled seeds).
+  Future<String> fetchAssetsBody() async {
+    final res = await _client.get(Uri.parse('$baseUrl/api/assets'));
+    _ensureOk(res);
+    return res.body;
+  }
+
   static List<TemplateSummary> parseIndex(String body) {
     final list = jsonDecode(body) as List<dynamic>;
     return list
@@ -85,6 +94,13 @@ class TemplateApi {
   static Template parseTemplateRecord(String body) {
     final record = jsonDecode(body) as Map<String, dynamic>;
     return Template.fromJson(record['template'] as Map<String, dynamic>);
+  }
+
+  static List<AssetRecord> parseAssets(String body) {
+    final list = jsonDecode(body) as List<dynamic>;
+    return list
+        .map((e) => AssetRecord.fromJson(e as Map<String, dynamic>))
+        .toList();
   }
 
   void _ensureOk(http.Response res) {
