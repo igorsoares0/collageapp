@@ -415,12 +415,14 @@ class _LayerWidget extends StatelessWidget {
 
   /// The user's rotation override, pivoting around the element CENTER (default
   /// Transform.rotate alignment) so dragging the rotation handle spins the
-  /// element in place.
-  Widget _userRotated(String slotId, Widget child) {
-    final degrees = content.rotationFor(slotId);
-    if (degrees == 0) return child;
-    return Transform.rotate(angle: degrees * math.pi / 180, child: child);
-  }
+  /// element in place. ALWAYS wraps (identity at 0°), never conditionally —
+  /// like Transform.scale: inserting the Transform when rotation first goes
+  /// non-zero would restructure the tree and remount _SlotGestures mid-gesture,
+  /// the one-time hitch on the first rotation.
+  Widget _userRotated(String slotId, Widget child) => Transform.rotate(
+    angle: content.rotationFor(slotId) * math.pi / 180,
+    child: child,
+  );
 }
 
 /// The single gesture surface for a slot: tap, move, pinch, resize AND rotate,
