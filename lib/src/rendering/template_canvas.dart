@@ -354,29 +354,71 @@ class _LayerWidget extends StatelessWidget {
         Container(width: l.width, height: l.height, color: l.fill),
       ),
       StickerLayer l => _positioned(l.x, l.y, _StickerPlaceholder(layer: l)),
-      // The grid is placed and rotated by the designer (top-left pivot, Konva
-      // contract); the end-user only fills/crops its cells, so it doesn't go
-      // through _slot (no whole-grid move/resize/rotate gestures here).
-      GridLayer l => _positioned(
-        l.x,
-        l.y,
-        _rotated(
-          l.rotation,
-          _GridSlot(
-            grid: l,
-            content: content,
-            assetCatalog: assetCatalog,
-            interactive: onSlotTap != null,
-            selectedSlotId: selectedSlotId,
-            onSlotTap: onSlotTap,
-            onPickImage: onPickImage,
-            onSlotDrag: onSlotDrag,
-            onSlotScale: onSlotScale,
-            onGridFractions: onGridFractions,
-          ),
-        ),
-      ),
+      GridLayer l => _buildGrid(l),
     };
+  }
+
+  /// A grid layer. Cells (fill/crop/dividers) always render; once a cell is
+  /// selected the whole grid also gains move/resize/rotate — the same chrome
+  /// and gesture recognizer the other slots use, keyed by the grid's LAYER id
+  /// (so its offset/scale/rotation overrides never collide with a cell's crop).
+  /// The gesture surface sits BEHIND the cells: interior touches reach the cells
+  /// (crop), while the chrome ring/corners/handle (outside the cell area) reach
+  /// the grid — so dragging a cell crops, dragging the border moves the grid.
+  Widget _buildGrid(GridLayer l) {
+    final active =
+        selectedSlotId != null &&
+        l.cells.any((c) => c.slotId == selectedSlotId);
+    final gScale = content.scaleFor(l.id);
+    final gOffset = content.offsetFor(l.id);
+    final pad = active ? _kChromePad / gScale : 0.0;
+
+    final cells = _GridSlot(
+      grid: l,
+      content: content,
+      assetCatalog: assetCatalog,
+      interactive: onSlotTap != null,
+      selectedSlotId: selectedSlotId,
+      onSlotTap: onSlotTap,
+      onPickImage: onPickImage,
+      onSlotDrag: onSlotDrag,
+      onSlotScale: onSlotScale,
+      onGridFractions: onGridFractions,
+    );
+
+    Widget inner = cells;
+    if (active) {
+      inner = Stack(
+        clipBehavior: Clip.none,
+        children: [
+          // Whole-grid move/resize/rotate, behind the cells so only the chrome
+          // ring/corners (outside the cell box) reach it.
+          Positioned.fill(
+            child: _SlotGestures(
+              slotId: l.id,
+              currentScale: gScale,
+              currentRotation: content.rotationFor(l.id),
+              templateRotation: l.rotation,
+              selected: true,
+              onTap: null,
+              onDrag: onSlotDrag,
+              onScaleChange: onSlotScale,
+              onRotateChange: onSlotRotate,
+              child: const SizedBox.expand(),
+            ),
+          ),
+          _SelectionChrome(scale: gScale, child: cells),
+        ],
+      );
+    }
+
+    // Same transform chain as _slot: template rotation (top-left) then user
+    // rotation (center) then scale; the offset/pad live in the Positioned.
+    inner = Transform.scale(
+      scale: gScale,
+      child: _userRotated(l.id, _rotated(l.rotation, inner)),
+    );
+    return _positioned(l.x + gOffset.dx - pad, l.y + gOffset.dy - pad, inner);
   }
 
   /// Selection chrome (border + handle visuals) wraps the slot content

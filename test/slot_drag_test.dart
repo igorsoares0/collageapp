@@ -520,6 +520,65 @@ void main() {
     expect(calls.last[0] + calls.last[1], closeTo(2.0, 0.0001));
   });
 
+  testWidgets('selecting a grid cell reveals the whole-grid handles', (
+    tester,
+  ) async {
+    final template = gridTemplate(single: true);
+    await pump(
+      tester,
+      PanelCanvas(
+        panel: template.panels.first,
+        canvasWidth: template.canvasWidth,
+        canvasHeight: template.canvasHeight,
+        fontResolver: testFontResolver,
+        selectedSlotId: 'cell_1',
+        onSlotTap: (_) {},
+      ),
+    );
+    // The whole-grid chrome (corner + rotate handles) appears around the grid.
+    expect(find.byKey(const ValueKey('handle_tl')), findsOneWidget);
+    expect(find.byKey(const ValueKey('handle_rotate')), findsOneWidget);
+  });
+
+  testWidgets('dragging the grid chrome ring moves the whole grid', (
+    tester,
+  ) async {
+    final template = gridTemplate(single: true); // grid layer id 'g'
+    var content = const SlotContent();
+    await pump(
+      tester,
+      StatefulBuilder(
+        builder: (context, setState) => PanelCanvas(
+          panel: template.panels.first,
+          canvasWidth: template.canvasWidth,
+          canvasHeight: template.canvasHeight,
+          fontResolver: testFontResolver,
+          content: content,
+          selectedSlotId: 'cell_1',
+          onSlotTap: (_) {},
+          onSlotScale: (id, s) =>
+              setState(() => content = content.withScale(id, s)),
+          onSlotDrag: (id, d) => setState(
+            () => content = content.withOffset(id, content.offsetFor(id) + d),
+          ),
+        ),
+      ),
+    );
+
+    // A point just left of the grid box (canvas x≈20 → in the chrome ring, not
+    // over a cell) drags the whole grid, not a cell's crop.
+    final g = await tester.startGesture(const Offset(10, 260));
+    await g.moveBy(const Offset(0, 24));
+    await tester.pump();
+    await g.moveBy(const Offset(0, 30));
+    await tester.pump();
+    await g.up();
+
+    // The grid layer ('g') gained a move offset; no cell was cropped.
+    expect(content.offsetFor('g'), isNot(Offset.zero));
+    expect(content.offsetFor('cell_1'), Offset.zero);
+  });
+
   testWidgets('dragging the interior moves the selected slot, not resize', (
     tester,
   ) async {
