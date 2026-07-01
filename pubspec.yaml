@@ -28,3 +28,7 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    # Photo-frame overlays (polaroid, etc.). PNGs with a transparent window the
+    # user's photo shows through — see rendering/frame_assets.dart.
+    - assets/frames/

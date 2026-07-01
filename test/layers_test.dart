@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:collageapp/src/model/slot_content.dart';
 import 'package:collageapp/src/model/template.dart';
+import 'package:collageapp/src/rendering/frame_assets.dart';
 import 'package:collageapp/src/rendering/template_canvas.dart';
 import 'package:collageapp/src/widgets/layers_sheet.dart';
 import 'package:flutter/material.dart';
@@ -125,6 +126,40 @@ void main() {
       expect(rotated.rotationFor('txt_title'), 35);
       // Other slots are untouched.
       expect(rotated.rotationFor('img_hero'), 0.0);
+    });
+
+    test('image layer parses an optional frameAssetId (absent = null)', () {
+      ImageLayer parse(Map<String, dynamic> extra) =>
+          Layer.fromJson({
+                'type': 'image',
+                'id': 'img_1',
+                'slotId': 'img_1',
+                'x': 0,
+                'y': 0,
+                'width': 100,
+                'height': 100,
+                'rotation': 0,
+                'opacity': 1,
+                'borderRadius': 0,
+                ...extra,
+              })
+              as ImageLayer;
+      expect(parse({}).frameAssetId, isNull);
+      expect(
+        parse({'frameAssetId': 'frame_polaroid_v'}).frameAssetId,
+        'frame_polaroid_v',
+      );
+    });
+
+    test('frameAsset resolves known ids and maps the window into a box', () {
+      expect(frameAsset(null), isNull);
+      expect(frameAsset('nope'), isNull);
+      final f = frameAsset('frame_polaroid_v')!;
+      // Window is inset from the frame edges (normalized coords scale to px).
+      final win = f.windowIn(1000, 1000);
+      expect(win.left, closeTo(49.2, 0.1));
+      expect(win.width, closeTo(902.4, 0.1));
+      expect(win.right, lessThan(1000));
     });
 
     test('layerHidden defers to the template flag, then to the override', () {

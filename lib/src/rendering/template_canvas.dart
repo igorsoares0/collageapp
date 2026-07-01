@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../model/slot_content.dart';
 import '../model/template.dart';
+import 'frame_assets.dart';
 
 /// Resolves a template fontFamily name into a TextStyle. The default uses
 /// GoogleFonts (runtime download, spec §20); tests inject a plain resolver
@@ -771,52 +772,82 @@ class _ImageSlot extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final image = content.imageFor(layer.slotId);
     final pick = (interactive && onPick != null)
         ? () => onPick!(layer.slotId)
         : null;
+    final frame = frameAsset(layer.frameAssetId);
+
+    if (frame == null) {
+      // Bare photo: fills the whole slot box (unchanged behavior).
+      return Opacity(
+        opacity: layer.opacity,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(layer.borderRadius),
+          child: _photo(layer.width, layer.height, pick),
+        ),
+      );
+    }
+
+    // Framed photo: the user's photo lives in the frame's transparent window,
+    // the frame paints over the whole box. The frame stretches to the box (its
+    // aspect matches the layer's) so its window lands exactly on [win]. It
+    // ignores pointer events so a tap still hits the photo/slot beneath it.
+    final win = frame.windowIn(layer.width, layer.height);
     return Opacity(
       opacity: layer.opacity,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(layer.borderRadius),
-        child: image != null
-            ? Stack(
-                children: [
-                  Image(
-                    image: image,
-                    width: layer.width,
-                    height: layer.height,
-                    fit: BoxFit.cover,
-                  ),
-                  // A filled image is replaced by tapping the overlay icon
-                  // (only while selected); a tap anywhere else just moves it.
-                  if (selected && pick != null)
-                    Positioned.fill(
-                      child: Center(child: _PickIcon(onTap: pick)),
-                    ),
-                ],
-              )
-            : Container(
-                width: layer.width,
-                height: layer.height,
-                color: const Color(0xFFE4E4E7),
-                alignment: Alignment.center,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // Tapping the icon opens the gallery; tapping the rest of
-                    // the placeholder falls through to select the slot.
-                    if (pick != null) _PickIcon(onTap: pick),
-                    Text(
-                      layer.slotId,
-                      style: const TextStyle(
-                        color: Color(0xFF71717A),
-                        fontSize: 40,
-                      ),
-                    ),
-                  ],
-                ),
+      child: SizedBox(
+        width: layer.width,
+        height: layer.height,
+        child: Stack(
+          children: [
+            Positioned.fromRect(
+              rect: win,
+              child: ClipRect(child: _photo(win.width, win.height, pick)),
+            ),
+            Positioned.fill(
+              child: IgnorePointer(
+                child: Image.asset(frame.asset, fit: BoxFit.fill),
               ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// The photo (or empty placeholder) sized to a [w]×[h] box — the whole slot
+  /// when unframed, or the frame's window when framed.
+  Widget _photo(double w, double h, VoidCallback? pick) {
+    final image = content.imageFor(layer.slotId);
+    if (image != null) {
+      return Stack(
+        children: [
+          Image(image: image, width: w, height: h, fit: BoxFit.cover),
+          // A filled image is replaced by tapping the overlay icon (only while
+          // selected); a tap anywhere else just moves it.
+          if (selected && pick != null)
+            Positioned.fill(
+              child: Center(child: _PickIcon(onTap: pick)),
+            ),
+        ],
+      );
+    }
+    return Container(
+      width: w,
+      height: h,
+      color: const Color(0xFFE4E4E7),
+      alignment: Alignment.center,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Tapping the icon opens the gallery; tapping the rest of the
+          // placeholder falls through to select the slot.
+          if (pick != null) _PickIcon(onTap: pick),
+          Text(
+            layer.slotId,
+            style: const TextStyle(color: Color(0xFF71717A), fontSize: 40),
+          ),
+        ],
       ),
     );
   }

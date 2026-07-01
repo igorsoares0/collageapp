@@ -140,6 +140,7 @@ sealed class Layer {
           rotation: (json['rotation'] as num?)?.toDouble() ?? 0,
           opacity: (json['opacity'] as num?)?.toDouble() ?? 1,
           borderRadius: (json['borderRadius'] as num?)?.toDouble() ?? 0,
+          frameAssetId: json['frameAssetId'] as String?,
         );
       case 'text':
         return TextLayer(
@@ -185,6 +186,10 @@ class ImageLayer extends Layer {
   final String slotId;
   final double x, y, width, height, rotation, opacity, borderRadius;
 
+  /// Optional decorative frame (polaroid, etc.) painted over the user's photo;
+  /// null = bare photo. Resolved against the frame catalog at render time.
+  final String? frameAssetId;
+
   const ImageLayer({
     required super.id,
     required super.hidden,
@@ -196,6 +201,7 @@ class ImageLayer extends Layer {
     required this.rotation,
     required this.opacity,
     required this.borderRadius,
+    this.frameAssetId,
   });
 }
 
