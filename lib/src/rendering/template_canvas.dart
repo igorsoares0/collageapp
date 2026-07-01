@@ -291,51 +291,43 @@ class _LayerWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return switch (layer) {
+      // The chromed content is passed UNROTATED; _slot wraps the gesture
+      // surface in the template + user rotations, so the touch region tracks
+      // the painted element (handles included) instead of the layout box.
       ImageLayer l => _slot(
         l.slotId,
         l.x,
         l.y,
-        // User rotation pivots around the element center (Canva-style); it
-        // wraps the designer's template rotation, which keeps its top-left
-        // origin (the Konva contract shared with the web editor).
-        _userRotated(
+        _chromed(
           l.slotId,
-          _rotated(
-            l.rotation,
-            _chromed(
-              l.slotId,
-              _ImageSlot(
-                layer: l,
-                content: content,
-                assetCatalog: assetCatalog,
-                interactive: onSlotTap != null,
-                selected: selected,
-                onPick: onPickImage,
-              ),
-            ),
+          _ImageSlot(
+            layer: l,
+            content: content,
+            assetCatalog: assetCatalog,
+            interactive: onSlotTap != null,
+            selected: selected,
+            onPick: onPickImage,
           ),
         ),
+        templateRotation: l.rotation,
       ),
       TextLayer l => _slot(
         l.slotId,
         l.x,
         l.y,
-        // Text layers carry no template rotation; only the user's.
-        _userRotated(
+        _chromed(
           l.slotId,
-          _chromed(
-            l.slotId,
-            _TextSlot(
-              layer: l,
-              content: content,
-              fontResolver: fontResolver,
-              editing: editing,
-              fieldKey: fieldKey,
-              onTextChanged: onTextChanged,
-            ),
+          _TextSlot(
+            layer: l,
+            content: content,
+            fontResolver: fontResolver,
+            editing: editing,
+            fieldKey: fieldKey,
+            onTextChanged: onTextChanged,
           ),
         ),
-        // The TextField owns cursor/selection gestures while editing.
+        // Text carries no template rotation; the TextField owns cursor/
+        // selection gestures while editing.
         gestures: !editing,
       ),
       ShapeLayer l => _positioned(
@@ -357,16 +349,21 @@ class _LayerWidget extends StatelessWidget {
   }
 
   /// Slot layers carry the user's position/size adjustments and the
-  /// tap/drag/pinch/resize handler. _SlotGestures sits INSIDE Transform.scale
-  /// so its hit area grows with the element (otherwise a scaled-up element
-  /// would extend past its own touch region). Translation is applied before
-  /// rotation, so dragging a rotated slot still follows the finger.
+  /// tap/drag/pinch/resize handler. The chain, outer to inner, is:
+  /// Transform.scale → _userRotated (center pivot) → _rotated (template, topLeft
+  /// pivot) → _SlotGestures → chrome/content. The rotations wrap the gesture
+  /// surface, so its hit region tracks the PAINTED element (corner/rotate
+  /// handles included) rather than the unrotated layout box — otherwise a
+  /// designer-rotated element's handles fall outside their own touch region.
+  /// _SlotGestures un-rotates drag deltas back into template space. Transform.
+  /// scale stays outermost so the hit area grows with a resized element.
   Widget _slot(
     String slotId,
     double x,
     double y,
     Widget child, {
     bool gestures = true,
+    double templateRotation = 0,
   }) {
     final offset = content.offsetFor(slotId);
     final scale = content.scaleFor(slotId);
@@ -384,6 +381,7 @@ class _LayerWidget extends StatelessWidget {
         slotId: slotId,
         currentScale: scale,
         currentRotation: content.rotationFor(slotId),
+        templateRotation: templateRotation,
         selected: selected,
         onTap: onSlotTap,
         onDrag: onSlotDrag,
@@ -392,6 +390,10 @@ class _LayerWidget extends StatelessWidget {
         child: inner,
       );
     }
+    // Rotations wrap the gesture surface (see the doc above). User rotation
+    // pivots around the element center (Canva-style); template rotation keeps
+    // its top-left origin (the Konva contract shared with the web editor).
+    inner = _userRotated(slotId, _rotated(templateRotation, inner));
     // Always wrap in Transform.scale (identity at 1.0), never conditionally:
     // inserting it on the first resize would restructure the tree and remount
     // _SlotGestures mid-gesture — the one-time hitch on the first drag.
@@ -402,15 +404,18 @@ class _LayerWidget extends StatelessWidget {
   Widget _positioned(double x, double y, Widget child) =>
       Positioned(left: x, top: y, child: child);
 
-  Widget _rotated(double degrees, Widget child) => Transform.rotate(
-    angle: degrees * math.pi / 180,
-    alignment: Alignment.topLeft,
-    child: child,
-  );
+  Widget _rotated(double degrees, Widget child) {
+    if (degrees == 0) return child;
+    return Transform.rotate(
+      angle: degrees * math.pi / 180,
+      alignment: Alignment.topLeft,
+      child: child,
+    );
+  }
 
   /// The user's rotation override, pivoting around the element CENTER (default
   /// Transform.rotate alignment) so dragging the rotation handle spins the
-  /// element in place — the matching pivot is [_SlotGesturesState._centerGlobal].
+  /// element in place.
   Widget _userRotated(String slotId, Widget child) {
     final degrees = content.rotationFor(slotId);
     if (degrees == 0) return child;
@@ -435,6 +440,11 @@ class _SlotGestures extends StatefulWidget {
   /// The slot's current user rotation in degrees — the base a two-finger
   /// twist adds onto.
   final double currentRotation;
+
+  /// The layer's own template rotation in degrees (designer-applied; images
+  /// carry one, text doesn't). The element paints through this rotation too, so
+  /// the handle touch zones must account for it — see [_SlotGesturesState._toRotated].
+  final double templateRotation;
   // Move/resize/pinch/rotate are wired only when the slot is selected;
   // otherwise the detector exposes just the tap (to select) and lets drags
   // fall through to the canvas pan/zoom instead of moving an unselected
@@ -450,6 +460,7 @@ class _SlotGestures extends StatefulWidget {
     required this.slotId,
     required this.currentScale,
     required this.currentRotation,
+    required this.templateRotation,
     required this.selected,
     required this.onTap,
     required this.onDrag,
@@ -475,32 +486,37 @@ class _SlotGesturesState extends State<_SlotGestures> {
   double _baseRotation = 0.0;
   double? _startAngle;
 
-  /// Element center in global coordinates. This widget sits inside
-  /// Transform.scale, so localToGlobal already accounts for the scale; the
-  /// center is the scale's fixed point, hence stable while resizing.
+  /// Element center in global coordinates — the anchor resize distances and
+  /// rotation angles are measured from. This widget lives INSIDE the rotation
+  /// (and scale) transforms, so localToGlobal maps the layout-box center to
+  /// where the element actually paints; hence this is the true visible center
+  /// for any rotation.
   Offset? _centerGlobal() {
     final box = context.findRenderObject();
     if (box is! RenderBox || !box.hasSize) return null;
     return box.localToGlobal(box.size.center(Offset.zero));
   }
 
-  /// Maps a point from the element's UNROTATED layout space into where it
-  /// actually paints, by spinning it around the box center by the current user
-  /// rotation — matching `_userRotated` (Transform.rotate, center alignment).
-  /// The handles/corners orbit the center as the element rotates, so their
-  /// touch zones must follow or only the first (rotation==0) grab would land.
-  Offset _toRotated(Offset p, Size size) {
-    final rad = widget.currentRotation * math.pi / 180;
-    if (rad == 0) return p;
-    final center = Offset(size.width / 2, size.height / 2);
-    final d = p - center;
+  /// Rotates [v] by [rad] around the origin (for direction vectors like drag
+  /// deltas, where the pivot is irrelevant).
+  Offset _rotateVec(Offset v, double rad) {
+    if (rad == 0) return v;
     final cos = math.cos(rad);
     final sin = math.sin(rad);
-    return center + Offset(d.dx * cos - d.dy * sin, d.dx * sin + d.dy * cos);
+    return Offset(v.dx * cos - v.dy * sin, v.dx * sin + v.dy * cos);
   }
 
-  /// True when [local] (in this widget's padded coordinate space) is within
-  /// reach of one of the element's four corners — the resize zones.
+  /// A local drag delta lands in the element's ROTATED frame (this widget sits
+  /// inside both rotations); rotate it back so the offset moves in template
+  /// space and the element still follows the finger.
+  Offset _dragToTemplate(Offset delta) => _rotateVec(
+    delta,
+    (widget.currentRotation + widget.templateRotation) * math.pi / 180,
+  );
+
+  /// True when [local] is within reach of one of the element's four corners —
+  /// the resize zones. Corners are axis-aligned here: the gesture surface is
+  /// inside the rotations, so [local] arrives already un-rotated.
   bool _nearCorner(Offset local, Size size) {
     final pad = _kChromePad / widget.currentScale;
     final reach = _kCornerReach / widget.currentScale;
@@ -512,21 +528,19 @@ class _SlotGesturesState extends State<_SlotGestures> {
       Offset(pad, pad + h),
       Offset(pad + w, pad + h),
     ];
-    return corners.any(
-      (c) => (local - _toRotated(c, size)).distanceSquared <= reach * reach,
-    );
+    return corners.any((c) => (local - c).distanceSquared <= reach * reach);
   }
 
-  /// True when [local] (this widget's padded coordinate space) is within reach
-  /// of the rotation handle, which floats below the element's bottom-center.
+  /// True when [local] is within reach of the rotation handle, which floats
+  /// below the element's bottom-center (axis-aligned, as with [_nearCorner]).
   bool _nearRotationHandle(Offset local, Size size) {
     final pad = _kChromePad / widget.currentScale;
     final reach = _kCornerReach / widget.currentScale;
     final w = size.width - 2 * pad;
     final h = size.height - 2 * pad;
-    final handle = _toRotated(
-      Offset(pad + w / 2, pad + h + _kRotateHandleDrop / widget.currentScale),
-      size,
+    final handle = Offset(
+      pad + w / 2,
+      pad + h + _kRotateHandleDrop / widget.currentScale,
     );
     return (local - handle).distanceSquared <= reach * reach;
   }
@@ -595,7 +609,7 @@ class _SlotGesturesState extends State<_SlotGestures> {
       return;
     }
     if (d.focalPointDelta != Offset.zero) {
-      widget.onDrag?.call(widget.slotId, d.focalPointDelta);
+      widget.onDrag?.call(widget.slotId, _dragToTemplate(d.focalPointDelta));
     }
     if (d.pointerCount >= 2 && d.scale != 1.0) {
       widget.onScaleChange?.call(

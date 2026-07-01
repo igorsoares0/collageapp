@@ -281,6 +281,77 @@ void main() {
     expect(content.scaleFor('title'), lessThan(grown));
   });
 
+  testWidgets('corner drag resizes a slot with a template rotation', (
+    tester,
+  ) async {
+    // Regression: the element paints through its template rotation, so the
+    // visible corner handles orbit with it. The touch zones must too — before
+    // the fix they were computed unrotated, so grabbing the visible handle of a
+    // designer-rotated element did nothing.
+    final rotated = Template.fromJson({
+      'id': 'rot',
+      'schemaVersion': 1,
+      'version': 0,
+      'name': 'rot',
+      'aspectRatio': 'story',
+      'canvas': {'width': 1080, 'height': 1920, 'backgroundColor': '#FFFFFF'},
+      'layers': [
+        {
+          'type': 'image',
+          'id': 'img',
+          'slotId': 'rot_img',
+          'x': 340,
+          'y': 760,
+          'width': 400,
+          'height': 400,
+          'rotation': 45,
+          'opacity': 1,
+          'borderRadius': 0,
+        },
+      ],
+    });
+
+    var content = const SlotContent();
+    await pump(
+      tester,
+      StatefulBuilder(
+        builder: (context, setState) => TemplateCanvas(
+          template: rotated,
+          content: content,
+          fontResolver: testFontResolver,
+          selectedSlotId: 'rot_img',
+          onSlotScale: (slotId, scale) =>
+              setState(() => content = content.withScale(slotId, scale)),
+          // Wired so a mis-detected grab would move (not resize) — proving the
+          // grab really is recognized as a corner resize.
+          onSlotDrag: (slotId, delta) => setState(
+            () => content = content.withOffset(
+              slotId,
+              content.offsetFor(slotId) + delta,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    // Pull the (rotated) bottom-right handle straight outward from the center.
+    final tl = tester.getCenter(find.byKey(const ValueKey('handle_tl')));
+    final br = tester.getCenter(find.byKey(const ValueKey('handle_br')));
+    final center = (tl + br) / 2;
+    final dir = (br - center) / (br - center).distance;
+
+    final grow = await tester.startGesture(br);
+    await grow.moveBy(dir * 8);
+    await tester.pump();
+    await grow.moveBy(dir * 12);
+    await tester.pump();
+    await grow.up();
+
+    // Resize fired (scale grew) and it was NOT treated as a move.
+    expect(content.scaleFor('rot_img'), greaterThan(1.0));
+    expect(content.offsetFor('rot_img'), Offset.zero);
+  });
+
   testWidgets('dragging the interior moves the selected slot, not resize', (
     tester,
   ) async {
