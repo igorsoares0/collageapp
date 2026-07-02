@@ -434,15 +434,11 @@ void main() {
     expect(picks.first, startsWith('cell_'));
   });
 
-  testWidgets('dragging a selected, zoomed grid cell pans the photo (crop)', (
+  testWidgets('dragging inside a selected grid cell moves the whole grid', (
     tester,
   ) async {
-    final template = gridTemplate(single: true);
-    // Zoomed in (scale 2) so the pan has room to move before clamping.
-    var content = SlotContent(
-      images: {'cell_1': MemoryImage(onePixelPng)},
-      scales: const {'cell_1': 2.0},
-    );
+    final template = gridTemplate(single: true); // grid layer id 'g'
+    var content = SlotContent(images: {'cell_1': MemoryImage(onePixelPng)});
     await pump(
       tester,
       StatefulBuilder(
@@ -463,8 +459,9 @@ void main() {
       ),
     );
 
-    // Drag inside the (only) cell: the photo pans within it (crop), NOT the
-    // whole element. First move eats the recognizer's slop.
+    // Drag from inside the (only) cell: the cell is translucent, so the touch
+    // falls through to the whole-grid surface and MOVES the grid — no crop.
+    // First move eats the recognizer's slop.
     final start = tester.getCenter(find.byType(Image));
     final g = await tester.startGesture(start);
     await g.moveBy(const Offset(30, 0));
@@ -472,7 +469,8 @@ void main() {
     await g.moveBy(const Offset(40, 0));
     await tester.pump();
     await g.up();
-    expect(content.offsetFor('cell_1'), isNot(Offset.zero));
+    expect(content.offsetFor('g'), isNot(Offset.zero));
+    expect(content.offsetFor('cell_1'), Offset.zero);
   });
 
   testWidgets('dragging a grid divider re-splits the column fractions', (

@@ -358,13 +358,13 @@ class _LayerWidget extends StatelessWidget {
     };
   }
 
-  /// A grid layer. Cells (fill/crop/dividers) always render; once a cell is
-  /// selected the whole grid also gains move/resize/rotate — the same chrome
-  /// and gesture recognizer the other slots use, keyed by the grid's LAYER id
-  /// (so its offset/scale/rotation overrides never collide with a cell's crop).
-  /// The gesture surface sits BEHIND the cells: interior touches reach the cells
-  /// (crop), while the chrome ring/corners/handle (outside the cell area) reach
-  /// the grid — so dragging a cell crops, dragging the border moves the grid.
+  /// A grid layer. Cells (fill + dividers) always render; once a cell is
+  /// selected the whole grid gains move/resize/rotate — the same chrome and
+  /// gesture recognizer the other slots use, keyed by the grid's LAYER id. The
+  /// gesture surface sits BEHIND the cells, and the cells are translucent, so a
+  /// drag anywhere on the grid falls through and moves/resizes it like an image.
+  /// Only the opaque bits stay local: the pick icon (taps to fill/replace) and,
+  /// when active, the dividers (drag to re-split) block the surface beneath them.
   Widget _buildGrid(GridLayer l) {
     final active =
         selectedSlotId != null &&
@@ -381,8 +381,6 @@ class _LayerWidget extends StatelessWidget {
       selectedSlotId: selectedSlotId,
       onSlotTap: onSlotTap,
       onPickImage: onPickImage,
-      onSlotDrag: onSlotDrag,
-      onSlotScale: onSlotScale,
       onGridFractions: onGridFractions,
     );
 
@@ -978,8 +976,6 @@ class _GridSlot extends StatelessWidget {
   final String? selectedSlotId;
   final void Function(String slotId)? onSlotTap;
   final void Function(String slotId)? onPickImage;
-  final void Function(String slotId, Offset delta)? onSlotDrag;
-  final void Function(String slotId, double scale)? onSlotScale;
   final void Function(String gridId, bool columns, List<double> fractions)?
   onGridFractions;
 
@@ -991,8 +987,6 @@ class _GridSlot extends StatelessWidget {
     this.selectedSlotId,
     this.onSlotTap,
     this.onPickImage,
-    this.onSlotDrag,
-    this.onSlotScale,
     this.onGridFractions,
   });
 
@@ -1036,14 +1030,10 @@ class _GridSlot extends StatelessWidget {
                 slotId: cell.slotId,
                 radius: cell.borderRadius ?? corner,
                 image: content.imageFor(cell.slotId),
-                cropOffset: content.offsetFor(cell.slotId),
-                cropScale: content.scaleFor(cell.slotId),
                 selected: cell.slotId == selectedSlotId,
                 interactive: interactive,
                 onTap: onSlotTap,
                 onPick: onPickImage,
-                onDrag: onSlotDrag,
-                onScale: onSlotScale,
               ),
             ),
           if (active) ..._dividers(colF, rowF, gutter),
@@ -1178,157 +1168,107 @@ class _GridDivider extends StatelessWidget {
   }
 }
 
-/// One grid cell: a fixed rounded box holding the user's photo (cover-fit) with
-/// pan/zoom WITHIN it (a crop), reusing SlotContent.offsets/scales keyed by the
-/// cell's slotId. Tap selects (its icon opens the picker); once selected, a
-/// one-finger drag pans and a pinch zooms the photo, clamped so the cell stays
-/// fully covered. Empty cells show the placeholder + pick icon.
-class _GridCell extends StatefulWidget {
+/// One grid cell: a fixed rounded box holding the user's photo (cover-fit,
+/// centred — no per-cell crop) or, when empty, a placeholder with the pick icon.
+/// The cell is TRANSLUCENT and only taps (to select the grid); a drag falls
+/// through to the whole-grid gesture surface behind, so the grid moves/resizes/
+/// rotates like an image. Tapping a selected, filled cell's centre icon swaps
+/// the photo; the pick icon itself is opaque, so it never drags the grid.
+class _GridCell extends StatelessWidget {
   final String slotId;
   final double radius;
   final ImageProvider? image;
-  final Offset cropOffset;
-  final double cropScale;
   final bool selected;
   final bool interactive;
   final void Function(String slotId)? onTap;
   final void Function(String slotId)? onPick;
-  final void Function(String slotId, Offset delta)? onDrag;
-  final void Function(String slotId, double scale)? onScale;
 
   const _GridCell({
     required this.slotId,
     required this.radius,
     required this.image,
-    required this.cropOffset,
-    required this.cropScale,
     required this.selected,
     required this.interactive,
     this.onTap,
     this.onPick,
-    this.onDrag,
-    this.onScale,
   });
 
   @override
-  State<_GridCell> createState() => _GridCellState();
-}
-
-class _GridCellState extends State<_GridCell> {
-  // Min 1.0: the photo may never shrink below cover, or a gap would show.
-  static const double _kMinCropScale = 1.0;
-  static const double _kMaxCropScale = 4.0;
-
-  double _baseScale = 1.0;
-
-  /// Clamp a pan offset so the (scaled) photo still covers the whole cell — the
-  /// overhang on each axis is half the amount the photo overflows the box.
-  Offset _clampPan(Offset o, double scale, Size size) {
-    final ox = size.width * (scale - 1) / 2;
-    final oy = size.height * (scale - 1) / 2;
-    return Offset(o.dx.clamp(-ox, ox), o.dy.clamp(-oy, oy));
-  }
-
-  void _onStart(ScaleStartDetails d) => _baseScale = widget.cropScale;
-
-  void _onUpdate(ScaleUpdateDetails d) {
-    final size = context.size;
-    if (size == null) return;
-    // Pinch: zoom relative to the gesture start, then re-clamp the pan since a
-    // smaller scale shrinks the allowed overhang.
-    if (d.pointerCount >= 2 && d.scale != 1.0) {
-      final scale = (_baseScale * d.scale).clamp(_kMinCropScale, _kMaxCropScale);
-      widget.onScale?.call(widget.slotId, scale);
-      final clamped = _clampPan(widget.cropOffset, scale, size);
-      if (clamped != widget.cropOffset) {
-        widget.onDrag?.call(widget.slotId, clamped - widget.cropOffset);
-      }
-      return;
-    }
-    // Pan: emit the delta needed to reach the clamped target, so the stored
-    // offset never drifts out of range.
-    if (d.focalPointDelta != Offset.zero) {
-      final clamped = _clampPan(
-        widget.cropOffset + d.focalPointDelta,
-        widget.cropScale,
-        size,
-      );
-      if (clamped != widget.cropOffset) {
-        widget.onDrag?.call(widget.slotId, clamped - widget.cropOffset);
-      }
-    }
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final pick = (widget.interactive && widget.onPick != null)
-        ? () => widget.onPick!(widget.slotId)
+    final pick = (interactive && onPick != null)
+        ? () => onPick!(slotId)
         : null;
     return GestureDetector(
-      // Opaque so the whole cell (photo + gaps) is a tap/gesture target; an
-      // unselected cell only taps (drags fall through to the canvas pan).
-      behavior: HitTestBehavior.opaque,
-      onTap: widget.onTap == null ? null : () => widget.onTap!(widget.slotId),
-      onScaleStart: widget.selected ? _onStart : null,
-      onScaleUpdate: widget.selected ? _onUpdate : null,
-      child: widget.image != null ? _filled(pick) : _empty(pick),
+      // Translucent (not opaque): a tap selects the grid, but a drag passes
+      // through to the whole-grid gesture surface behind so the grid moves —
+      // the cell no longer captures the touch for a crop.
+      behavior: HitTestBehavior.translucent,
+      onTap: onTap == null ? null : () => onTap!(slotId),
+      child: image != null ? _filled(pick) : _empty(pick),
     );
   }
 
+  // The photo (and border) is IgnorePointer'd so it is not a hit target: a
+  // translucent GestureDetector only falls through to the grid surface behind
+  // when NOTHING below it is hit. The pick icon stays a real (opaque) target,
+  // so it — and only it — absorbs the touch.
   Widget _filled(VoidCallback? pick) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final size = constraints.biggest;
-        // Clamp at render too, so even after a scale change the cell can never
-        // show a gap regardless of the stored offset.
-        final o = _clampPan(widget.cropOffset, widget.cropScale, size);
-        return ClipRRect(
-          borderRadius: BorderRadius.circular(widget.radius),
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              Transform(
-                alignment: Alignment.center,
-                transform: Matrix4.identity()
-                  ..translateByDouble(o.dx, o.dy, 0, 1)
-                  ..scaleByDouble(widget.cropScale, widget.cropScale, 1, 1),
-                child: Image(image: widget.image!, fit: BoxFit.cover),
-              ),
-              if (widget.selected)
-                IgnorePointer(
-                  child: DecoratedBox(
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        IgnorePointer(
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(radius),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                Image(image: image!, fit: BoxFit.cover),
+                if (selected)
+                  DecoratedBox(
                     decoration: BoxDecoration(
                       border: Border.all(color: Colors.white, width: 3),
                     ),
                   ),
-                ),
-              // Replace overlay (only when selected); a plain tap moves nothing.
-              if (widget.selected && pick != null)
-                Center(child: _PickIcon(onTap: pick)),
-            ],
+              ],
+            ),
           ),
-        );
-      },
+        ),
+        // Replace overlay (only when selected).
+        if (selected && pick != null) Center(child: _PickIcon(onTap: pick)),
+      ],
     );
   }
 
   Widget _empty(VoidCallback? pick) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(widget.radius),
-      child: Container(
-        color: const Color(0xFFE4E4E7),
-        alignment: Alignment.center,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (pick != null) _PickIcon(onTap: pick),
-            Text(
-              widget.slotId,
-              style: const TextStyle(color: Color(0xFF71717A), fontSize: 32),
-            ),
-          ],
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        // Background + label are non-hittable so a drag falls through to move
+        // the grid; only the pick icon is a real touch target.
+        IgnorePointer(
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(radius),
+            child: const ColoredBox(color: Color(0xFFE4E4E7)),
+          ),
         ),
-      ),
+        Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (pick != null) _PickIcon(onTap: pick),
+              IgnorePointer(
+                child: Text(
+                  slotId,
+                  style: const TextStyle(
+                    color: Color(0xFF71717A),
+                    fontSize: 32,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
