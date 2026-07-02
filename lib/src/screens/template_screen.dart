@@ -55,6 +55,13 @@ class _TemplateScreenState extends State<TemplateScreen> {
   // Panel the styling bars act on (last one the user touched).
   String? _focusedPanelId;
   bool _exporting = false;
+  // Screen-space selection overlay (CanvasSelectionOverlay): the leader link
+  // the selected element's chrome box publishes inside its PanelCanvas, and
+  // that box's measured size keyed by the gesture target id — the size lands
+  // one frame after selection (post-layout), and keying it prevents a frame
+  // of wrong-sized chrome when the selection jumps between elements.
+  final LayerLink _selectionLink = LayerLink();
+  (String, Size)? _selectionBox;
 
   GlobalKey _panelKey(String panelId) =>
       _panelKeys.putIfAbsent(panelId, () => GlobalKey());
@@ -479,6 +486,28 @@ class _TemplateScreenState extends State<TemplateScreen> {
     return null;
   }
 
+  /// What the selection overlay manipulates for [_selectedSlot]: the gesture
+  /// target id (the slot id, or the LAYER id when a grid cell is selected —
+  /// moving/resizing acts on the whole grid) and the layer's template
+  /// rotation. Null when nothing is selected.
+  (String, double)? _selectionTarget(Template template) {
+    final slot = _selectedSlot;
+    if (slot == null) return null;
+    for (final layer in _allLayers(template)) {
+      switch (layer) {
+        case ImageLayer l when l.slotId == slot:
+          return (l.slotId, l.rotation);
+        case TextLayer l when l.slotId == slot:
+          // Text carries no template rotation (mirrors _LayerWidget).
+          return (l.slotId, 0);
+        case GridLayer l when l.cells.any((c) => c.slotId == slot):
+          return (l.id, l.rotation);
+        default:
+      }
+    }
+    return null;
+  }
+
   Widget _buildBody(
     Template template,
     double keyboardInset,
@@ -523,6 +552,14 @@ class _TemplateScreenState extends State<TemplateScreen> {
                 // are off and would otherwise fight the selection handles.
                 final interacting =
                     _selectedSlot != null || _editingSlot != null;
+                // Selection chrome + ring/handle gestures float in an overlay
+                // ABOVE the strip (unclipped by the canvas, so handles work
+                // past its edge). While editing text the legacy in-canvas
+                // chrome is used instead — the overlay would sit on top of
+                // the inline TextField.
+                final target = _editingSlot == null
+                    ? _selectionTarget(template)
+                    : null;
                 final strip = SizedBox(
                   height: canvasHeight,
                   child: Padding(
@@ -602,6 +639,20 @@ class _TemplateScreenState extends State<TemplateScreen> {
                                                 fractions,
                                               );
                                       }),
+                                  selectionLink: target == null
+                                      ? null
+                                      : _selectionLink,
+                                  onSelectionSize: target == null
+                                      ? null
+                                      : (s) {
+                                          if (_selectionBox ==
+                                              (target.$1, s)) {
+                                            return;
+                                          }
+                                          setState(() {
+                                            _selectionBox = (target.$1, s);
+                                          });
+                                        },
                                 ),
                               ),
                             ),
@@ -638,13 +689,45 @@ class _TemplateScreenState extends State<TemplateScreen> {
                         boundaryMargin: const EdgeInsets.all(64),
                         child: strip,
                       );
-                return SingleChildScrollView(
+                final scroll = SingleChildScrollView(
                   // Vertical scroll only while editing — the framework lifts the
                   // focused field above the keyboard then. Frozen otherwise.
                   physics: _editingSlot != null
                       ? const ClampingScrollPhysics()
                       : const NeverScrollableScrollPhysics(),
                   child: SizedBox(height: canvasHeight, child: surface),
+                );
+                final box = _selectionBox;
+                if (target == null || box == null || box.$1 != target.$1) {
+                  return scroll;
+                }
+                return Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    scroll,
+                    Positioned.fill(
+                      child: CanvasSelectionOverlay(
+                        link: _selectionLink,
+                        size: box.$2,
+                        targetId: target.$1,
+                        currentScale: _content.scaleFor(target.$1),
+                        currentRotation: _content.rotationFor(target.$1),
+                        templateRotation: target.$2,
+                        onDrag: (slotId, delta) => setState(() {
+                          _content = _content.withOffset(
+                            slotId,
+                            _content.offsetFor(slotId) + delta,
+                          );
+                        }),
+                        onScaleChange: (slotId, scale) => setState(() {
+                          _content = _content.withScale(slotId, scale);
+                        }),
+                        onRotateChange: (slotId, degrees) => setState(() {
+                          _content = _content.withRotation(slotId, degrees);
+                        }),
+                      ),
+                    ),
+                  ],
                 );
               },
             ),

@@ -1,6 +1,14 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+// `show`: a bare import would clash with the app's own model `Layer`.
+import 'package:flutter/rendering.dart'
+    show
+        BoxHitTestResult,
+        PaintingContext,
+        RenderBox,
+        RenderObjectWithChildMixin,
+        RenderProxyBox;
 import 'package:google_fonts/google_fonts.dart';
 
 import '../model/asset_record.dart';
@@ -51,6 +59,36 @@ const double _kCornerReach = 72.0;
 /// scale template px / scale). Kept under [_kChromePad] so the handle — and its
 /// touch zone — stay inside the chrome's hit region that _SlotGestures covers.
 const double _kRotateHandleDrop = 44.0;
+
+/// True when [local] is within reach of one of the element's four corners —
+/// the resize zones. [size] is the PADDED chrome box; corners are axis-aligned
+/// because both callers sit inside the rotation transforms, so [local] arrives
+/// already un-rotated. Shared by _SlotGestures (which zone a touch starts in)
+/// and _RingHitRegion (which touches the overlay claims at all).
+bool _nearCornerZone(Offset local, Size size, double scale) {
+  final pad = _kChromePad / scale;
+  final reach = _kCornerReach / scale;
+  final w = size.width - 2 * pad;
+  final h = size.height - 2 * pad;
+  final corners = [
+    Offset(pad, pad),
+    Offset(pad + w, pad),
+    Offset(pad, pad + h),
+    Offset(pad + w, pad + h),
+  ];
+  return corners.any((c) => (local - c).distanceSquared <= reach * reach);
+}
+
+/// True when [local] is within reach of the rotation handle, which floats
+/// below the element's bottom-center (axis-aligned, as with [_nearCornerZone]).
+bool _nearRotateZone(Offset local, Size size, double scale) {
+  final pad = _kChromePad / scale;
+  final reach = _kCornerReach / scale;
+  final w = size.width - 2 * pad;
+  final h = size.height - 2 * pad;
+  final handle = Offset(pad + w / 2, pad + h + _kRotateHandleDrop / scale);
+  return (local - handle).distanceSquared <= reach * reach;
+}
 
 /// Renders ONE panel (a carousel slide) in template space. The screen lays
 /// out several of these side by side; tests and single-panel templates use the
@@ -126,6 +164,23 @@ class PanelCanvas extends StatelessWidget {
   final void Function(String gridId, bool columns, List<double> fractions)?
   onGridFractions;
 
+  /// Screen-space selection overlay wiring. When set and a slot is selected,
+  /// the canvas suppresses its in-canvas chrome VISUALS and instead mounts a
+  /// [CompositedTransformTarget] on the selected element's padded chrome box,
+  /// so a [CanvasSelectionOverlay] stacked over the canvas area can float the
+  /// chrome and its ring/handle gestures ABOVE the canvas — unclipped by the
+  /// canvas bounds. (Hit tests gate on every ancestor's size, so handles that
+  /// spill past the canvas edge can never be touched from inside it; the
+  /// follower is the framework's sanctioned escape hatch.) Null keeps the
+  /// legacy all-in-canvas chrome (tests, bare usages).
+  final LayerLink? selectionLink;
+
+  /// Reports the selected element's padded chrome-box size in leader-local
+  /// units, post-layout and only when it changes — the overlay needs it to
+  /// size the follower, and text slots size to their content so it can't be
+  /// derived from the layer alone.
+  final ValueChanged<Size>? onSelectionSize;
+
   const PanelCanvas({
     super.key,
     required this.panel,
@@ -145,6 +200,8 @@ class PanelCanvas extends StatelessWidget {
     this.editingFieldKey,
     this.assetCatalog = const [],
     this.onGridFractions,
+    this.selectionLink,
+    this.onSelectionSize,
   });
 
   @override
@@ -196,6 +253,8 @@ class PanelCanvas extends StatelessWidget {
                   assetCatalog: assetCatalog,
                   selectedSlotId: selectedSlotId,
                   onGridFractions: onGridFractions,
+                  selectionLink: selectionLink,
+                  onSelectionSize: onSelectionSize,
                   selected:
                       layer is ImageLayer && layer.slotId == selectedSlotId ||
                       layer is TextLayer && layer.slotId == selectedSlotId,
@@ -288,6 +347,10 @@ class _LayerWidget extends StatelessWidget {
   final bool editing;
   final GlobalKey? fieldKey;
 
+  /// See [PanelCanvas.selectionLink] / [PanelCanvas.onSelectionSize].
+  final LayerLink? selectionLink;
+  final ValueChanged<Size>? onSelectionSize;
+
   const _LayerWidget({
     required this.layer,
     required this.content,
@@ -301,6 +364,8 @@ class _LayerWidget extends StatelessWidget {
     this.assetCatalog = const [],
     this.selectedSlotId,
     this.onGridFractions,
+    this.selectionLink,
+    this.onSelectionSize,
     this.selected = false,
     this.editing = false,
     this.fieldKey,
@@ -405,7 +470,7 @@ class _LayerWidget extends StatelessWidget {
               child: const SizedBox.expand(),
             ),
           ),
-          _SelectionChrome(scale: gScale, child: cells),
+          _leaderChromed(gScale, cells),
         ],
       );
     }
@@ -425,7 +490,28 @@ class _LayerWidget extends StatelessWidget {
   /// _SlotGestures so there is a single recognizer and no arena contention.
   Widget _chromed(String slotId, Widget child) {
     if (!selected) return child;
-    return _SelectionChrome(scale: content.scaleFor(slotId), child: child);
+    return _leaderChromed(content.scaleFor(slotId), child);
+  }
+
+  /// The selected element's padded chrome box. Legacy mode (no
+  /// [selectionLink]) draws the chrome in-canvas; overlay mode keeps the
+  /// exact same padded LAYOUT — so _SlotGestures' zone math and the -pad
+  /// shift in _slot are untouched — but no visuals, plus the leader the
+  /// overlay's follower snaps to and the size report it needs.
+  Widget _leaderChromed(double scale, Widget child) {
+    if (selectionLink == null) {
+      return _SelectionChrome(scale: scale, child: child);
+    }
+    return CompositedTransformTarget(
+      link: selectionLink!,
+      child: _MeasureSize(
+        onChange: onSelectionSize,
+        child: Padding(
+          padding: EdgeInsets.all(_kChromePad / scale),
+          child: child,
+        ),
+      ),
+    );
   }
 
   /// Slot layers carry the user's position/size adjustments and the
@@ -567,6 +653,12 @@ class _SlotGesturesState extends State<_SlotGestures> {
   bool _isRotating = false;
   double _baseRotation = 0.0;
   double? _startAngle;
+  // The element center, captured ONCE at gesture start: it is stationary
+  // through a resize or rotation (scale and user rotation both pivot on it),
+  // and recomputing it per-update goes wrong in overlay mode — the follower's
+  // box size is measured post-frame, so mid-gesture it lags the transform by
+  // a frame and localToGlobal drifts off the true center.
+  Offset? _gestureCenter;
 
   /// Element center in global coordinates — the anchor resize distances and
   /// rotation angles are measured from. This widget lives INSIDE the rotation
@@ -596,36 +688,14 @@ class _SlotGesturesState extends State<_SlotGestures> {
     (widget.currentRotation + widget.templateRotation) * math.pi / 180,
   );
 
-  /// True when [local] is within reach of one of the element's four corners —
-  /// the resize zones. Corners are axis-aligned here: the gesture surface is
-  /// inside the rotations, so [local] arrives already un-rotated.
-  bool _nearCorner(Offset local, Size size) {
-    final pad = _kChromePad / widget.currentScale;
-    final reach = _kCornerReach / widget.currentScale;
-    final w = size.width - 2 * pad;
-    final h = size.height - 2 * pad;
-    final corners = [
-      Offset(pad, pad),
-      Offset(pad + w, pad),
-      Offset(pad, pad + h),
-      Offset(pad + w, pad + h),
-    ];
-    return corners.any((c) => (local - c).distanceSquared <= reach * reach);
-  }
+  /// The resize zones — see [_nearCornerZone]. The gesture surface is inside
+  /// the rotations, so [local] arrives already un-rotated.
+  bool _nearCorner(Offset local, Size size) =>
+      _nearCornerZone(local, size, widget.currentScale);
 
-  /// True when [local] is within reach of the rotation handle, which floats
-  /// below the element's bottom-center (axis-aligned, as with [_nearCorner]).
-  bool _nearRotationHandle(Offset local, Size size) {
-    final pad = _kChromePad / widget.currentScale;
-    final reach = _kCornerReach / widget.currentScale;
-    final w = size.width - 2 * pad;
-    final h = size.height - 2 * pad;
-    final handle = Offset(
-      pad + w / 2,
-      pad + h + _kRotateHandleDrop / widget.currentScale,
-    );
-    return (local - handle).distanceSquared <= reach * reach;
-  }
+  /// The rotation-handle zone — see [_nearRotateZone].
+  bool _nearRotationHandle(Offset local, Size size) =>
+      _nearRotateZone(local, size, widget.currentScale);
 
   void _onScaleStart(ScaleStartDetails d) {
     _baseScale = widget.currentScale;
@@ -644,12 +714,13 @@ class _SlotGesturesState extends State<_SlotGestures> {
         d.pointerCount == 1 &&
         size != null &&
         _nearRotationHandle(d.localFocalPoint, size);
+    _gestureCenter = (_isResizing || _isRotating) ? _centerGlobal() : null;
     if (_isResizing) {
-      final center = _centerGlobal();
+      final center = _gestureCenter;
       _startDistance = center == null ? null : (d.focalPoint - center).distance;
     }
     if (_isRotating) {
-      final center = _centerGlobal();
+      final center = _gestureCenter;
       _startAngle = center == null ? null : (d.focalPoint - center).direction;
     }
   }
@@ -666,7 +737,7 @@ class _SlotGesturesState extends State<_SlotGestures> {
       }
     }
     if (_isResizing && d.pointerCount == 1) {
-      final center = _centerGlobal();
+      final center = _gestureCenter;
       if (center != null && _startDistance != null && _startDistance! >= 1) {
         final distance = (d.focalPoint - center).distance;
         widget.onScaleChange?.call(
@@ -680,7 +751,7 @@ class _SlotGesturesState extends State<_SlotGestures> {
       return;
     }
     if (_isRotating && d.pointerCount == 1) {
-      final center = _centerGlobal();
+      final center = _gestureCenter;
       if (center != null && _startAngle != null) {
         final angle = (d.focalPoint - center).direction;
         widget.onRotateChange?.call(
@@ -729,9 +800,13 @@ class _SlotGesturesState extends State<_SlotGestures> {
 /// by the current scale to stay visually constant.
 class _SelectionChrome extends StatelessWidget {
   final double scale;
-  final Widget child;
 
-  const _SelectionChrome({required this.scale, required this.child});
+  /// The element the chrome wraps (legacy in-canvas mode: the padded child
+  /// sizes the stack). Null in overlay mode, where the parent — a SizedBox
+  /// with the leader's measured size — imposes the padded box size instead.
+  final Widget? child;
+
+  const _SelectionChrome({required this.scale, this.child});
 
   @override
   Widget build(BuildContext context) {
@@ -742,7 +817,10 @@ class _SelectionChrome extends StatelessWidget {
       children: [
         // Padded element sizes the stack to element + 2*pad, giving the
         // wrapping _SlotGestures a hit region that extends past the element.
-        Padding(padding: EdgeInsets.all(pad), child: child),
+        if (child != null)
+          Padding(padding: EdgeInsets.all(pad), child: child)
+        else
+          const SizedBox.expand(),
         Positioned(
           left: pad,
           top: pad,
@@ -1443,5 +1521,211 @@ class _StickerPlaceholder extends StatelessWidget {
         style: const TextStyle(color: Color(0xFF6D28D9), fontSize: 32),
       ),
     );
+  }
+}
+
+/// Floats the selected element's chrome — border, corner handles, rotation
+/// handle — and their gestures ABOVE the canvas, in screen space. Mount it in
+/// a Stack over the whole canvas area and give [PanelCanvas] the same [link]:
+/// the selected element publishes a [CompositedTransformTarget] on its padded
+/// chrome box, and this follower inherits its full transform chain (FittedBox
+/// scale, screen zoom, template/user rotations, slot scale), so all the
+/// chrome and zone geometry runs in the same leader-local coordinates as the
+/// legacy in-canvas chrome. RenderFollowerLayer hit-tests WITHOUT a size gate
+/// — the framework's one escape hatch from "hit tests stop at every
+/// ancestor's bounds" — which is what makes handles that spill past the
+/// canvas edge visible AND touchable.
+///
+/// The overlay claims ONLY the ring band and the handle zones (see
+/// [_RingHitRegion]); interior touches fall through to the canvas beneath,
+/// which keeps owning content interaction exactly as before: tap-select,
+/// drag/pinch on the element body, pick icons, grid cells and dividers.
+class CanvasSelectionOverlay extends StatelessWidget {
+  final LayerLink link;
+
+  /// The leader's padded box size in leader-local units, as reported by
+  /// [PanelCanvas.onSelectionSize]. Arrives one frame after selection
+  /// (post-layout), so mount the overlay only once it's known.
+  final Size size;
+
+  /// The id gestures report — the slot id, or the LAYER id for a grid.
+  final String targetId;
+  final double currentScale;
+  final double currentRotation;
+  final double templateRotation;
+  final void Function(String slotId, Offset delta)? onDrag;
+  final void Function(String slotId, double scale)? onScaleChange;
+  final void Function(String slotId, double degrees)? onRotateChange;
+
+  const CanvasSelectionOverlay({
+    super.key,
+    required this.link,
+    required this.size,
+    required this.targetId,
+    required this.currentScale,
+    required this.currentRotation,
+    required this.templateRotation,
+    this.onDrag,
+    this.onScaleChange,
+    this.onRotateChange,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return CompositedTransformFollower(
+      link: link,
+      showWhenUnlinked: false,
+      // NOT Align: everything below the follower runs in leader-local units,
+      // where a big element's chrome box far exceeds the overlay's own
+      // (screen-sized) constraints — Align would clamp the SizedBox to the
+      // screen box and the chrome would hug a fraction of the element.
+      // _LeaderSpace hands the child unbounded constraints and skips the
+      // own-size hit-test gate for the same reason.
+      child: _LeaderSpace(
+        child: _RingHitRegion(
+          scale: currentScale,
+          child: _SlotGestures(
+            slotId: targetId,
+            currentScale: currentScale,
+            currentRotation: currentRotation,
+            templateRotation: templateRotation,
+            selected: true,
+            // Ring taps are no-ops (the element is already selected);
+            // interior taps never reach here — _RingHitRegion lets them
+            // through to the canvas.
+            onTap: null,
+            onDrag: onDrag,
+            onScaleChange: onScaleChange,
+            onRotateChange: onRotateChange,
+            child: SizedBox(
+              width: size.width,
+              height: size.height,
+              child: _SelectionChrome(scale: currentScale),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The space between the follower and the chrome: everything below runs in
+/// LEADER-LOCAL units (template px), decoupled from the overlay's own
+/// screen-sized box. Lays the child out with unbounded constraints — a big
+/// element's chrome box exceeds the screen box in those units, and any
+/// Align/OverflowBox would clamp or misgate it — paints it at the leader's
+/// origin, and hit-tests it without the own-size gate (positions arriving
+/// here are already in leader space, where this render object's own size is
+/// meaningless).
+class _LeaderSpace extends SingleChildRenderObjectWidget {
+  const _LeaderSpace({super.child});
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderLeaderSpace();
+}
+
+class _RenderLeaderSpace extends RenderBox
+    with RenderObjectWithChildMixin<RenderBox> {
+  @override
+  void performLayout() {
+    child?.layout(const BoxConstraints());
+    size = constraints.smallest;
+  }
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    final c = child;
+    if (c != null) context.paintChild(c, offset);
+  }
+
+  @override
+  bool hitTest(BoxHitTestResult result, {required Offset position}) {
+    final c = child;
+    if (c == null) return false;
+    return c.hitTest(result, position: position);
+  }
+}
+
+/// Shapes the overlay's hit region to the selection chrome: claims the pad
+/// band around the element plus the corner-handle zones (whose inner halves
+/// overlap the element, as in the legacy chrome), and lets every other
+/// interior touch fall through the follower to the canvas beneath. The
+/// rotation handle sits below the element, inside the ring band, so it needs
+/// no special case.
+class _RingHitRegion extends SingleChildRenderObjectWidget {
+  final double scale;
+
+  const _RingHitRegion({required this.scale, super.child});
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderRingHitRegion(scale);
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderRingHitRegion renderObject,
+  ) {
+    renderObject.scale = scale;
+  }
+}
+
+class _RenderRingHitRegion extends RenderProxyBox {
+  _RenderRingHitRegion(this.scale);
+
+  double scale;
+
+  @override
+  bool hitTest(BoxHitTestResult result, {required Offset position}) {
+    if (!size.contains(position)) return false;
+    final pad = _kChromePad / scale;
+    final inner = Rect.fromLTWH(
+      pad,
+      pad,
+      size.width - 2 * pad,
+      size.height - 2 * pad,
+    );
+    if (inner.contains(position) &&
+        !_nearCornerZone(position, size, scale)) {
+      return false; // Interior: the canvas beneath owns it.
+    }
+    return super.hitTest(result, position: position);
+  }
+}
+
+/// Reports the child's laid-out size, post-frame and only when it changes.
+class _MeasureSize extends SingleChildRenderObjectWidget {
+  final ValueChanged<Size>? onChange;
+
+  const _MeasureSize({required this.onChange, super.child});
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderMeasureSize(onChange);
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderMeasureSize renderObject,
+  ) {
+    renderObject.onChange = onChange;
+  }
+}
+
+class _RenderMeasureSize extends RenderProxyBox {
+  _RenderMeasureSize(this.onChange);
+
+  ValueChanged<Size>? onChange;
+  Size? _reported;
+
+  @override
+  void performLayout() {
+    super.performLayout();
+    if (_reported == size) return;
+    _reported = size;
+    final s = size;
+    // Post-frame: the listener setStates, which is illegal mid-layout.
+    WidgetsBinding.instance.addPostFrameCallback((_) => onChange?.call(s));
   }
 }
