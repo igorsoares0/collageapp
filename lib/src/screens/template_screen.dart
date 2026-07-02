@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:share_plus/share_plus.dart';
@@ -511,20 +509,16 @@ class _TemplateScreenState extends State<TemplateScreen> {
   }
 
   /// Screen px → template px for the canvas-wide gesture surface, which
-  /// lives outside the FittedBox/zoom transforms. All panels share one width,
-  /// so the first panel's laid-out box gives the FittedBox contain-scale;
-  /// the screen zoom is a uniform scale on top. Evaluated at gesture start
+  /// lives outside the FittedBox/zoom transforms. The export boundary sits in
+  /// template units, so its transform-to-global scale IS the composed
+  /// FittedBox × zoom factor (both uniform). Evaluated at gesture start
   /// (post-layout, and the zoom is frozen while a slot is selected).
   double _screenToTemplate(Template template) {
     final box = _panelKeys[template.panels.first.id]?.currentContext
         ?.findRenderObject();
-    final zoom = _zoom.value.getMaxScaleOnAxis();
-    if (box is! RenderBox || !box.hasSize || zoom <= 0) return 1.0;
-    final fitted = math.min(
-      box.size.width / template.canvasWidth,
-      box.size.height / template.canvasHeight,
-    );
-    return fitted > 0 ? 1 / (fitted * zoom) : 1.0;
+    if (box is! RenderBox || !box.hasSize) return 1.0;
+    final scale = box.getTransformTo(null).getMaxScaleOnAxis();
+    return scale > 0 ? 1 / scale : 1.0;
   }
 
   Widget _buildBody(
@@ -596,83 +590,77 @@ class _TemplateScreenState extends State<TemplateScreen> {
                             padding: const EdgeInsets.symmetric(horizontal: 6),
                             child: SizedBox(
                               width: panelWidth,
-                              child: RepaintBoundary(
-                                key: _panelKey(panel.id),
-                                child: PanelCanvas(
-                                  panel: panel,
-                                  canvasWidth: template.canvasWidth,
-                                  canvasHeight: template.canvasHeight,
-                                  content: _content,
-                                  assetCatalog: _catalog,
-                                  selectedSlotId: _selectedSlot,
-                                  editingSlotId: _editingSlot,
-                                  onSlotTap: (slotId) {
-                                    _focusedPanelId = panel.id;
-                                    _handleSlotTap(template, slotId);
-                                  },
-                                  onPickImage: (slotId) {
-                                    _focusedPanelId = panel.id;
-                                    _onPickImage(slotId);
-                                  },
-                                  onCanvasTap: () => setState(() {
-                                    _focusedPanelId = panel.id;
-                                    _selectedSlot = null;
-                                    _editingSlot = null;
-                                  }),
-                                  onTextChanged: (slotId, value) =>
-                                      setState(() {
-                                        _content = _content.withText(
-                                          slotId,
-                                          value,
-                                        );
-                                      }),
-                                  onSlotDrag: (slotId, delta) => setState(() {
-                                    _content = _content.withOffset(
-                                      slotId,
-                                      _content.offsetFor(slotId) + delta,
-                                    );
-                                  }),
-                                  onSlotScale: (slotId, scale) => setState(() {
-                                    _content = _content.withScale(
-                                      slotId,
-                                      scale,
-                                    );
-                                  }),
-                                  onSlotRotate: (slotId, degrees) =>
-                                      setState(() {
-                                        _content = _content.withRotation(
-                                          slotId,
-                                          degrees,
-                                        );
-                                      }),
-                                  onGridFractions:
-                                      (gridId, columns, fractions) => setState(() {
-                                        _focusedPanelId = panel.id;
-                                        _content = columns
-                                            ? _content.withGridColFractions(
-                                                gridId,
-                                                fractions,
-                                              )
-                                            : _content.withGridRowFractions(
-                                                gridId,
-                                                fractions,
-                                              );
-                                      }),
-                                  selectionLink: target == null
-                                      ? null
-                                      : _selectionLink,
-                                  onSelectionSize: target == null
-                                      ? null
-                                      : (s) {
-                                          if (_selectionBox ==
-                                              (target.$1, s)) {
-                                            return;
-                                          }
-                                          setState(() {
-                                            _selectionBox = (target.$1, s);
-                                          });
-                                        },
-                                ),
+                              // The export boundary is INSIDE PanelCanvas's
+                              // FittedBox (template units): a boundary out
+                              // here captures the letterbox bands whenever
+                              // this box doesn't match the canvas aspect,
+                              // shrinking the artwork in the exported PNG.
+                              child: PanelCanvas(
+                                exportKey: _panelKey(panel.id),
+                                panel: panel,
+                                canvasWidth: template.canvasWidth,
+                                canvasHeight: template.canvasHeight,
+                                content: _content,
+                                assetCatalog: _catalog,
+                                selectedSlotId: _selectedSlot,
+                                editingSlotId: _editingSlot,
+                                onSlotTap: (slotId) {
+                                  _focusedPanelId = panel.id;
+                                  _handleSlotTap(template, slotId);
+                                },
+                                onPickImage: (slotId) {
+                                  _focusedPanelId = panel.id;
+                                  _onPickImage(slotId);
+                                },
+                                onCanvasTap: () => setState(() {
+                                  _focusedPanelId = panel.id;
+                                  _selectedSlot = null;
+                                  _editingSlot = null;
+                                }),
+                                onTextChanged: (slotId, value) => setState(() {
+                                  _content = _content.withText(slotId, value);
+                                }),
+                                onSlotDrag: (slotId, delta) => setState(() {
+                                  _content = _content.withOffset(
+                                    slotId,
+                                    _content.offsetFor(slotId) + delta,
+                                  );
+                                }),
+                                onSlotScale: (slotId, scale) => setState(() {
+                                  _content = _content.withScale(slotId, scale);
+                                }),
+                                onSlotRotate: (slotId, degrees) => setState(() {
+                                  _content = _content.withRotation(
+                                    slotId,
+                                    degrees,
+                                  );
+                                }),
+                                onGridFractions: (gridId, columns, fractions) =>
+                                    setState(() {
+                                      _focusedPanelId = panel.id;
+                                      _content = columns
+                                          ? _content.withGridColFractions(
+                                              gridId,
+                                              fractions,
+                                            )
+                                          : _content.withGridRowFractions(
+                                              gridId,
+                                              fractions,
+                                            );
+                                    }),
+                                selectionLink: target == null
+                                    ? null
+                                    : _selectionLink,
+                                onSelectionSize: target == null
+                                    ? null
+                                    : (s) {
+                                        if (_selectionBox == (target.$1, s)) {
+                                          return;
+                                        }
+                                        setState(() {
+                                          _selectionBox = (target.$1, s);
+                                        });
+                                      },
                               ),
                             ),
                           ),

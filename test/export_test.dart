@@ -17,7 +17,11 @@ void main() {
   );
 
   testWidgets('capturePng exports at full template resolution', (tester) async {
-    // Render the canvas small on screen; the export must still be 1080 wide.
+    // Render the canvas small AND letterboxed on screen: the 540x700 box
+    // doesn't match the 1080x1920 aspect, so the FittedBox paints the canvas
+    // with empty side bands. The export must still be exactly full-resolution
+    // artwork — the boundary lives inside the FittedBox in template units,
+    // so the bands (and the on-screen scale) never leak into the PNG.
     tester.view.physicalSize = const Size(540, 960);
     tester.view.devicePixelRatio = 1;
     final key = GlobalKey();
@@ -25,11 +29,13 @@ void main() {
       MaterialApp(
         debugShowCheckedModeBanner: false,
         home: Center(
-          child: RepaintBoundary(
-            key: key,
+          child: SizedBox(
+            width: 540,
+            height: 700,
             child: TemplateCanvas(
               template: template,
               fontResolver: testFontResolver,
+              exportKey: key,
             ),
           ),
         ),

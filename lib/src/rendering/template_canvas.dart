@@ -181,6 +181,13 @@ class PanelCanvas extends StatelessWidget {
   /// derived from the layer alone.
   final ValueChanged<Size>? onSelectionSize;
 
+  /// Key for the export RepaintBoundary. It sits INSIDE the FittedBox, on the
+  /// template-unit canvas box, so [capturePng] always captures exactly
+  /// canvasWidth×canvasHeight — a boundary OUTSIDE the FittedBox captures the
+  /// letterbox bands whenever the panel's on-screen box doesn't match the
+  /// canvas aspect, silently shrinking the artwork inside the exported PNG.
+  final GlobalKey? exportKey;
+
   const PanelCanvas({
     super.key,
     required this.panel,
@@ -202,6 +209,7 @@ class PanelCanvas extends StatelessWidget {
     this.onGridFractions,
     this.selectionLink,
     this.onSelectionSize,
+    this.exportKey,
   });
 
   @override
@@ -218,52 +226,61 @@ class PanelCanvas extends StatelessWidget {
           if (!content.layerHidden(layer.id, layer.hidden)) layer,
     ];
     return FittedBox(
-      child: SizedBox(
-        width: canvasWidth,
-        height: canvasHeight,
-        // The deselect detector wraps the whole canvas: slot detectors are
-        // deeper and win the gesture arena, so this only fires for taps on
-        // the background, shapes and stickers. (A detector on the white
-        // backdrop wouldn't work — any full-bleed shape layer above it
-        // swallows the hit test.)
-        child: GestureDetector(
-          onTap: onCanvasTap,
-          child: Stack(
-            children: [
-              // Panel background: the user's per-panel override if set, else
-              // the panel's own backgroundColor (defaults to white).
-              Positioned.fill(
-                child: ColoredBox(
-                  key: const ValueKey('canvas-background'),
-                  color:
-                      content.backgroundFor(panel.id) ?? panel.backgroundColor,
+      // The export boundary lives in template units (inside the FittedBox) —
+      // see [exportKey]. Always present so each panel is also a repaint
+      // island regardless of export wiring.
+      child: RepaintBoundary(
+        key: exportKey,
+        child: SizedBox(
+          width: canvasWidth,
+          height: canvasHeight,
+          // The deselect detector wraps the whole canvas: slot detectors are
+          // deeper and win the gesture arena, so this only fires for taps on
+          // the background, shapes and stickers. (A detector on the white
+          // backdrop wouldn't work — any full-bleed shape layer above it
+          // swallows the hit test.)
+          child: GestureDetector(
+            onTap: onCanvasTap,
+            child: Stack(
+              children: [
+                // Panel background: the user's per-panel override if set, else
+                // the panel's own backgroundColor (defaults to white).
+                Positioned.fill(
+                  child: ColoredBox(
+                    key: const ValueKey('canvas-background'),
+                    color:
+                        content.backgroundFor(panel.id) ??
+                        panel.backgroundColor,
+                  ),
                 ),
-              ),
-              for (final layer in visibleLayers)
-                _LayerWidget(
-                  layer: layer,
-                  content: content,
-                  fontResolver: fontResolver,
-                  onSlotTap: onSlotTap,
-                  onSlotDrag: onSlotDrag,
-                  onSlotScale: onSlotScale,
-                  onSlotRotate: onSlotRotate,
-                  onPickImage: onPickImage,
-                  onTextChanged: onTextChanged,
-                  assetCatalog: assetCatalog,
-                  selectedSlotId: selectedSlotId,
-                  onGridFractions: onGridFractions,
-                  selectionLink: selectionLink,
-                  onSelectionSize: onSelectionSize,
-                  selected:
-                      layer is ImageLayer && layer.slotId == selectedSlotId ||
-                      layer is TextLayer && layer.slotId == selectedSlotId,
-                  editing: layer is TextLayer && layer.slotId == editingSlotId,
-                  fieldKey: layer is TextLayer && layer.slotId == editingSlotId
-                      ? editingFieldKey
-                      : null,
-                ),
-            ],
+                for (final layer in visibleLayers)
+                  _LayerWidget(
+                    layer: layer,
+                    content: content,
+                    fontResolver: fontResolver,
+                    onSlotTap: onSlotTap,
+                    onSlotDrag: onSlotDrag,
+                    onSlotScale: onSlotScale,
+                    onSlotRotate: onSlotRotate,
+                    onPickImage: onPickImage,
+                    onTextChanged: onTextChanged,
+                    assetCatalog: assetCatalog,
+                    selectedSlotId: selectedSlotId,
+                    onGridFractions: onGridFractions,
+                    selectionLink: selectionLink,
+                    onSelectionSize: onSelectionSize,
+                    selected:
+                        layer is ImageLayer && layer.slotId == selectedSlotId ||
+                        layer is TextLayer && layer.slotId == selectedSlotId,
+                    editing:
+                        layer is TextLayer && layer.slotId == editingSlotId,
+                    fieldKey:
+                        layer is TextLayer && layer.slotId == editingSlotId
+                        ? editingFieldKey
+                        : null,
+                  ),
+              ],
+            ),
           ),
         ),
       ),
@@ -288,6 +305,9 @@ class TemplateCanvas extends StatelessWidget {
   final void Function(String slotId, double degrees)? onSlotRotate;
   final List<AssetRecord> assetCatalog;
 
+  /// See [PanelCanvas.exportKey].
+  final GlobalKey? exportKey;
+
   const TemplateCanvas({
     super.key,
     required this.template,
@@ -302,6 +322,7 @@ class TemplateCanvas extends StatelessWidget {
     this.onSlotScale,
     this.onSlotRotate,
     this.assetCatalog = const [],
+    this.exportKey,
   });
 
   @override
@@ -321,6 +342,7 @@ class TemplateCanvas extends StatelessWidget {
       onSlotScale: onSlotScale,
       onSlotRotate: onSlotRotate,
       assetCatalog: assetCatalog,
+      exportKey: exportKey,
     );
   }
 }
@@ -1246,12 +1268,8 @@ class _GridDivider extends StatelessWidget {
     );
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onVerticalDragUpdate: vertical
-          ? null
-          : (d) => onDelta(d.delta.dy),
-      onHorizontalDragUpdate: vertical
-          ? (d) => onDelta(d.delta.dx)
-          : null,
+      onVerticalDragUpdate: vertical ? null : (d) => onDelta(d.delta.dy),
+      onHorizontalDragUpdate: vertical ? (d) => onDelta(d.delta.dx) : null,
       child: Center(child: pill),
     );
   }
@@ -1284,9 +1302,7 @@ class _GridCell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final pick = (interactive && onPick != null)
-        ? () => onPick!(slotId)
-        : null;
+    final pick = (interactive && onPick != null) ? () => onPick!(slotId) : null;
     return GestureDetector(
       // Translucent (not opaque): a tap selects the grid, but a drag passes
       // through to the whole-grid gesture surface behind so the grid moves —
@@ -1632,8 +1648,7 @@ class _LeaderSpace extends SingleChildRenderObjectWidget {
   const _LeaderSpace({super.child});
 
   @override
-  RenderObject createRenderObject(BuildContext context) =>
-      _RenderLeaderSpace();
+  RenderObject createRenderObject(BuildContext context) => _RenderLeaderSpace();
 }
 
 class _RenderLeaderSpace extends RenderBox
@@ -1697,8 +1712,7 @@ class _RenderRingHitRegion extends RenderProxyBox {
       size.width - 2 * pad,
       size.height - 2 * pad,
     );
-    if (inner.contains(position) &&
-        !_nearCornerZone(position, size, scale)) {
+    if (inner.contains(position) && !_nearCornerZone(position, size, scale)) {
       return false; // Interior: the canvas beneath owns it.
     }
     return super.hitTest(result, position: position);

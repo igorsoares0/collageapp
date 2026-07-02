@@ -7,7 +7,13 @@ import 'package:flutter/widgets.dart';
 /// Captures the RepaintBoundary identified by [boundaryKey] as a PNG that is
 /// [targetWidth] physical pixels wide (template space, e.g. 1080), regardless
 /// of how small the canvas is rendered on screen: the pixelRatio compensates
-/// for the FittedBox scale, so the export is always full resolution.
+/// for the boundary's logical size, so the export is always full resolution.
+///
+/// The boundary must be the TEMPLATE-UNIT canvas box (PanelCanvas.exportKey,
+/// inside the FittedBox — toImage captures the boundary's local subtree, so
+/// the ancestor scale never matters). A boundary outside the FittedBox has
+/// the letterbox bands inside it whenever its box doesn't match the canvas
+/// aspect, and the artwork exports smaller than [targetWidth].
 Future<Uint8List> capturePng(GlobalKey boundaryKey, double targetWidth) async {
   final boundary =
       boundaryKey.currentContext!.findRenderObject() as RenderRepaintBoundary;
