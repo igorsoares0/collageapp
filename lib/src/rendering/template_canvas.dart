@@ -727,10 +727,13 @@ class _SlotGesturesState extends State<_SlotGestures> {
 
   void _onScaleUpdate(ScaleUpdateDetails d) {
     if (d.pointerCount != _pointerCount) {
+      // The recognizer re-bases d.scale/d.rotation to 1.0/0 whenever the
+      // finger count changes; re-base our anchors with it.
       _baseScale = widget.currentScale;
+      _baseRotation = widget.currentRotation;
       _pointerCount = d.pointerCount;
       // A second finger turns the gesture into a pinch/move (never resize or
-      // rotate — those are one-finger handle drags).
+      // handle-rotate — those are one-finger handle drags).
       if (d.pointerCount >= 2) {
         _isResizing = false;
         _isRotating = false;
@@ -768,6 +771,14 @@ class _SlotGesturesState extends State<_SlotGestures> {
       widget.onScaleChange?.call(
         widget.slotId,
         (_baseScale * d.scale).clamp(_kMinSlotScale, _kMaxSlotScale),
+      );
+    }
+    // Two-finger twist rotates (Stories-style), matching the canvas-wide
+    // surface so pinching ON the element behaves like pinching next to it.
+    if (d.pointerCount >= 2 && d.rotation != 0) {
+      widget.onRotateChange?.call(
+        widget.slotId,
+        _baseRotation + d.rotation * 180 / math.pi,
       );
     }
   }
@@ -1727,5 +1738,107 @@ class _RenderMeasureSize extends RenderProxyBox {
     final s = size;
     // Post-frame: the listener setStates, which is illegal mid-layout.
     WidgetsBinding.instance.addPostFrameCallback((_) => onChange?.call(s));
+  }
+}
+
+/// Canvas-wide manipulation of the selected element (Stories/CapCut-style):
+/// while something is selected, ONE finger dragged anywhere in the canvas
+/// area moves it, a pinch anywhere resizes it, and a two-finger twist rotates
+/// it. The user never needs to land a finger on the element itself — which is
+/// what makes an element hanging past the canvas edge fully manipulable.
+///
+/// Mount it AROUND the canvas area (strip + selection overlay), only while a
+/// slot is selected and not text-editing. It never steals from what's
+/// beneath: the hit test is translucent and everything deeper joins the
+/// gesture arena first, so pick-icon taps (tap wins the sweep on release),
+/// grid dividers (single-axis drags accept at a tighter slop than scale),
+/// the element's own interior and the chrome ring/handles all keep winning.
+/// This surface only receives the drags and pinches nothing else claims.
+///
+/// Unlike the in-canvas recognizers it lives OUTSIDE the FittedBox/zoom
+/// transforms, so its deltas arrive in screen px; [screenToTemplate] converts
+/// them to template units. It is read lazily at gesture start — post-layout,
+/// when the panel's fitted scale is measurable.
+class SelectionGestureSurface extends StatefulWidget {
+  /// The id gestures report — the slot id, or the LAYER id for a grid.
+  final String targetId;
+  final double currentScale;
+  final double currentRotation;
+
+  /// Screen px → template px factor: 1 / (FittedBox scale × screen zoom).
+  final double Function() screenToTemplate;
+  final void Function(String slotId, Offset delta)? onDrag;
+  final void Function(String slotId, double scale)? onScaleChange;
+  final void Function(String slotId, double degrees)? onRotateChange;
+  final Widget child;
+
+  const SelectionGestureSurface({
+    super.key,
+    required this.targetId,
+    required this.currentScale,
+    required this.currentRotation,
+    required this.screenToTemplate,
+    this.onDrag,
+    this.onScaleChange,
+    this.onRotateChange,
+    required this.child,
+  });
+
+  @override
+  State<SelectionGestureSurface> createState() =>
+      _SelectionGestureSurfaceState();
+}
+
+class _SelectionGestureSurfaceState extends State<SelectionGestureSurface> {
+  double _baseScale = 1.0;
+  double _baseRotation = 0.0;
+  int _pointerCount = 0;
+  double _factor = 1.0;
+
+  void _onScaleStart(ScaleStartDetails d) {
+    _baseScale = widget.currentScale;
+    _baseRotation = widget.currentRotation;
+    _pointerCount = d.pointerCount;
+    _factor = widget.screenToTemplate();
+  }
+
+  void _onScaleUpdate(ScaleUpdateDetails d) {
+    if (d.pointerCount != _pointerCount) {
+      // The recognizer re-bases d.scale/d.rotation whenever the finger count
+      // changes; re-base our anchors with it.
+      _baseScale = widget.currentScale;
+      _baseRotation = widget.currentRotation;
+      _pointerCount = d.pointerCount;
+    }
+    if (d.focalPointDelta != Offset.zero) {
+      // Offsets are consumed in template units OUTSIDE the rotations (at the
+      // element's Positioned), and screen axes are template-aligned — no
+      // un-rotation needed, only the scale factor.
+      widget.onDrag?.call(widget.targetId, d.focalPointDelta * _factor);
+    }
+    if (d.pointerCount >= 2 && d.scale != 1.0) {
+      widget.onScaleChange?.call(
+        widget.targetId,
+        (_baseScale * d.scale).clamp(_kMinSlotScale, _kMaxSlotScale),
+      );
+    }
+    if (d.pointerCount >= 2 && d.rotation != 0) {
+      widget.onRotateChange?.call(
+        widget.targetId,
+        _baseRotation + d.rotation * 180 / math.pi,
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      // Translucent: participates everywhere in the body area (even over
+      // empty space) WITHOUT blocking deeper hit targets.
+      behavior: HitTestBehavior.translucent,
+      onScaleStart: _onScaleStart,
+      onScaleUpdate: _onScaleUpdate,
+      child: widget.child,
+    );
   }
 }

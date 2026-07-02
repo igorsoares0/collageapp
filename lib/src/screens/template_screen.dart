@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:share_plus/share_plus.dart';
@@ -508,6 +510,23 @@ class _TemplateScreenState extends State<TemplateScreen> {
     return null;
   }
 
+  /// Screen px → template px for the canvas-wide gesture surface, which
+  /// lives outside the FittedBox/zoom transforms. All panels share one width,
+  /// so the first panel's laid-out box gives the FittedBox contain-scale;
+  /// the screen zoom is a uniform scale on top. Evaluated at gesture start
+  /// (post-layout, and the zoom is frozen while a slot is selected).
+  double _screenToTemplate(Template template) {
+    final box = _panelKeys[template.panels.first.id]?.currentContext
+        ?.findRenderObject();
+    final zoom = _zoom.value.getMaxScaleOnAxis();
+    if (box is! RenderBox || !box.hasSize || zoom <= 0) return 1.0;
+    final fitted = math.min(
+      box.size.width / template.canvasWidth,
+      box.size.height / template.canvasHeight,
+    );
+    return fitted > 0 ? 1 / (fitted * zoom) : 1.0;
+  }
+
   Widget _buildBody(
     Template template,
     double keyboardInset,
@@ -697,38 +716,60 @@ class _TemplateScreenState extends State<TemplateScreen> {
                       : const NeverScrollableScrollPhysics(),
                   child: SizedBox(height: canvasHeight, child: surface),
                 );
-                final box = _selectionBox;
-                if (target == null || box == null || box.$1 != target.$1) {
-                  return scroll;
-                }
-                return Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    scroll,
-                    Positioned.fill(
-                      child: CanvasSelectionOverlay(
-                        link: _selectionLink,
-                        size: box.$2,
-                        targetId: target.$1,
-                        currentScale: _content.scaleFor(target.$1),
-                        currentRotation: _content.rotationFor(target.$1),
-                        templateRotation: target.$2,
-                        onDrag: (slotId, delta) => setState(() {
-                          _content = _content.withOffset(
-                            slotId,
-                            _content.offsetFor(slotId) + delta,
-                          );
-                        }),
-                        onScaleChange: (slotId, scale) => setState(() {
-                          _content = _content.withScale(slotId, scale);
-                        }),
-                        onRotateChange: (slotId, degrees) => setState(() {
-                          _content = _content.withRotation(slotId, degrees);
-                        }),
-                      ),
-                    ),
-                  ],
+                // Shared by the chrome overlay (ring/handle gestures) and the
+                // canvas-wide surface (drag/pinch/twist anywhere).
+                void dragSelected(String slotId, Offset delta) => setState(() {
+                  _content = _content.withOffset(
+                    slotId,
+                    _content.offsetFor(slotId) + delta,
+                  );
+                });
+                void scaleSelected(String slotId, double scale) => setState(
+                  () => _content = _content.withScale(slotId, scale),
                 );
+                void rotateSelected(String slotId, double degrees) => setState(
+                  () => _content = _content.withRotation(slotId, degrees),
+                );
+                final box = _selectionBox;
+                Widget body = scroll;
+                if (target != null && box != null && box.$1 == target.$1) {
+                  body = Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      scroll,
+                      Positioned.fill(
+                        child: CanvasSelectionOverlay(
+                          link: _selectionLink,
+                          size: box.$2,
+                          targetId: target.$1,
+                          currentScale: _content.scaleFor(target.$1),
+                          currentRotation: _content.rotationFor(target.$1),
+                          templateRotation: target.$2,
+                          onDrag: dragSelected,
+                          onScaleChange: scaleSelected,
+                          onRotateChange: rotateSelected,
+                        ),
+                      ),
+                    ],
+                  );
+                }
+                if (target != null) {
+                  // With a selection active, the whole canvas area drives the
+                  // selected element: drag anywhere moves it, pinch anywhere
+                  // resizes, two-finger twist rotates. Everything deeper
+                  // (taps, dividers, handles) still wins the gesture arena.
+                  body = SelectionGestureSurface(
+                    targetId: target.$1,
+                    currentScale: _content.scaleFor(target.$1),
+                    currentRotation: _content.rotationFor(target.$1),
+                    screenToTemplate: () => _screenToTemplate(template),
+                    onDrag: dragSelected,
+                    onScaleChange: scaleSelected,
+                    onRotateChange: rotateSelected,
+                    child: body,
+                  );
+                }
+                return body;
               },
             ),
           ),
