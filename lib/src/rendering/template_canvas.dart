@@ -47,7 +47,7 @@ const double _kMaxSlotScale = 4.0;
 /// corner handles — which sit on the element corners and spill outward — are
 /// fully touchable. `_slot` shifts the element back by the same amount so it
 /// doesn't move on selection. Must exceed _kCornerReach.
-const double _kChromePad = 80.0;
+const double kChromePad = 80.0;
 
 /// Radius of each corner's resize touch zone (pre-scale template px / scale).
 /// Starting a one-finger drag within this distance of a corner resizes;
@@ -56,7 +56,7 @@ const double _kChromePad = 80.0;
 const double _kCornerReach = 72.0;
 
 /// How far below the element's bottom edge the rotation handle floats (pre-
-/// scale template px / scale). Kept under [_kChromePad] so the handle — and its
+/// scale template px / scale). Kept under [kChromePad] so the handle — and its
 /// touch zone — stay inside the chrome's hit region that _SlotGestures covers.
 const double _kRotateHandleDrop = 44.0;
 
@@ -66,7 +66,7 @@ const double _kRotateHandleDrop = 44.0;
 /// already un-rotated. Shared by _SlotGestures (which zone a touch starts in)
 /// and _RingHitRegion (which touches the overlay claims at all).
 bool _nearCornerZone(Offset local, Size size, double scale) {
-  final pad = _kChromePad / scale;
+  final pad = kChromePad / scale;
   final reach = _kCornerReach / scale;
   final w = size.width - 2 * pad;
   final h = size.height - 2 * pad;
@@ -82,7 +82,7 @@ bool _nearCornerZone(Offset local, Size size, double scale) {
 /// True when [local] is within reach of the rotation handle, which floats
 /// below the element's bottom-center (axis-aligned, as with [_nearCornerZone]).
 bool _nearRotateZone(Offset local, Size size, double scale) {
-  final pad = _kChromePad / scale;
+  final pad = kChromePad / scale;
   final reach = _kCornerReach / scale;
   final w = size.width - 2 * pad;
   final h = size.height - 2 * pad;
@@ -188,6 +188,13 @@ class PanelCanvas extends StatelessWidget {
   /// canvas aspect, silently shrinking the artwork inside the exported PNG.
   final GlobalKey? exportKey;
 
+  /// Alignment guide lines to draw over this panel, in template units — the
+  /// screen computes them while an element is being dragged (see snap.dart).
+  /// They paint INSIDE the FittedBox (same coordinates as the layers) but
+  /// OUTSIDE the export boundary, so they can never leak into the PNG.
+  final List<double> guideXs;
+  final List<double> guideYs;
+
   const PanelCanvas({
     super.key,
     required this.panel,
@@ -210,6 +217,8 @@ class PanelCanvas extends StatelessWidget {
     this.selectionLink,
     this.onSelectionSize,
     this.exportKey,
+    this.guideXs = const [],
+    this.guideYs = const [],
   });
 
   @override
@@ -226,67 +235,119 @@ class PanelCanvas extends StatelessWidget {
           if (!content.layerHidden(layer.id, layer.hidden)) layer,
     ];
     return FittedBox(
-      // The export boundary lives in template units (inside the FittedBox) —
-      // see [exportKey]. Always present so each panel is also a repaint
-      // island regardless of export wiring.
-      child: RepaintBoundary(
-        key: exportKey,
-        child: SizedBox(
-          width: canvasWidth,
-          height: canvasHeight,
-          // The deselect detector wraps the whole canvas: slot detectors are
-          // deeper and win the gesture arena, so this only fires for taps on
-          // the background, shapes and stickers. (A detector on the white
-          // backdrop wouldn't work — any full-bleed shape layer above it
-          // swallows the hit test.)
-          child: GestureDetector(
-            onTap: onCanvasTap,
-            child: Stack(
-              children: [
-                // Panel background: the user's per-panel override if set, else
-                // the panel's own backgroundColor (defaults to white).
-                Positioned.fill(
-                  child: ColoredBox(
-                    key: const ValueKey('canvas-background'),
-                    color:
-                        content.backgroundFor(panel.id) ??
-                        panel.backgroundColor,
+      child: SizedBox(
+        width: canvasWidth,
+        height: canvasHeight,
+        child: Stack(
+          children: [
+            // The export boundary lives in template units (inside the
+            // FittedBox) — see [exportKey]. Always present so each panel is
+            // also a repaint island regardless of export wiring.
+            RepaintBoundary(
+              key: exportKey,
+              child: SizedBox(
+                width: canvasWidth,
+                height: canvasHeight,
+                // The deselect detector wraps the whole canvas: slot detectors
+                // are deeper and win the gesture arena, so this only fires for
+                // taps on the background and shapes. (A detector on the white
+                // backdrop wouldn't work — any full-bleed shape layer above it
+                // swallows the hit test.)
+                child: GestureDetector(
+                  onTap: onCanvasTap,
+                  child: Stack(
+                    children: [
+                      // Panel background: the user's per-panel override if
+                      // set, else the panel's own backgroundColor.
+                      Positioned.fill(
+                        child: ColoredBox(
+                          key: const ValueKey('canvas-background'),
+                          color:
+                              content.backgroundFor(panel.id) ??
+                              panel.backgroundColor,
+                        ),
+                      ),
+                      for (final layer in visibleLayers)
+                        _LayerWidget(
+                          layer: layer,
+                          content: content,
+                          fontResolver: fontResolver,
+                          onSlotTap: onSlotTap,
+                          onSlotDrag: onSlotDrag,
+                          onSlotScale: onSlotScale,
+                          onSlotRotate: onSlotRotate,
+                          onPickImage: onPickImage,
+                          onTextChanged: onTextChanged,
+                          assetCatalog: assetCatalog,
+                          selectedSlotId: selectedSlotId,
+                          onGridFractions: onGridFractions,
+                          selectionLink: selectionLink,
+                          onSelectionSize: onSelectionSize,
+                          selected:
+                              layer is ImageLayer &&
+                                  layer.slotId == selectedSlotId ||
+                              layer is TextLayer &&
+                                  layer.slotId == selectedSlotId ||
+                              layer is StickerLayer &&
+                                  layer.id == selectedSlotId,
+                          editing:
+                              layer is TextLayer &&
+                              layer.slotId == editingSlotId,
+                          fieldKey:
+                              layer is TextLayer &&
+                                  layer.slotId == editingSlotId
+                              ? editingFieldKey
+                              : null,
+                        ),
+                    ],
                   ),
                 ),
-                for (final layer in visibleLayers)
-                  _LayerWidget(
-                    layer: layer,
-                    content: content,
-                    fontResolver: fontResolver,
-                    onSlotTap: onSlotTap,
-                    onSlotDrag: onSlotDrag,
-                    onSlotScale: onSlotScale,
-                    onSlotRotate: onSlotRotate,
-                    onPickImage: onPickImage,
-                    onTextChanged: onTextChanged,
-                    assetCatalog: assetCatalog,
-                    selectedSlotId: selectedSlotId,
-                    onGridFractions: onGridFractions,
-                    selectionLink: selectionLink,
-                    onSelectionSize: onSelectionSize,
-                    selected:
-                        layer is ImageLayer && layer.slotId == selectedSlotId ||
-                        layer is TextLayer && layer.slotId == selectedSlotId ||
-                        layer is StickerLayer && layer.id == selectedSlotId,
-                    editing:
-                        layer is TextLayer && layer.slotId == editingSlotId,
-                    fieldKey:
-                        layer is TextLayer && layer.slotId == editingSlotId
-                        ? editingFieldKey
-                        : null,
-                  ),
-              ],
+              ),
             ),
-          ),
+            // Alignment guides float above the artwork but outside the export
+            // boundary — visible while dragging, never in the PNG.
+            if (guideXs.isNotEmpty || guideYs.isNotEmpty)
+              Positioned.fill(
+                key: const ValueKey('alignment-guides'),
+                child: IgnorePointer(
+                  child: CustomPaint(
+                    painter: _GuidePainter(guideXs: guideXs, guideYs: guideYs),
+                  ),
+                ),
+              ),
+          ],
         ),
       ),
     );
   }
+}
+
+/// Draws the alignment guide lines edge to edge in template units. The stroke
+/// is set in template px, so on screen it scales with the canvas like every
+/// other element — thin at fit-to-screen, never fat when zoomed in.
+class _GuidePainter extends CustomPainter {
+  final List<double> guideXs;
+  final List<double> guideYs;
+
+  const _GuidePainter({required this.guideXs, required this.guideYs});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = const Color(0xFFFF2D87)
+      ..strokeWidth = 3;
+    for (final x in guideXs) {
+      canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
+    }
+    for (final y in guideYs) {
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_GuidePainter oldDelegate) =>
+      !identical(oldDelegate.guideXs, guideXs) ||
+      !identical(oldDelegate.guideYs, guideYs);
 }
 
 /// Convenience wrapper that renders a template's FIRST panel — used by tests
@@ -467,7 +528,7 @@ class _LayerWidget extends StatelessWidget {
         l.cells.any((c) => c.slotId == selectedSlotId);
     final gScale = content.scaleFor(l.id);
     final gOffset = content.offsetFor(l.id);
-    final pad = active ? _kChromePad / gScale : 0.0;
+    final pad = active ? kChromePad / gScale : 0.0;
 
     final cells = _GridSlot(
       grid: l,
@@ -538,7 +599,7 @@ class _LayerWidget extends StatelessWidget {
       child: _MeasureSize(
         onChange: onSelectionSize,
         child: Padding(
-          padding: EdgeInsets.all(_kChromePad / scale),
+          padding: EdgeInsets.all(kChromePad / scale),
           child: child,
         ),
       ),
@@ -564,10 +625,10 @@ class _LayerWidget extends StatelessWidget {
   }) {
     final offset = content.offsetFor(slotId);
     final scale = content.scaleFor(slotId);
-    // When selected the chrome floats a _kChromePad margin around the element
+    // When selected the chrome floats a kChromePad margin around the element
     // (so corner zones overflow it and stay touchable); shift back by the
     // same pad so the element's center stays put on selection.
-    final pad = selected ? _kChromePad / scale : 0.0;
+    final pad = selected ? kChromePad / scale : 0.0;
     Widget inner = child;
     if (gestures &&
         (onSlotTap != null ||
@@ -835,7 +896,7 @@ class _SlotGesturesState extends State<_SlotGestures> {
 }
 
 /// Editor-style selection chrome: a thin white frame with four round corner
-/// handles, floated a _kChromePad margin around the element so the handles
+/// handles, floated a kChromePad margin around the element so the handles
 /// (and their touch zones in _SlotGestures) overflow the element and stay
 /// reachable. Purely VISUAL (IgnorePointer) — it shows where to grab; the
 /// resize itself is handled by _SlotGestures' corner zones. Sizes are divided
@@ -852,7 +913,7 @@ class _SelectionChrome extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final pad = _kChromePad / scale;
+    final pad = kChromePad / scale;
     final stroke = 4.0 / scale;
     return Stack(
       clipBehavior: Clip.none,
@@ -1739,7 +1800,7 @@ class _RenderRingHitRegion extends RenderProxyBox {
   @override
   bool hitTest(BoxHitTestResult result, {required Offset position}) {
     if (!size.contains(position)) return false;
-    final pad = _kChromePad / scale;
+    final pad = kChromePad / scale;
     final inner = Rect.fromLTWH(
       pad,
       pad,

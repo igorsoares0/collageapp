@@ -7,6 +7,7 @@ import '../model/asset_record.dart';
 import '../model/slot_content.dart';
 import '../model/template.dart';
 import '../rendering/export.dart';
+import '../rendering/snap.dart';
 import '../rendering/template_canvas.dart';
 import '../widgets/grid_style_bar.dart';
 import '../widgets/insert_sheets.dart';
@@ -101,6 +102,20 @@ class _TemplateScreenState extends State<TemplateScreen> {
   static const int _kMaxHistory = 100;
   static const Duration _kEditRunWindow = Duration(seconds: 2);
 
+  // Alignment guides (smart guides): while an element is dragged, its RAW
+  // (unsnapped) offset accumulates here and the STORED offset snaps to nearby
+  // guides — keeping the raw value outside the stored state is what lets the
+  // element escape a guide instead of sticking to it forever. Cleared on
+  // pointer-up alongside the undo coalescing run.
+  Offset? _dragRaw;
+  String? _dragKey;
+  List<double> _guideXs = const [];
+  List<double> _guideYs = const [];
+
+  /// Snap reach in SCREEN px, converted to template units per gesture so the
+  /// magnetic feel is the same at any zoom level.
+  static const double _kSnapReachPx = 8.0;
+
   /// Records the current content as an undo step for the edit about to be
   /// applied. [coalesce] marks the edit as part of a continuous interaction;
   /// discrete actions (add/remove/reorder/style taps) pass null and always
@@ -142,8 +157,12 @@ class _TemplateScreenState extends State<TemplateScreen> {
 
   void _restore(Template template, SlotContent snapshot) {
     _editRunKey = null;
+    _dragRaw = null;
+    _dragKey = null;
     setState(() {
       _content = snapshot;
+      _guideXs = const [];
+      _guideYs = const [];
       // Inline editing can't survive a content swap (the field's controller
       // would show stale text); selection stays unless its element is gone.
       _editingSlot = null;
@@ -151,6 +170,125 @@ class _TemplateScreenState extends State<TemplateScreen> {
         _selectedSlot = null;
       }
     });
+  }
+
+  /// End of any touch interaction: breaks the undo coalescing run (the next
+  /// same-key edit starts a new step) and drops the drag/guide state.
+  void _onPointerEnd() {
+    _editRunKey = null;
+    if (_dragRaw == null && _guideXs.isEmpty && _guideYs.isEmpty) return;
+    setState(() {
+      _dragRaw = null;
+      _dragKey = null;
+      _guideXs = const [];
+      _guideYs = const [];
+    });
+  }
+
+  /// Moves element [slotId] by [delta] (template units) with magnetic
+  /// alignment guides: the raw offset accumulates per gesture and the stored
+  /// offset snaps to canvas/element guides (see snap.dart). Falls back to a
+  /// plain move when the element's painted box can't be derived (template-
+  /// rotated elements, unmeasured text).
+  void _dragSelected(Template template, String slotId, Offset delta) {
+    final raw =
+        ((_dragKey == slotId ? _dragRaw : null) ?? _content.offsetFor(slotId)) +
+        delta;
+    var snapped = raw;
+    List<double> xs = const [], ys = const [];
+    final box = _dragTargetBox(template, slotId);
+    if (box != null) {
+      final result = snapDrag(
+        box: box,
+        scale: _content.scaleFor(slotId),
+        raw: raw,
+        canvas: Size(template.canvasWidth, template.canvasHeight),
+        others: _snapTargets(template, slotId),
+        threshold: _kSnapReachPx * _screenToTemplate(template),
+        snapEdges: _content.rotationFor(slotId) == 0,
+      );
+      snapped = result.offset;
+      xs = result.guideXs;
+      ys = result.guideYs;
+    }
+    _record('drag:$slotId');
+    setState(() {
+      _dragKey = slotId;
+      _dragRaw = raw;
+      _guideXs = xs;
+      _guideYs = ys;
+      _content = _content.withOffset(slotId, snapped);
+    });
+  }
+
+  /// The unrotated layout box (template units, before user offset/scale) of
+  /// the element gesture key [key] drags, or null when it can't be derived.
+  /// A template rotation disqualifies the element: it pivots on the top-left,
+  /// so neither the axis-aligned edges NOR the center match the painted
+  /// element. (A user rotation is fine — it pivots on the center, which is
+  /// exactly what center guides track.) Text height isn't in the model; it
+  /// comes from the measured selection box.
+  Rect? _dragTargetBox(Template template, String key) {
+    for (final layer in _allLayers(template)) {
+      switch (layer) {
+        case ImageLayer l when l.slotId == key:
+          if (l.rotation != 0) return null;
+          return Rect.fromLTWH(l.x, l.y, l.width, l.height);
+        case TextLayer l when l.slotId == key:
+          final box = _selectionBox;
+          if (box == null || box.$1 != key) return null;
+          final h = box.$2.height - 2 * kChromePad / _content.scaleFor(key);
+          if (h <= 0) return null;
+          return Rect.fromLTWH(l.x, l.y, l.width, h);
+        case StickerLayer l when l.id == key:
+          return Rect.fromLTWH(l.x, l.y, l.width, l.height);
+        case GridLayer l when l.id == key:
+          if (l.rotation != 0) return null;
+          return Rect.fromLTWH(l.x, l.y, l.width, l.height);
+        default:
+      }
+    }
+    return null;
+  }
+
+  /// Painted bounds of the focused panel's other elements — the element snap
+  /// targets. Rotated elements and text (unmeasurable height) are skipped;
+  /// hidden ones too. Shapes are template decoration with no user overrides,
+  /// so their model box IS their painted box.
+  List<Rect> _snapTargets(Template template, String movingKey) {
+    final panel = _effectivePanel(_focusedPanel(template));
+    final targets = <Rect>[];
+    for (final layer in panel.layers) {
+      if (_content.layerHidden(layer.id, layer.hidden)) continue;
+      final (String? key, Rect? box) = switch (layer) {
+        ImageLayer l when l.rotation == 0 => (
+          l.slotId,
+          Rect.fromLTWH(l.x, l.y, l.width, l.height),
+        ),
+        StickerLayer l => (l.id, Rect.fromLTWH(l.x, l.y, l.width, l.height)),
+        GridLayer l when l.rotation == 0 => (
+          l.id,
+          Rect.fromLTWH(l.x, l.y, l.width, l.height),
+        ),
+        ShapeLayer l => (null, Rect.fromLTWH(l.x, l.y, l.width, l.height)),
+        _ => (null, null),
+      };
+      if (box == null || key == movingKey) continue;
+      if (key == null) {
+        targets.add(box);
+        continue;
+      }
+      if (_content.rotationFor(key) != 0) continue;
+      final s = _content.scaleFor(key);
+      targets.add(
+        Rect.fromCenter(
+          center: box.center + _content.offsetFor(key),
+          width: box.width * s,
+          height: box.height * s,
+        ),
+      );
+    }
+    return targets;
   }
 
   GlobalKey _panelKey(String panelId) =>
@@ -820,13 +958,13 @@ class _TemplateScreenState extends State<TemplateScreen> {
     final barArea = _kBottomBarHeight + safeBottom;
 
     return Listener(
-      // End of any touch on the canvas/bars ends the current coalescing run:
-      // the next same-key edit starts a NEW undo step (see [_record]) instead
-      // of merging into a finished gesture. Listener doesn't enter the
+      // End of any touch on the canvas/bars ends the current coalescing run
+      // (the next same-key edit starts a NEW undo step — see [_record]) and
+      // drops the drag-snap state and guide lines. Listener doesn't enter the
       // gesture arena, so this can't affect any recognizer.
       behavior: HitTestBehavior.translucent,
-      onPointerUp: (_) => _editRunKey = null,
-      onPointerCancel: (_) => _editRunKey = null,
+      onPointerUp: (_) => _onPointerEnd(),
+      onPointerCancel: (_) => _onPointerEnd(),
       child: Column(
         children: [
           Expanded(
@@ -888,6 +1026,12 @@ class _TemplateScreenState extends State<TemplateScreen> {
                                   canvasWidth: template.canvasWidth,
                                   canvasHeight: template.canvasHeight,
                                   fontResolver: widget.fontResolver,
+                                  guideXs: panel.id == focusedPanel.id
+                                      ? _guideXs
+                                      : const [],
+                                  guideYs: panel.id == focusedPanel.id
+                                      ? _guideYs
+                                      : const [],
                                   content: _content,
                                   assetCatalog: _catalog,
                                   selectedSlotId: _selectedSlot,
@@ -909,13 +1053,8 @@ class _TemplateScreenState extends State<TemplateScreen> {
                                     _content.withText(slotId, value),
                                     coalesce: 'text:$slotId',
                                   ),
-                                  onSlotDrag: (slotId, delta) => _edit(
-                                    _content.withOffset(
-                                      slotId,
-                                      _content.offsetFor(slotId) + delta,
-                                    ),
-                                    coalesce: 'drag:$slotId',
-                                  ),
+                                  onSlotDrag: (slotId, delta) =>
+                                      _dragSelected(template, slotId, delta),
                                   onSlotScale: (slotId, scale) => _edit(
                                     _content.withScale(slotId, scale),
                                     coalesce: 'scale:$slotId',
@@ -1001,14 +1140,10 @@ class _TemplateScreenState extends State<TemplateScreen> {
                   // Shared by the chrome overlay (ring/handle gestures) and the
                   // canvas-wide surface (drag/pinch/twist anywhere). Same
                   // coalesce keys as the in-canvas gestures, so a move that
-                  // hops between surfaces still lands in one undo step.
-                  void dragSelected(String slotId, Offset delta) => _edit(
-                    _content.withOffset(
-                      slotId,
-                      _content.offsetFor(slotId) + delta,
-                    ),
-                    coalesce: 'drag:$slotId',
-                  );
+                  // hops between surfaces still lands in one undo step —
+                  // and drags route through the snapping path either way.
+                  void dragSelected(String slotId, Offset delta) =>
+                      _dragSelected(template, slotId, delta);
                   void scaleSelected(String slotId, double scale) => _edit(
                     _content.withScale(slotId, scale),
                     coalesce: 'scale:$slotId',
