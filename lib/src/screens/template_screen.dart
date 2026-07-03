@@ -82,6 +82,77 @@ class _TemplateScreenState extends State<TemplateScreen> {
   final LayerLink _selectionLink = LayerLink();
   (String, Size)? _selectionBox;
 
+  // Undo/redo: snapshots of [_content] — it is immutable copy-on-write, so a
+  // snapshot is a cheap shared reference and restoring one can't leak partial
+  // state. Selection/zoom are deliberately NOT part of history; only content.
+  final List<SlotContent> _undoStack = [];
+  final List<SlotContent> _redoStack = [];
+
+  /// Coalescing state: continuous interactions (drag, pinch, twist, sliders,
+  /// typing) stream one edit per frame, and all edits sharing a key merge
+  /// into ONE undo step while the interaction lasts. A run breaks on any
+  /// pointer-up over the canvas area (end of gesture — see the Listener in
+  /// [_buildBody]), on an edit with a different key, or after [_kEditRunWindow]
+  /// without edits (typing gets checkpoints from its pauses, since the
+  /// keyboard produces no canvas pointer events).
+  String? _editRunKey;
+  DateTime _editRunAt = DateTime.fromMillisecondsSinceEpoch(0);
+
+  static const int _kMaxHistory = 100;
+  static const Duration _kEditRunWindow = Duration(seconds: 2);
+
+  /// Records the current content as an undo step for the edit about to be
+  /// applied. [coalesce] marks the edit as part of a continuous interaction;
+  /// discrete actions (add/remove/reorder/style taps) pass null and always
+  /// get their own step. Any new edit invalidates the redo branch.
+  void _record([String? coalesce]) {
+    final now = DateTime.now();
+    final continuesRun =
+        coalesce != null &&
+        coalesce == _editRunKey &&
+        now.difference(_editRunAt) <= _kEditRunWindow;
+    if (!continuesRun) {
+      _undoStack.add(_content);
+      if (_undoStack.length > _kMaxHistory) _undoStack.removeAt(0);
+    }
+    _redoStack.clear();
+    _editRunKey = coalesce;
+    _editRunAt = now;
+  }
+
+  /// Applies a content edit with undo recording — for callbacks whose only
+  /// state change is [_content]. Sites that also touch selection/focus call
+  /// [_record] themselves before their own setState.
+  void _edit(SlotContent next, {String? coalesce}) {
+    _record(coalesce);
+    setState(() => _content = next);
+  }
+
+  void _undoEdit(Template template) {
+    if (_undoStack.isEmpty) return;
+    _redoStack.add(_content);
+    _restore(template, _undoStack.removeLast());
+  }
+
+  void _redoEdit(Template template) {
+    if (_redoStack.isEmpty) return;
+    _undoStack.add(_content);
+    _restore(template, _redoStack.removeLast());
+  }
+
+  void _restore(Template template, SlotContent snapshot) {
+    _editRunKey = null;
+    setState(() {
+      _content = snapshot;
+      // Inline editing can't survive a content swap (the field's controller
+      // would show stale text); selection stays unless its element is gone.
+      _editingSlot = null;
+      if (_selectedSlot != null && _selectionTarget(template) == null) {
+        _selectedSlot = null;
+      }
+    });
+  }
+
   GlobalKey _panelKey(String panelId) =>
       _panelKeys.putIfAbsent(panelId, () => GlobalKey());
 
@@ -160,6 +231,7 @@ class _TemplateScreenState extends State<TemplateScreen> {
       color: color,
       alignment: 'center',
     );
+    _record();
     setState(() {
       _content = _content.withAddedLayer(panel.id, layer);
       _focusedPanelId = panel.id;
@@ -194,6 +266,7 @@ class _TemplateScreenState extends State<TemplateScreen> {
       borderRadius: 0,
       frameAssetId: frameAssetId,
     );
+    _record();
     setState(() {
       _content = _content.withAddedLayer(panel.id, layer);
       _focusedPanelId = panel.id;
@@ -251,6 +324,7 @@ class _TemplateScreenState extends State<TemplateScreen> {
           ),
       ],
     );
+    _record();
     setState(() {
       _content = _content.withAddedLayer(panel.id, layer);
       _focusedPanelId = panel.id;
@@ -275,6 +349,7 @@ class _TemplateScreenState extends State<TemplateScreen> {
       width: width,
       height: height,
     );
+    _record();
     setState(() {
       _content = _content.withAddedLayer(panel.id, layer);
       _focusedPanelId = panel.id;
@@ -287,6 +362,7 @@ class _TemplateScreenState extends State<TemplateScreen> {
   /// and background ride in SlotContent like any template panel's.
   void _addPanel(Template template) {
     final id = _uniqueToken('panel', template);
+    _record();
     setState(() {
       _content = _content.withAddedPanel(
         Panel(
@@ -323,6 +399,7 @@ class _TemplateScreenState extends State<TemplateScreen> {
   /// removed). Clears the selection if it pointed at the removed element —
   /// including a grid's cells and a sticker's layer-id key.
   void _removeAddedLayer(String panelId, Layer layer) {
+    _record();
     setState(() {
       _content = _content.withoutAddedLayer(panelId, layer.id);
       final slotIds = switch (layer) {
@@ -385,7 +462,7 @@ class _TemplateScreenState extends State<TemplateScreen> {
     if (file == null) return;
     final bytes = await file.readAsBytes();
     if (!mounted) return;
-    setState(() => _content = _content.withImage(slotId, MemoryImage(bytes)));
+    _edit(_content.withImage(slotId, MemoryImage(bytes)));
   }
 
   /// Tapping a slot selects it (shows the handles for move/resize). A text
@@ -456,6 +533,7 @@ class _TemplateScreenState extends State<TemplateScreen> {
               },
               onToggleHidden: (layer) {
                 final nowHidden = !_content.layerHidden(layer.id, layer.hidden);
+                _record();
                 setState(() {
                   _content = _content.withLayerHidden(layer.id, nowHidden);
                   // A hidden element can't stay selected/edited.
@@ -476,6 +554,7 @@ class _TemplateScreenState extends State<TemplateScreen> {
                 setSheetState(() {});
               },
               onReorder: (layer, {required toFront}) {
+                _record();
                 setState(() {
                   _content = _content.withLayerMoved(
                     panel.id,
@@ -553,6 +632,22 @@ class _TemplateScreenState extends State<TemplateScreen> {
           appBar: AppBar(
             title: Text(template?.name ?? '…'),
             actions: [
+              if (template != null)
+                IconButton(
+                  icon: const Icon(Icons.undo),
+                  tooltip: 'Undo',
+                  onPressed: _undoStack.isEmpty
+                      ? null
+                      : () => _undoEdit(template),
+                ),
+              if (template != null)
+                IconButton(
+                  icon: const Icon(Icons.redo),
+                  tooltip: 'Redo',
+                  onPressed: _redoStack.isEmpty
+                      ? null
+                      : () => _redoEdit(template),
+                ),
               if (template != null)
                 PopupMenuButton<String>(
                   icon: const Icon(Icons.add),
@@ -724,241 +819,263 @@ class _TemplateScreenState extends State<TemplateScreen> {
     // the canvas area is a fixed size regardless of which bar shows.
     final barArea = _kBottomBarHeight + safeBottom;
 
-    return Column(
-      children: [
-        Expanded(
-          child: ColoredBox(
-            color: const Color(0xFF18181B),
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                // resizeToAvoidBottomInset shrinks this viewport by exactly the
-                // keyboard height, so adding the inset back recovers the
-                // keyboard-free height: the canvas keeps that fixed size and
-                // the extra overflows into the scroll view, which the framework
-                // scrolls to keep the focused text field above the keyboard.
-                // (keyboardInset comes from above the Scaffold — see build().)
-                final canvasHeight = constraints.maxHeight + keyboardInset;
-                // Panels sit side by side; with more than one, each is a bit
-                // narrower than the viewport so the next one peeks in.
-                final panelWidth =
-                    constraints.maxWidth * (panels.length == 1 ? 1.0 : 0.82);
-                // With nothing selected the surface is an InteractiveViewer
-                // (pinch zoom + pan). With a slot selected it becomes a STATIC
-                // transform — same matrix and layout, but NO gesture detector:
-                // InteractiveViewer's detector stays opaque even when pan/scale
-                // are off and would otherwise fight the selection handles.
-                final interacting =
-                    _selectedSlot != null || _editingSlot != null;
-                // Selection chrome + ring/handle gestures float in an overlay
-                // ABOVE the strip (unclipped by the canvas, so handles work
-                // past its edge). While editing text the legacy in-canvas
-                // chrome is used instead — the overlay would sit on top of
-                // the inline TextField.
-                final target = _editingSlot == null
-                    ? _selectionTarget(template)
-                    : null;
-                final strip = SizedBox(
-                  height: canvasHeight,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 16,
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        for (final panel in panels.map(_effectivePanel))
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 6),
-                            child: SizedBox(
-                              width: panelWidth,
-                              // The export boundary is INSIDE PanelCanvas's
-                              // FittedBox (template units): a boundary out
-                              // here captures the letterbox bands whenever
-                              // this box doesn't match the canvas aspect,
-                              // shrinking the artwork in the exported PNG.
-                              child: PanelCanvas(
-                                exportKey: _panelKey(panel.id),
-                                panel: panel,
-                                canvasWidth: template.canvasWidth,
-                                canvasHeight: template.canvasHeight,
-                                fontResolver: widget.fontResolver,
-                                content: _content,
-                                assetCatalog: _catalog,
-                                selectedSlotId: _selectedSlot,
-                                editingSlotId: _editingSlot,
-                                onSlotTap: (slotId) {
-                                  _focusedPanelId = panel.id;
-                                  _handleSlotTap(template, slotId);
-                                },
-                                onPickImage: (slotId) {
-                                  _focusedPanelId = panel.id;
-                                  _onPickImage(slotId);
-                                },
-                                onCanvasTap: () => setState(() {
-                                  _focusedPanelId = panel.id;
-                                  _selectedSlot = null;
-                                  _editingSlot = null;
-                                }),
-                                onTextChanged: (slotId, value) => setState(() {
-                                  _content = _content.withText(slotId, value);
-                                }),
-                                onSlotDrag: (slotId, delta) => setState(() {
-                                  _content = _content.withOffset(
-                                    slotId,
-                                    _content.offsetFor(slotId) + delta,
-                                  );
-                                }),
-                                onSlotScale: (slotId, scale) => setState(() {
-                                  _content = _content.withScale(slotId, scale);
-                                }),
-                                onSlotRotate: (slotId, degrees) => setState(() {
-                                  _content = _content.withRotation(
-                                    slotId,
-                                    degrees,
-                                  );
-                                }),
-                                onGridFractions: (gridId, columns, fractions) =>
-                                    setState(() {
-                                      _focusedPanelId = panel.id;
-                                      _content = columns
-                                          ? _content.withGridColFractions(
-                                              gridId,
-                                              fractions,
-                                            )
-                                          : _content.withGridRowFractions(
-                                              gridId,
-                                              fractions,
-                                            );
-                                    }),
-                                selectionLink: target == null
-                                    ? null
-                                    : _selectionLink,
-                                onSelectionSize: target == null
-                                    ? null
-                                    : (s) {
-                                        if (_selectionBox == (target.$1, s)) {
-                                          return;
-                                        }
+    return Listener(
+      // End of any touch on the canvas/bars ends the current coalescing run:
+      // the next same-key edit starts a NEW undo step (see [_record]) instead
+      // of merging into a finished gesture. Listener doesn't enter the
+      // gesture arena, so this can't affect any recognizer.
+      behavior: HitTestBehavior.translucent,
+      onPointerUp: (_) => _editRunKey = null,
+      onPointerCancel: (_) => _editRunKey = null,
+      child: Column(
+        children: [
+          Expanded(
+            child: ColoredBox(
+              color: const Color(0xFF18181B),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  // resizeToAvoidBottomInset shrinks this viewport by exactly the
+                  // keyboard height, so adding the inset back recovers the
+                  // keyboard-free height: the canvas keeps that fixed size and
+                  // the extra overflows into the scroll view, which the framework
+                  // scrolls to keep the focused text field above the keyboard.
+                  // (keyboardInset comes from above the Scaffold — see build().)
+                  final canvasHeight = constraints.maxHeight + keyboardInset;
+                  // Panels sit side by side; with more than one, each is a bit
+                  // narrower than the viewport so the next one peeks in.
+                  final panelWidth =
+                      constraints.maxWidth * (panels.length == 1 ? 1.0 : 0.82);
+                  // With nothing selected the surface is an InteractiveViewer
+                  // (pinch zoom + pan). With a slot selected it becomes a STATIC
+                  // transform — same matrix and layout, but NO gesture detector:
+                  // InteractiveViewer's detector stays opaque even when pan/scale
+                  // are off and would otherwise fight the selection handles.
+                  final interacting =
+                      _selectedSlot != null || _editingSlot != null;
+                  // Selection chrome + ring/handle gestures float in an overlay
+                  // ABOVE the strip (unclipped by the canvas, so handles work
+                  // past its edge). While editing text the legacy in-canvas
+                  // chrome is used instead — the overlay would sit on top of
+                  // the inline TextField.
+                  final target = _editingSlot == null
+                      ? _selectionTarget(template)
+                      : null;
+                  final strip = SizedBox(
+                    height: canvasHeight,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 16,
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          for (final panel in panels.map(_effectivePanel))
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                              ),
+                              child: SizedBox(
+                                width: panelWidth,
+                                // The export boundary is INSIDE PanelCanvas's
+                                // FittedBox (template units): a boundary out
+                                // here captures the letterbox bands whenever
+                                // this box doesn't match the canvas aspect,
+                                // shrinking the artwork in the exported PNG.
+                                child: PanelCanvas(
+                                  exportKey: _panelKey(panel.id),
+                                  panel: panel,
+                                  canvasWidth: template.canvasWidth,
+                                  canvasHeight: template.canvasHeight,
+                                  fontResolver: widget.fontResolver,
+                                  content: _content,
+                                  assetCatalog: _catalog,
+                                  selectedSlotId: _selectedSlot,
+                                  editingSlotId: _editingSlot,
+                                  onSlotTap: (slotId) {
+                                    _focusedPanelId = panel.id;
+                                    _handleSlotTap(template, slotId);
+                                  },
+                                  onPickImage: (slotId) {
+                                    _focusedPanelId = panel.id;
+                                    _onPickImage(slotId);
+                                  },
+                                  onCanvasTap: () => setState(() {
+                                    _focusedPanelId = panel.id;
+                                    _selectedSlot = null;
+                                    _editingSlot = null;
+                                  }),
+                                  onTextChanged: (slotId, value) => _edit(
+                                    _content.withText(slotId, value),
+                                    coalesce: 'text:$slotId',
+                                  ),
+                                  onSlotDrag: (slotId, delta) => _edit(
+                                    _content.withOffset(
+                                      slotId,
+                                      _content.offsetFor(slotId) + delta,
+                                    ),
+                                    coalesce: 'drag:$slotId',
+                                  ),
+                                  onSlotScale: (slotId, scale) => _edit(
+                                    _content.withScale(slotId, scale),
+                                    coalesce: 'scale:$slotId',
+                                  ),
+                                  onSlotRotate: (slotId, degrees) => _edit(
+                                    _content.withRotation(slotId, degrees),
+                                    coalesce: 'rotate:$slotId',
+                                  ),
+                                  onGridFractions:
+                                      (gridId, columns, fractions) {
+                                        _record('fractions:$gridId');
                                         setState(() {
-                                          _selectionBox = (target.$1, s);
+                                          _focusedPanelId = panel.id;
+                                          _content = columns
+                                              ? _content.withGridColFractions(
+                                                  gridId,
+                                                  fractions,
+                                                )
+                                              : _content.withGridRowFractions(
+                                                  gridId,
+                                                  fractions,
+                                                );
                                         });
                                       },
+                                  selectionLink: target == null
+                                      ? null
+                                      : _selectionLink,
+                                  onSelectionSize: target == null
+                                      ? null
+                                      : (s) {
+                                          if (_selectionBox == (target.$1, s)) {
+                                            return;
+                                          }
+                                          setState(() {
+                                            _selectionBox = (target.$1, s);
+                                          });
+                                        },
+                                ),
                               ),
                             ),
-                          ),
-                      ],
-                    ),
-                  ),
-                );
-                // Same matrix + layout in both branches (constrained:false →
-                // content-sized, top-left aligned, clipped), so toggling on
-                // selection never shifts the canvas.
-                final Widget surface = interacting
-                    ? ClipRect(
-                        child: OverflowBox(
-                          alignment: Alignment.topLeft,
-                          minWidth: 0,
-                          minHeight: 0,
-                          maxWidth: double.infinity,
-                          maxHeight: double.infinity,
-                          child: Transform(
-                            transform: _zoom.value,
-                            child: strip,
-                          ),
-                        ),
-                      )
-                    : InteractiveViewer(
-                        transformationController: _zoom,
-                        constrained: false,
-                        // Horizontal-only at 1x (browse panels); free once
-                        // zoomed in so every corner is reachable.
-                        panAxis: _isZoomed ? PanAxis.free : PanAxis.horizontal,
-                        minScale: 1,
-                        maxScale: 4,
-                        boundaryMargin: const EdgeInsets.all(64),
-                        child: strip,
-                      );
-                final scroll = SingleChildScrollView(
-                  // Vertical scroll only while editing — the framework lifts the
-                  // focused field above the keyboard then. Frozen otherwise.
-                  physics: _editingSlot != null
-                      ? const ClampingScrollPhysics()
-                      : const NeverScrollableScrollPhysics(),
-                  child: SizedBox(height: canvasHeight, child: surface),
-                );
-                // Shared by the chrome overlay (ring/handle gestures) and the
-                // canvas-wide surface (drag/pinch/twist anywhere).
-                void dragSelected(String slotId, Offset delta) => setState(() {
-                  _content = _content.withOffset(
-                    slotId,
-                    _content.offsetFor(slotId) + delta,
-                  );
-                });
-                void scaleSelected(String slotId, double scale) => setState(
-                  () => _content = _content.withScale(slotId, scale),
-                );
-                void rotateSelected(String slotId, double degrees) => setState(
-                  () => _content = _content.withRotation(slotId, degrees),
-                );
-                final box = _selectionBox;
-                Widget body = scroll;
-                if (target != null && box != null && box.$1 == target.$1) {
-                  body = Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      scroll,
-                      Positioned.fill(
-                        child: CanvasSelectionOverlay(
-                          link: _selectionLink,
-                          size: box.$2,
-                          targetId: target.$1,
-                          currentScale: _content.scaleFor(target.$1),
-                          currentRotation: _content.rotationFor(target.$1),
-                          templateRotation: target.$2,
-                          onDrag: dragSelected,
-                          onScaleChange: scaleSelected,
-                          onRotateChange: rotateSelected,
-                        ),
+                        ],
                       ),
-                    ],
+                    ),
                   );
-                }
-                if (target != null) {
-                  // With a selection active, the whole canvas area drives the
-                  // selected element: drag anywhere moves it, pinch anywhere
-                  // resizes, two-finger twist rotates. Everything deeper
-                  // (taps, dividers, handles) still wins the gesture arena.
-                  body = SelectionGestureSurface(
-                    targetId: target.$1,
-                    currentScale: _content.scaleFor(target.$1),
-                    currentRotation: _content.rotationFor(target.$1),
-                    screenToTemplate: () => _screenToTemplate(template),
-                    onDrag: dragSelected,
-                    onScaleChange: scaleSelected,
-                    onRotateChange: rotateSelected,
-                    child: body,
+                  // Same matrix + layout in both branches (constrained:false →
+                  // content-sized, top-left aligned, clipped), so toggling on
+                  // selection never shifts the canvas.
+                  final Widget surface = interacting
+                      ? ClipRect(
+                          child: OverflowBox(
+                            alignment: Alignment.topLeft,
+                            minWidth: 0,
+                            minHeight: 0,
+                            maxWidth: double.infinity,
+                            maxHeight: double.infinity,
+                            child: Transform(
+                              transform: _zoom.value,
+                              child: strip,
+                            ),
+                          ),
+                        )
+                      : InteractiveViewer(
+                          transformationController: _zoom,
+                          constrained: false,
+                          // Horizontal-only at 1x (browse panels); free once
+                          // zoomed in so every corner is reachable.
+                          panAxis: _isZoomed
+                              ? PanAxis.free
+                              : PanAxis.horizontal,
+                          minScale: 1,
+                          maxScale: 4,
+                          boundaryMargin: const EdgeInsets.all(64),
+                          child: strip,
+                        );
+                  final scroll = SingleChildScrollView(
+                    // Vertical scroll only while editing — the framework lifts the
+                    // focused field above the keyboard then. Frozen otherwise.
+                    physics: _editingSlot != null
+                        ? const ClampingScrollPhysics()
+                        : const NeverScrollableScrollPhysics(),
+                    child: SizedBox(height: canvasHeight, child: surface),
                   );
-                }
-                return body;
-              },
+                  // Shared by the chrome overlay (ring/handle gestures) and the
+                  // canvas-wide surface (drag/pinch/twist anywhere). Same
+                  // coalesce keys as the in-canvas gestures, so a move that
+                  // hops between surfaces still lands in one undo step.
+                  void dragSelected(String slotId, Offset delta) => _edit(
+                    _content.withOffset(
+                      slotId,
+                      _content.offsetFor(slotId) + delta,
+                    ),
+                    coalesce: 'drag:$slotId',
+                  );
+                  void scaleSelected(String slotId, double scale) => _edit(
+                    _content.withScale(slotId, scale),
+                    coalesce: 'scale:$slotId',
+                  );
+                  void rotateSelected(String slotId, double degrees) => _edit(
+                    _content.withRotation(slotId, degrees),
+                    coalesce: 'rotate:$slotId',
+                  );
+                  final box = _selectionBox;
+                  Widget body = scroll;
+                  if (target != null && box != null && box.$1 == target.$1) {
+                    body = Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        scroll,
+                        Positioned.fill(
+                          child: CanvasSelectionOverlay(
+                            link: _selectionLink,
+                            size: box.$2,
+                            targetId: target.$1,
+                            currentScale: _content.scaleFor(target.$1),
+                            currentRotation: _content.rotationFor(target.$1),
+                            templateRotation: target.$2,
+                            onDrag: dragSelected,
+                            onScaleChange: scaleSelected,
+                            onRotateChange: rotateSelected,
+                          ),
+                        ),
+                      ],
+                    );
+                  }
+                  if (target != null) {
+                    // With a selection active, the whole canvas area drives the
+                    // selected element: drag anywhere moves it, pinch anywhere
+                    // resizes, two-finger twist rotates. Everything deeper
+                    // (taps, dividers, handles) still wins the gesture arena.
+                    body = SelectionGestureSurface(
+                      targetId: target.$1,
+                      currentScale: _content.scaleFor(target.$1),
+                      currentRotation: _content.rotationFor(target.$1),
+                      screenToTemplate: () => _screenToTemplate(template),
+                      onDrag: dragSelected,
+                      onScaleChange: scaleSelected,
+                      onRotateChange: rotateSelected,
+                      child: body,
+                    );
+                  }
+                  return body;
+                },
+              ),
             ),
           ),
-        ),
-        // The bar strip: fixed height (so the canvas area never changes) and
-        // bottom-aligned, sitting just above the keyboard when it's open
-        // (resizeToAvoidBottomInset pushes it up).
-        ColoredBox(
-          color: const Color(0xFF18181B),
-          child: SizedBox(
-            height: barArea,
-            width: double.infinity,
-            child: bottomBar == null
-                ? null
-                : Align(alignment: Alignment.bottomCenter, child: bottomBar),
+          // The bar strip: fixed height (so the canvas area never changes) and
+          // bottom-aligned, sitting just above the keyboard when it's open
+          // (resizeToAvoidBottomInset pushes it up).
+          ColoredBox(
+            color: const Color(0xFF18181B),
+            child: SizedBox(
+              height: barArea,
+              width: double.infinity,
+              child: bottomBar == null
+                  ? null
+                  : Align(alignment: Alignment.bottomCenter, child: bottomBar),
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -975,9 +1092,8 @@ class _TemplateScreenState extends State<TemplateScreen> {
         currentColor:
             _content.backgroundFor(focusedPanel.id) ??
             focusedPanel.backgroundColor,
-        onColor: (color) => setState(
-          () => _content = _content.withPanelBackground(focusedPanel.id, color),
-        ),
+        onColor: (color) =>
+            _edit(_content.withPanelBackground(focusedPanel.id, color)),
       );
     }
     if (textLayer != null) {
@@ -989,21 +1105,13 @@ class _TemplateScreenState extends State<TemplateScreen> {
         currentAlignment:
             _content.alignmentFor(textLayer.slotId) ?? textLayer.alignment,
         isBold: weight >= 700,
-        onFont: (font) => setState(() {
-          _content = _content.withFont(textLayer.slotId, font);
-        }),
-        onColor: (color) => setState(() {
-          _content = _content.withColor(textLayer.slotId, color);
-        }),
-        onAlignment: (align) => setState(() {
-          _content = _content.withAlignment(textLayer.slotId, align);
-        }),
-        onBoldToggle: () => setState(() {
-          _content = _content.withWeight(
-            textLayer.slotId,
-            weight >= 700 ? 400 : 700,
-          );
-        }),
+        onFont: (font) => _edit(_content.withFont(textLayer.slotId, font)),
+        onColor: (color) => _edit(_content.withColor(textLayer.slotId, color)),
+        onAlignment: (align) =>
+            _edit(_content.withAlignment(textLayer.slotId, align)),
+        onBoldToggle: () => _edit(
+          _content.withWeight(textLayer.slotId, weight >= 700 ? 400 : 700),
+        ),
       );
     }
     if (gridLayer != null) {
@@ -1016,9 +1124,11 @@ class _TemplateScreenState extends State<TemplateScreen> {
         maxGutter: minSide * 0.2,
         maxCorner: minSide * 0.25,
         onGutter: (v) =>
-            setState(() => _content = _content.withGridGutter(g.id, v)),
-        onCorner: (v) =>
-            setState(() => _content = _content.withGridCornerRadius(g.id, v)),
+            _edit(_content.withGridGutter(g.id, v), coalesce: 'gutter:${g.id}'),
+        onCorner: (v) => _edit(
+          _content.withGridCornerRadius(g.id, v),
+          coalesce: 'corner:${g.id}',
+        ),
       );
     }
     return null;
