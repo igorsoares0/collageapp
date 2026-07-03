@@ -16,8 +16,9 @@ class LayersSheet extends StatelessWidget {
   final Panel panel;
   final SlotContent content;
 
-  /// Tapping a fillable layer (image/text) selects its slot. Decorative
-  /// layers (shapes/stickers) have no slot and are not selectable.
+  /// Tapping a selectable layer (image/text/sticker) selects it — image and
+  /// text by slot id, stickers by their layer id (they carry no slot). Shapes
+  /// are template decoration and are not selectable.
   final void Function(String slotId) onSelect;
 
   /// Toggles the layer's visibility override.
@@ -47,6 +48,7 @@ class LayersSheet extends StatelessWidget {
   static String? _slotIdOf(Layer layer) => switch (layer) {
     ImageLayer l => l.slotId,
     TextLayer l => l.slotId,
+    StickerLayer l => l.id,
     _ => null,
   };
 

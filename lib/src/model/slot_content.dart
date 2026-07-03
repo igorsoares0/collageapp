@@ -80,6 +80,12 @@ class SlotContent {
   /// so they carry their own SlotContent overrides under their slot ids.
   final Map<String, List<Layer>> addedLayers;
 
+  /// Panels the user added after the template's own (in order). Each starts
+  /// empty; its content lives in [addedLayers] under its id and its background
+  /// in [panelBackgrounds], so an added panel behaves exactly like a template
+  /// panel everywhere (canvas, layer sheet, export).
+  final List<Panel> addedPanels;
+
   const SlotContent({
     this.texts = const {},
     this.images = const {},
@@ -95,6 +101,7 @@ class SlotContent {
     this.hiddenLayers = const {},
     this.gridOverrides = const {},
     this.addedLayers = const {},
+    this.addedPanels = const [],
   });
 
   String? textFor(String slotId) => texts[slotId];
@@ -224,6 +231,9 @@ class SlotContent {
   SlotContent withLayerOrder(String panelId, List<String> ids) =>
       _copy(layerOrders: {...layerOrders, panelId: ids});
 
+  SlotContent withAddedPanel(Panel panel) =>
+      _copy(addedPanels: [...addedPanels, panel]);
+
   SlotContent withAddedLayer(String panelId, Layer layer) => _copy(
     addedLayers: {
       ...addedLayers,
@@ -290,6 +300,7 @@ class SlotContent {
     Map<String, bool>? hiddenLayers,
     Map<String, GridOverride>? gridOverrides,
     Map<String, List<Layer>>? addedLayers,
+    List<Panel>? addedPanels,
   }) => SlotContent(
     texts: texts ?? this.texts,
     images: images ?? this.images,
@@ -305,5 +316,6 @@ class SlotContent {
     hiddenLayers: hiddenLayers ?? this.hiddenLayers,
     gridOverrides: gridOverrides ?? this.gridOverrides,
     addedLayers: addedLayers ?? this.addedLayers,
+    addedPanels: addedPanels ?? this.addedPanels,
   );
 }

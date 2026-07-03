@@ -226,9 +226,10 @@ void main() {
     await tester.tap(find.text('title'));
     expect(taps, ['title']);
 
-    // The sticker has no tap detector: the tap falls through to the canvas.
+    // Stickers are slot citizens too, selecting by their LAYER id.
     await tester.tap(find.text('sticker_star'));
-    expect(canvasTaps, 1);
+    expect(taps, ['title', 'sticker_deco']);
+    expect(canvasTaps, 0);
   });
 
   testWidgets('selected slot shows handles and corner drag resizes it', (

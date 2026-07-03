@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../api/template_api.dart';
 import '../api/template_store.dart';
+import '../model/template.dart';
 import 'template_screen.dart';
 
 class GalleryScreen extends StatefulWidget {
@@ -28,10 +29,66 @@ class _GalleryScreenState extends State<GalleryScreen> {
     await _index;
   }
 
+  /// Create-from-scratch entry: pick a canvas size, then open the editor on a
+  /// blank draft — everything (text, images, grids, assets, panels) is built
+  /// there with the add menu.
+  Future<void> _createFromScratch() async {
+    final canvas = await showModalBottomSheet<(String, double, double)>(
+      context: context,
+      backgroundColor: const Color(0xFF27272A),
+      builder: (sheetContext) => SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 12, 16, 4),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Canvas size',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ),
+            for (final (label, aspect, w, h) in const [
+              ('Story', '9:16', 1080.0, 1920.0),
+              ('Portrait', '4:5', 1080.0, 1350.0),
+              ('Square', '1:1', 1080.0, 1080.0),
+            ])
+              ListTile(
+                leading: const Icon(Icons.crop_free),
+                title: Text(label),
+                subtitle: Text('$aspect · ${w.toInt()}×${h.toInt()}'),
+                onTap: () => Navigator.pop(sheetContext, (aspect, w, h)),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (canvas == null || !mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => TemplateScreen(
+          draft: Template.blank(
+            aspectRatio: canvas.$1,
+            canvasWidth: canvas.$2,
+            canvasHeight: canvas.$3,
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Collage Studio')),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _createFromScratch,
+        icon: const Icon(Icons.add),
+        label: const Text('Create'),
+      ),
       body: FutureBuilder<IndexResult>(
         future: _index,
         builder: (context, snapshot) {

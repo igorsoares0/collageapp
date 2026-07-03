@@ -271,7 +271,8 @@ class PanelCanvas extends StatelessWidget {
                     onSelectionSize: onSelectionSize,
                     selected:
                         layer is ImageLayer && layer.slotId == selectedSlotId ||
-                        layer is TextLayer && layer.slotId == selectedSlotId,
+                        layer is TextLayer && layer.slotId == selectedSlotId ||
+                        layer is StickerLayer && layer.id == selectedSlotId,
                     editing:
                         layer is TextLayer && layer.slotId == editingSlotId,
                     fieldKey:
@@ -440,7 +441,15 @@ class _LayerWidget extends StatelessWidget {
         l.y,
         Container(width: l.width, height: l.height, color: l.fill),
       ),
-      StickerLayer l => _positioned(l.x, l.y, _StickerPlaceholder(layer: l)),
+      // Stickers are full slot citizens keyed by their LAYER id (they carry no
+      // slotId — nothing to fill): tap selects, then move/pinch/resize/rotate
+      // like an image slot.
+      StickerLayer l => _slot(
+        l.id,
+        l.x,
+        l.y,
+        _chromed(l.id, _StickerSlot(layer: l, assetCatalog: assetCatalog)),
+      ),
       GridLayer l => _buildGrid(l),
     };
   }
@@ -1525,8 +1534,33 @@ class _InlineTextEditorState extends State<_InlineTextEditor> {
   }
 }
 
-/// Stickers are backend assets (spec §19); until asset storage exists this
-/// renders the same labeled placeholder as the editor.
+/// A sticker: its PNG from the asset catalog, contain-fit in the layer box.
+/// Unknown/unfetched assets fall back to the labeled placeholder so the layer
+/// stays visible (and tappable) instead of vanishing.
+class _StickerSlot extends StatelessWidget {
+  final StickerLayer layer;
+  final List<AssetRecord> assetCatalog;
+
+  const _StickerSlot({required this.layer, required this.assetCatalog});
+
+  @override
+  Widget build(BuildContext context) {
+    for (final a in assetCatalog) {
+      if (a.id == layer.assetId && a.type == 'sticker') {
+        return SizedBox(
+          width: layer.width,
+          height: layer.height,
+          child: Image(image: a.image, fit: BoxFit.contain),
+        );
+      }
+    }
+    return _StickerPlaceholder(layer: layer);
+  }
+}
+
+/// Fallback visual for a sticker whose asset isn't in the catalog (offline
+/// cold start, or a stale template) — the same labeled placeholder the editor
+/// shows.
 class _StickerPlaceholder extends StatelessWidget {
   final StickerLayer layer;
 

@@ -9,6 +9,7 @@ import '../model/template.dart';
 import '../rendering/export.dart';
 import '../rendering/template_canvas.dart';
 import '../widgets/grid_style_bar.dart';
+import '../widgets/insert_sheets.dart';
 import '../widgets/layers_sheet.dart';
 import '../widgets/text_style_bar.dart';
 
@@ -16,10 +17,28 @@ import '../widgets/text_style_bar.dart';
 /// editing directly on the canvas: tap selects, tap again edits text
 /// inline or opens the gallery picker for images. The result exports as
 /// a full-resolution PNG through the share sheet.
+///
+/// Two entry points: a published template by [id] (fetched through the
+/// store), or a local [draft] — the create-from-scratch flow hands in
+/// [Template.blank] and the user builds everything with the add menu
+/// (text, images, grids, assets, panels).
 class TemplateScreen extends StatefulWidget {
-  final String id;
+  final String? id;
+  final Template? draft;
 
-  const TemplateScreen({super.key, required this.id});
+  /// Injectable for tests (google_fonts needs network/assets); the app uses
+  /// the default runtime-fetching resolver.
+  final FontResolver fontResolver;
+
+  const TemplateScreen({
+    super.key,
+    this.id,
+    this.draft,
+    this.fontResolver = googleFontsResolver,
+  }) : assert(
+         (id == null) != (draft == null),
+         'Pass exactly one of id or draft',
+       );
 
   @override
   State<TemplateScreen> createState() => _TemplateScreenState();
@@ -66,6 +85,22 @@ class _TemplateScreenState extends State<TemplateScreen> {
   GlobalKey _panelKey(String panelId) =>
       _panelKeys.putIfAbsent(panelId, () => GlobalKey());
 
+  /// Every panel on screen: the template's own plus the user's added ones
+  /// (empty panels appended at the end). All panel iteration/lookup goes
+  /// through here so added panels behave like template panels everywhere.
+  List<Panel> _panels(Template template) => [
+    ...template.panels,
+    ..._content.addedPanels,
+  ];
+
+  /// The panel the styling bars and the add menu act on: the last one the
+  /// user touched, falling back to the first.
+  Panel _focusedPanel(Template template) {
+    final panels = _panels(template);
+    final id = _focusedPanelId ?? panels.first.id;
+    return panels.firstWhere((p) => p.id == id, orElse: () => panels.first);
+  }
+
   /// The panel with the user's added layers stacked on top — what the canvas,
   /// the layer sheet and the export all render. The template itself is never
   /// touched; added layers live in [_content].
@@ -86,12 +121,13 @@ class _TemplateScreenState extends State<TemplateScreen> {
     ..._content.allAddedLayers,
   ];
 
-  /// A slot/layer id not used by the template or any added layer, so a new
-  /// element never collides with an existing slot's overrides.
+  /// A slot/layer/panel id not used by the template or anything the user
+  /// added, so a new element never collides with an existing slot's overrides.
   String _uniqueToken(String base, Template template) {
     final used = {
       for (final l in _allLayers(template)) l.id,
       ...template.slotIds,
+      for (final p in _panels(template)) p.id,
     };
     var n = 1;
     while (used.contains('${base}_$n')) {
@@ -103,11 +139,7 @@ class _TemplateScreenState extends State<TemplateScreen> {
   /// Adds a fresh text element to the focused panel, centered, and drops the
   /// user straight into inline editing so they can type immediately.
   void _addTextLayer(Template template) {
-    final panelId = _focusedPanelId ?? template.panels.first.id;
-    final panel = template.panels.firstWhere(
-      (p) => p.id == panelId,
-      orElse: () => template.panels.first,
-    );
+    final panel = _focusedPanel(template);
     final token = _uniqueToken('text', template);
     final bg = _content.backgroundFor(panel.id) ?? panel.backgroundColor;
     // Pick a default ink that reads against the current background.
@@ -138,25 +170,29 @@ class _TemplateScreenState extends State<TemplateScreen> {
 
   /// Adds a fresh image element to the focused panel, centered, and opens the
   /// gallery right away (an empty image element is useless on its own).
-  void _addImageLayer(Template template) {
-    final panelId = _focusedPanelId ?? template.panels.first.id;
-    final panel = template.panels.firstWhere(
-      (p) => p.id == panelId,
-      orElse: () => template.panels.first,
-    );
+  /// [frameAssetId]/[aspect] make it a framed photo slot (polaroid etc.) —
+  /// the box follows the frame's aspect so the window isn't distorted.
+  void _addImageLayer(
+    Template template, {
+    String? frameAssetId,
+    double aspect = 1,
+  }) {
+    final panel = _focusedPanel(template);
     final token = _uniqueToken('image', template);
-    final side = template.canvasWidth * 0.5;
+    final width = template.canvasWidth * 0.5;
+    final height = width / (aspect <= 0 ? 1 : aspect);
     final layer = ImageLayer(
       id: token,
       hidden: false,
       slotId: token,
-      x: (template.canvasWidth - side) / 2,
-      y: (template.canvasHeight - side) / 2,
-      width: side,
-      height: side,
+      x: (template.canvasWidth - width) / 2,
+      y: (template.canvasHeight - height) / 2,
+      width: width,
+      height: height,
       rotation: 0,
       opacity: 1,
       borderRadius: 0,
+      frameAssetId: frameAssetId,
     );
     setState(() {
       _content = _content.withAddedLayer(panel.id, layer);
@@ -167,17 +203,136 @@ class _TemplateScreenState extends State<TemplateScreen> {
     _pickImage(token);
   }
 
+  /// Adds a grid in the chosen layout, inset from the canvas edges, and
+  /// selects its first cell so the grid chrome and styling bar appear. Cell
+  /// slot ids derive from the grid's unique id, checked as a set so none can
+  /// collide with existing slots.
+  void _addGridLayer(Template template, GridPreset preset) {
+    final panel = _focusedPanel(template);
+    final used = {
+      for (final l in _allLayers(template)) l.id,
+      ...template.slotIds,
+      for (final p in _panels(template)) p.id,
+    };
+    var n = 1;
+    String gridId;
+    List<String> cellIds;
+    do {
+      gridId = 'grid_$n';
+      cellIds = [
+        for (var i = 0; i < preset.cells.length; i++) '${gridId}_c${i + 1}',
+      ];
+      n++;
+    } while (used.contains(gridId) || cellIds.any(used.contains));
+    final inset = template.canvasWidth * 0.08;
+    final layer = GridLayer(
+      id: gridId,
+      hidden: false,
+      x: inset,
+      y: inset,
+      width: template.canvasWidth - 2 * inset,
+      height: template.canvasHeight - 2 * inset,
+      rotation: 0,
+      cols: preset.cols,
+      rows: preset.rows,
+      colFractions: List.filled(preset.cols, 1),
+      rowFractions: List.filled(preset.rows, 1),
+      gutter: 24,
+      cornerRadius: 0,
+      gutterColor: null,
+      cells: [
+        for (final (i, c) in preset.cells.indexed)
+          GridCell(
+            slotId: cellIds[i],
+            col: c.$1,
+            row: c.$2,
+            colSpan: c.$3,
+            rowSpan: c.$4,
+          ),
+      ],
+    );
+    setState(() {
+      _content = _content.withAddedLayer(panel.id, layer);
+      _focusedPanelId = panel.id;
+      _selectedSlot = cellIds.first;
+      _editingSlot = null;
+    });
+  }
+
+  /// Adds a sticker sized to its own aspect, centered, and selects it (its
+  /// layer id doubles as the gesture/selection key — stickers carry no slot).
+  void _addStickerLayer(Template template, AssetChoice asset) {
+    final panel = _focusedPanel(template);
+    final token = _uniqueToken('sticker', template);
+    final width = template.canvasWidth * 0.4;
+    final height = width / (asset.aspect <= 0 ? 1 : asset.aspect);
+    final layer = StickerLayer(
+      id: token,
+      hidden: false,
+      assetId: asset.id,
+      x: (template.canvasWidth - width) / 2,
+      y: (template.canvasHeight - height) / 2,
+      width: width,
+      height: height,
+    );
+    setState(() {
+      _content = _content.withAddedLayer(panel.id, layer);
+      _focusedPanelId = panel.id;
+      _selectedSlot = token;
+      _editingSlot = null;
+    });
+  }
+
+  /// Appends an empty panel (a new carousel slide) and focuses it. Its layers
+  /// and background ride in SlotContent like any template panel's.
+  void _addPanel(Template template) {
+    final id = _uniqueToken('panel', template);
+    setState(() {
+      _content = _content.withAddedPanel(
+        Panel(
+          id: id,
+          backgroundColor: const Color(0xFFFFFFFF),
+          layers: const [],
+        ),
+      );
+      _focusedPanelId = id;
+      _selectedSlot = null;
+      _editingSlot = null;
+    });
+  }
+
+  Future<void> _insertGrid(Template template) async {
+    final preset = await showGridPresetSheet(context);
+    if (preset == null || !mounted) return;
+    _addGridLayer(template, preset);
+  }
+
+  Future<void> _insertAsset(Template template) async {
+    final asset = await showAssetPickerSheet(context, _catalog);
+    if (asset == null || !mounted) return;
+    if (asset.isFrame) {
+      // A frame is not a layer of its own — it decorates a photo slot, so
+      // inserting one creates a framed image slot and opens the gallery.
+      _addImageLayer(template, frameAssetId: asset.id, aspect: asset.aspect);
+    } else {
+      _addStickerLayer(template, asset);
+    }
+  }
+
   /// Deletes a user-added layer (template layers can only be hidden, not
-  /// removed). Clears the selection if it pointed at the removed element.
+  /// removed). Clears the selection if it pointed at the removed element —
+  /// including a grid's cells and a sticker's layer-id key.
   void _removeAddedLayer(String panelId, Layer layer) {
     setState(() {
       _content = _content.withoutAddedLayer(panelId, layer.id);
-      final slotId = switch (layer) {
-        ImageLayer l => l.slotId,
-        TextLayer l => l.slotId,
-        _ => null,
+      final slotIds = switch (layer) {
+        ImageLayer l => {l.slotId},
+        TextLayer l => {l.slotId},
+        StickerLayer l => {l.id},
+        GridLayer l => {for (final c in l.cells) c.slotId},
+        _ => const <String>{},
       };
-      if (slotId != null && _selectedSlot == slotId) {
+      if (slotIds.contains(_selectedSlot)) {
         _selectedSlot = null;
         _editingSlot = null;
       }
@@ -188,7 +343,9 @@ class _TemplateScreenState extends State<TemplateScreen> {
   void initState() {
     super.initState();
     _zoom.addListener(_onZoomChange);
-    _template = _store.loadTemplate(widget.id).then((r) => r.template);
+    _template = widget.draft != null
+        ? Future.value(widget.draft)
+        : _store.loadTemplate(widget.id!).then((r) => r.template);
     _loadCatalog();
   }
 
@@ -266,11 +423,7 @@ class _TemplateScreenState extends State<TemplateScreen> {
   /// are SlotContent overrides, so the sheet reflects them live and the canvas
   /// updates underneath.
   void _showLayersSheet(Template template) {
-    final panelId = _focusedPanelId ?? template.panels.first.id;
-    final templatePanel = template.panels.firstWhere(
-      (p) => p.id == panelId,
-      orElse: () => template.panels.first,
-    );
+    final templatePanel = _focusedPanel(template);
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: const Color(0xFF27272A),
@@ -307,12 +460,14 @@ class _TemplateScreenState extends State<TemplateScreen> {
                   _content = _content.withLayerHidden(layer.id, nowHidden);
                   // A hidden element can't stay selected/edited.
                   if (nowHidden) {
-                    final slotId = switch (layer) {
-                      ImageLayer l => l.slotId,
-                      TextLayer l => l.slotId,
-                      _ => null,
+                    final slotIds = switch (layer) {
+                      ImageLayer l => {l.slotId},
+                      TextLayer l => {l.slotId},
+                      StickerLayer l => {l.id},
+                      GridLayer l => {for (final c in l.cells) c.slotId},
+                      _ => const <String>{},
                     };
-                    if (slotId != null && _selectedSlot == slotId) {
+                    if (slotIds.contains(_selectedSlot)) {
                       _selectedSlot = null;
                       _editingSlot = null;
                     }
@@ -350,10 +505,12 @@ class _TemplateScreenState extends State<TemplateScreen> {
     }
     setState(() => _exporting = true);
     try {
-      // One PNG per panel, in carousel order — ready to post as a carousel.
+      // One PNG per panel (added panels included), in carousel order — ready
+      // to post as a carousel.
+      final panels = _panels(template);
       final files = <XFile>[];
-      for (var i = 0; i < template.panels.length; i++) {
-        final panel = template.panels[i];
+      for (var i = 0; i < panels.length; i++) {
+        final panel = panels[i];
         final bytes = await capturePng(
           _panelKey(panel.id),
           template.canvasWidth,
@@ -362,7 +519,7 @@ class _TemplateScreenState extends State<TemplateScreen> {
           XFile.fromData(
             bytes,
             mimeType: 'image/png',
-            name: template.panels.length == 1
+            name: panels.length == 1
                 ? '${template.id}.png'
                 : '${template.id}_${i + 1}.png',
           ),
@@ -400,9 +557,13 @@ class _TemplateScreenState extends State<TemplateScreen> {
                 PopupMenuButton<String>(
                   icon: const Icon(Icons.add),
                   tooltip: 'Add element',
-                  onSelected: (value) {
-                    if (value == 'text') _addTextLayer(template);
-                    if (value == 'image') _addImageLayer(template);
+                  onSelected: (value) => switch (value) {
+                    'text' => _addTextLayer(template),
+                    'image' => _addImageLayer(template),
+                    'grid' => _insertGrid(template),
+                    'asset' => _insertAsset(template),
+                    'panel' => _addPanel(template),
+                    _ => null,
                   },
                   itemBuilder: (context) => const [
                     PopupMenuItem(
@@ -418,6 +579,30 @@ class _TemplateScreenState extends State<TemplateScreen> {
                       child: ListTile(
                         leading: Icon(Icons.image_outlined),
                         title: Text('Image'),
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: 'grid',
+                      child: ListTile(
+                        leading: Icon(Icons.grid_view),
+                        title: Text('Grid'),
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: 'asset',
+                      child: ListTile(
+                        leading: Icon(Icons.star_outline),
+                        title: Text('Sticker / frame'),
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: 'panel',
+                      child: ListTile(
+                        leading: Icon(Icons.splitscreen_outlined),
+                        title: Text('Panel'),
                         contentPadding: EdgeInsets.zero,
                       ),
                     ),
@@ -500,6 +685,9 @@ class _TemplateScreenState extends State<TemplateScreen> {
         case TextLayer l when l.slotId == slot:
           // Text carries no template rotation (mirrors _LayerWidget).
           return (l.slotId, 0);
+        case StickerLayer l when l.id == slot:
+          // Stickers select by layer id and carry no template rotation.
+          return (l.id, 0);
         case GridLayer l when l.cells.any((c) => c.slotId == slot):
           return (l.id, l.rotation);
         default:
@@ -527,11 +715,8 @@ class _TemplateScreenState extends State<TemplateScreen> {
     double safeBottom,
   ) {
     final textLayer = _selectedTextLayer(template);
-    final focusedId = _focusedPanelId ?? template.panels.first.id;
-    final focusedPanel = template.panels.firstWhere(
-      (p) => p.id == focusedId,
-      orElse: () => template.panels.first,
-    );
+    final panels = _panels(template);
+    final focusedPanel = _focusedPanel(template);
 
     final gridLayer = _selectedGridLayer(template);
     final bottomBar = _buildBottomBar(textLayer, focusedPanel, gridLayer);
@@ -556,8 +741,7 @@ class _TemplateScreenState extends State<TemplateScreen> {
                 // Panels sit side by side; with more than one, each is a bit
                 // narrower than the viewport so the next one peeks in.
                 final panelWidth =
-                    constraints.maxWidth *
-                    (template.panels.length == 1 ? 1.0 : 0.82);
+                    constraints.maxWidth * (panels.length == 1 ? 1.0 : 0.82);
                 // With nothing selected the surface is an InteractiveViewer
                 // (pinch zoom + pan). With a slot selected it becomes a STATIC
                 // transform — same matrix and layout, but NO gesture detector:
@@ -583,9 +767,7 @@ class _TemplateScreenState extends State<TemplateScreen> {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        for (final panel in template.panels.map(
-                          _effectivePanel,
-                        ))
+                        for (final panel in panels.map(_effectivePanel))
                           Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 6),
                             child: SizedBox(
@@ -600,6 +782,7 @@ class _TemplateScreenState extends State<TemplateScreen> {
                                 panel: panel,
                                 canvasWidth: template.canvasWidth,
                                 canvasHeight: template.canvasHeight,
+                                fontResolver: widget.fontResolver,
                                 content: _content,
                                 assetCatalog: _catalog,
                                 selectedSlotId: _selectedSlot,

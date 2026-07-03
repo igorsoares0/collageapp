@@ -75,6 +75,27 @@ class Template {
     required this.panels,
   });
 
+  /// An empty single-panel document for the create-from-scratch flow: no
+  /// layers, white background, latest schema. Everything the user builds on it
+  /// rides in SlotContent overrides (added layers/panels), exactly like edits
+  /// to a published template.
+  factory Template.blank({
+    String aspectRatio = '9:16',
+    double canvasWidth = 1080,
+    double canvasHeight = 1920,
+  }) => Template(
+    id: 'draft',
+    schemaVersion: kSupportedSchemaVersion,
+    version: 1,
+    name: 'New collage',
+    aspectRatio: aspectRatio,
+    canvasWidth: canvasWidth,
+    canvasHeight: canvasHeight,
+    panels: const [
+      Panel(id: 'panel_1', backgroundColor: Color(0xFFFFFFFF), layers: []),
+    ],
+  );
+
   factory Template.fromJson(Map<String, dynamic> json) {
     final canvas = json['canvas'] as Map<String, dynamic>;
     final panelsJson = json['panels'];
@@ -372,8 +393,10 @@ Rect cellRect(
 
   final x = g * (cell.col + 1) + usableW * (_sumRange(colF, 0, cell.col) / sc);
   final y = g * (cell.row + 1) + usableH * (_sumRange(rowF, 0, cell.row) / sr);
-  final w = usableW * (_sumRange(colF, cell.col, cell.col + cs) / sc) + g * (cs - 1);
-  final h = usableH * (_sumRange(rowF, cell.row, cell.row + rs) / sr) + g * (rs - 1);
+  final w =
+      usableW * (_sumRange(colF, cell.col, cell.col + cs) / sc) + g * (cs - 1);
+  final h =
+      usableH * (_sumRange(rowF, cell.row, cell.row + rs) / sr) + g * (rs - 1);
   return Rect.fromLTWH(x, y, w, h);
 }
 
