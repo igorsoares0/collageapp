@@ -19,6 +19,24 @@ class GridOverride {
     this.rowFractions,
   });
 
+  factory GridOverride.fromJson(Map<String, dynamic> json) => GridOverride(
+    gutter: (json['gutter'] as num?)?.toDouble(),
+    cornerRadius: (json['cornerRadius'] as num?)?.toDouble(),
+    colFractions: _fractions(json['colFractions']),
+    rowFractions: _fractions(json['rowFractions']),
+  );
+
+  Map<String, dynamic> toJson() => {
+    if (gutter != null) 'gutter': gutter,
+    if (cornerRadius != null) 'cornerRadius': cornerRadius,
+    if (colFractions != null) 'colFractions': colFractions,
+    if (rowFractions != null) 'rowFractions': rowFractions,
+  };
+
+  static List<double>? _fractions(dynamic value) => value == null
+      ? null
+      : [for (final v in value as List<dynamic>) (v as num).toDouble()];
+
   GridOverride copyWith({
     double? gutter,
     double? cornerRadius,

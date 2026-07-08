@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 
+import '../api/project_store.dart';
 import '../api/template_api.dart';
 import '../api/template_store.dart';
 import '../model/template.dart';
@@ -16,17 +17,78 @@ class GalleryScreen extends StatefulWidget {
 
 class _GalleryScreenState extends State<GalleryScreen> {
   final _store = TemplateStore();
+  final _projects = ProjectStore();
   late Future<IndexResult> _index;
+  late Future<List<ProjectSummary>> _projectList;
 
   @override
   void initState() {
     super.initState();
     _index = _store.loadIndex();
+    _projectList = _projects.list();
   }
 
   Future<void> _refresh() async {
     setState(() => _index = _store.loadIndex());
     await _index;
+  }
+
+  /// Every editing session auto-saves as a project, so the list is refreshed
+  /// whenever the editor pops back to the gallery.
+  void _reloadProjects() {
+    if (mounted) setState(() => _projectList = _projects.list());
+  }
+
+  Future<void> _openTemplate(String id) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => TemplateScreen(id: id, projects: _projects),
+      ),
+    );
+    _reloadProjects();
+  }
+
+  Future<void> _openProject(ProjectSummary summary) async {
+    final project = await _projects.load(summary.id);
+    if (!mounted) return;
+    if (project == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not open this project.')),
+      );
+      return;
+    }
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => TemplateScreen(project: project, projects: _projects),
+      ),
+    );
+    _reloadProjects();
+  }
+
+  Future<void> _deleteProject(ProjectSummary summary) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Delete project?'),
+        content: Text(
+          '"${summary.name}" and its photos will be removed. '
+          'This cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    await _projects.delete(summary.id);
+    _reloadProjects();
   }
 
   /// Create-from-scratch entry: pick a canvas size, then open the editor on a
@@ -75,9 +137,11 @@ class _GalleryScreenState extends State<GalleryScreen> {
             canvasWidth: canvas.$2,
             canvasHeight: canvas.$3,
           ),
+          projects: _projects,
         ),
       ),
     );
+    _reloadProjects();
   }
 
   @override
@@ -120,6 +184,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
           final templates = result.templates;
           return Column(
             children: [
+              _buildProjectsSection(),
               if (result.fromCache)
                 Container(
                   width: double.infinity,
@@ -151,12 +216,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
                           itemCount: templates.length,
                           itemBuilder: (context, i) => _TemplateCard(
                             summary: templates[i],
-                            onTap: () => Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (_) =>
-                                    TemplateScreen(id: templates[i].id),
-                              ),
-                            ),
+                            onTap: () => _openTemplate(templates[i].id),
                           ),
                         ),
                       ),
@@ -164,6 +224,106 @@ class _GalleryScreenState extends State<GalleryScreen> {
             ],
           );
         },
+      ),
+    );
+  }
+
+  /// "Your projects": a horizontal strip of the user's saved editing
+  /// sessions, newest first. Hidden while empty. Tap resumes; long-press
+  /// deletes (with confirmation).
+  Widget _buildProjectsSection() {
+    return FutureBuilder<List<ProjectSummary>>(
+      future: _projectList,
+      builder: (context, snapshot) {
+        final projects = snapshot.data ?? const [];
+        if (projects.isEmpty) return const SizedBox.shrink();
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+              child: Text(
+                'Your projects',
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+            ),
+            SizedBox(
+              height: 88,
+              child: ListView.builder(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                itemCount: projects.length,
+                itemBuilder: (context, i) => _ProjectCard(
+                  summary: projects[i],
+                  onTap: () => _openProject(projects[i]),
+                  onLongPress: () => _deleteProject(projects[i]),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _ProjectCard extends StatelessWidget {
+  final ProjectSummary summary;
+  final VoidCallback onTap;
+  final VoidCallback onLongPress;
+
+  const _ProjectCard({
+    required this.summary,
+    required this.onTap,
+    required this.onLongPress,
+  });
+
+  static String _ago(DateTime time) {
+    final d = DateTime.now().difference(time);
+    if (d.inMinutes < 1) return 'just now';
+    if (d.inHours < 1) return '${d.inMinutes} min ago';
+    if (d.inDays < 1) return '${d.inHours} h ago';
+    return '${d.inDays} d ago';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        onLongPress: onLongPress,
+        child: SizedBox(
+          width: 150,
+          child: Padding(
+            padding: const EdgeInsets.all(10),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.edit_note, size: 18),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        summary.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.titleSmall,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  _ago(summary.updatedAt),
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

@@ -32,6 +32,12 @@ class Panel {
     );
   }
 
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'backgroundColor': colorToHex(backgroundColor),
+    'layers': [for (final l in layers) l.toJson()],
+  };
+
   /// Slot ids of this panel's layers that accept user content, in stack order.
   /// A grid contributes one slot per cell (each cell is a fillable photo slot).
   List<String> get slotIds => [
@@ -130,6 +136,18 @@ class Template {
     );
   }
 
+  /// Inverse of [fromJson], always in the multi-panel (v2+) shape — v1
+  /// templates never round-trip through here (the app doesn't author them).
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'schemaVersion': schemaVersion,
+    'version': version,
+    'name': name,
+    'aspectRatio': aspectRatio,
+    'canvas': {'width': canvasWidth, 'height': canvasHeight},
+    'panels': [for (final p in panels) p.toJson()],
+  };
+
   /// All layers across every panel — convenient for slotId-based lookups
   /// (slotIds are unique across the whole template).
   List<Layer> get layers => [for (final p in panels) ...p.layers];
@@ -146,6 +164,9 @@ sealed class Layer {
   final bool hidden;
 
   const Layer({required this.id, required this.hidden});
+
+  /// The editor-schema JSON for this layer — exact inverse of [fromJson].
+  Map<String, dynamic> toJson();
 
   /// Returns null for unknown layer types (defensive; the schemaVersion gate
   /// should prevent this, but a skipped layer beats a crash).
@@ -251,6 +272,22 @@ class ImageLayer extends Layer {
     required this.borderRadius,
     this.frameAssetId,
   });
+
+  @override
+  Map<String, dynamic> toJson() => {
+    'type': 'image',
+    'id': id,
+    'editor': {'hidden': hidden},
+    'slotId': slotId,
+    'x': x,
+    'y': y,
+    'width': width,
+    'height': height,
+    'rotation': rotation,
+    'opacity': opacity,
+    'borderRadius': borderRadius,
+    if (frameAssetId != null) 'frameAssetId': frameAssetId,
+  };
 }
 
 class TextLayer extends Layer {
@@ -274,6 +311,22 @@ class TextLayer extends Layer {
     required this.color,
     required this.alignment,
   });
+
+  @override
+  Map<String, dynamic> toJson() => {
+    'type': 'text',
+    'id': id,
+    'editor': {'hidden': hidden},
+    'slotId': slotId,
+    'x': x,
+    'y': y,
+    'width': width,
+    'fontFamily': fontFamily,
+    'fontSize': fontSize,
+    'fontWeight': fontWeight,
+    'color': colorToHex(color),
+    'alignment': alignment,
+  };
 }
 
 class ShapeLayer extends Layer {
@@ -289,6 +342,18 @@ class ShapeLayer extends Layer {
     required this.height,
     required this.fill,
   });
+
+  @override
+  Map<String, dynamic> toJson() => {
+    'type': 'shape',
+    'id': id,
+    'editor': {'hidden': hidden},
+    'x': x,
+    'y': y,
+    'width': width,
+    'height': height,
+    'fill': colorToHex(fill),
+  };
 }
 
 class StickerLayer extends Layer {
@@ -304,6 +369,18 @@ class StickerLayer extends Layer {
     required this.width,
     required this.height,
   });
+
+  @override
+  Map<String, dynamic> toJson() => {
+    'type': 'sticker',
+    'id': id,
+    'editor': {'hidden': hidden},
+    'assetId': assetId,
+    'x': x,
+    'y': y,
+    'width': width,
+    'height': height,
+  };
 }
 
 /// One fillable photo slot of a grid. Its pixel rect is derived from the grid's
@@ -333,6 +410,15 @@ class GridCell {
     rowSpan: (json['rowSpan'] as num?)?.toInt() ?? 1,
     borderRadius: (json['borderRadius'] as num?)?.toDouble(),
   );
+
+  Map<String, dynamic> toJson() => {
+    'slotId': slotId,
+    'col': col,
+    'row': row,
+    'colSpan': colSpan,
+    'rowSpan': rowSpan,
+    if (borderRadius != null) 'borderRadius': borderRadius,
+  };
 }
 
 /// A unified photo grid (schemaVersion 3): one placeable/rotatable element that
@@ -364,6 +450,26 @@ class GridLayer extends Layer {
     required this.gutterColor,
     required this.cells,
   });
+
+  @override
+  Map<String, dynamic> toJson() => {
+    'type': 'grid',
+    'id': id,
+    'editor': {'hidden': hidden},
+    'x': x,
+    'y': y,
+    'width': width,
+    'height': height,
+    'rotation': rotation,
+    'cols': cols,
+    'rows': rows,
+    'colFractions': colFractions,
+    'rowFractions': rowFractions,
+    'gutter': gutter,
+    'cornerRadius': cornerRadius,
+    if (gutterColor != null) 'gutterColor': colorToHex(gutterColor!),
+    'cells': [for (final c in cells) c.toJson()],
+  };
 }
 
 /// Pixel rect of [cell] inside [grid]'s local box (origin at the grid's x/y).
@@ -411,6 +517,13 @@ double _sumRange(List<double> xs, int start, int end) {
 
 List<double> _doubleList(dynamic value) =>
     (value as List<dynamic>).map((e) => (e as num).toDouble()).toList();
+
+/// Formats a color as the editor's "#RRGGBB" — the inverse of
+/// [parseHexColor]. Alpha is dropped; template colors are opaque by contract.
+String colorToHex(Color color) {
+  final rgb = color.toARGB32() & 0xFFFFFF;
+  return '#${rgb.toRadixString(16).padLeft(6, '0').toUpperCase()}';
+}
 
 /// Parses "#RRGGBB" (the editor's color format). Falls back to black so a
 /// malformed color degrades visibly instead of crashing the render.

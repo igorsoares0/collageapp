@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../api/project_store.dart';
 import '../api/template_store.dart';
 import '../model/asset_record.dart';
 import '../model/slot_content.dart';
@@ -19,13 +22,21 @@ import '../widgets/text_style_bar.dart';
 /// inline or opens the gallery picker for images. The result exports as
 /// a full-resolution PNG through the share sheet.
 ///
-/// Two entry points: a published template by [id] (fetched through the
-/// store), or a local [draft] — the create-from-scratch flow hands in
+/// Three entry points: a published template by [id] (fetched through the
+/// store), a local [draft] — the create-from-scratch flow hands in
 /// [Template.blank] and the user builds everything with the add menu
-/// (text, images, grids, assets, panels).
+/// (text, images, grids, assets, panels) — or a saved [project] being
+/// resumed (its embedded template snapshot plus the user's edits).
+///
+/// With a [projects] store, every session persists itself as a project:
+/// the first edit creates it, and edits keep flowing to disk (debounced,
+/// plus on pointer-up, on app backgrounding and on leaving the screen).
+/// Without one (tests), editing is session-only.
 class TemplateScreen extends StatefulWidget {
   final String? id;
   final Template? draft;
+  final Project? project;
+  final ProjectStore? projects;
 
   /// Injectable for tests (google_fonts needs network/assets); the app uses
   /// the default runtime-fetching resolver.
@@ -35,10 +46,15 @@ class TemplateScreen extends StatefulWidget {
     super.key,
     this.id,
     this.draft,
+    this.project,
+    this.projects,
     this.fontResolver = googleFontsResolver,
   }) : assert(
-         (id == null) != (draft == null),
-         'Pass exactly one of id or draft',
+         (id != null ? 1 : 0) +
+                 (draft != null ? 1 : 0) +
+                 (project != null ? 1 : 0) ==
+             1,
+         'Pass exactly one of id, draft or project',
        );
 
   @override
@@ -51,7 +67,8 @@ class TemplateScreen extends StatefulWidget {
 /// size — never changes when a different bar shows or a slot is selected.
 const double _kBottomBarHeight = 164;
 
-class _TemplateScreenState extends State<TemplateScreen> {
+class _TemplateScreenState extends State<TemplateScreen>
+    with WidgetsBindingObserver {
   final _store = TemplateStore();
   final _picker = ImagePicker();
   // One RepaintBoundary key per panel, so each carousel slide exports to its
@@ -102,6 +119,20 @@ class _TemplateScreenState extends State<TemplateScreen> {
   static const int _kMaxHistory = 100;
   static const Duration _kEditRunWindow = Duration(seconds: 2);
 
+  // Project persistence (only with widget.projects). The project is created
+  // lazily on the first edit — browsing a template without touching it never
+  // leaves a file behind. [_dirty] marks unsaved content; a debounce timer
+  // covers keyboard-only edit streams (typing produces no canvas pointer-up).
+  Template? _resolvedTemplate;
+  String? _projectId;
+  bool _dirty = false;
+  bool _saveErrorShown = false;
+  Timer? _saveTimer;
+  // Disambiguates photo file names picked within the same millisecond.
+  int _imageSeq = 0;
+
+  static const Duration _kSaveDebounce = Duration(seconds: 2);
+
   // Alignment guides (smart guides): while an element is dragged, its RAW
   // (unsnapped) offset accumulates here and the STORED offset snaps to nearby
   // guides — keeping the raw value outside the stored state is what lets the
@@ -133,7 +164,48 @@ class _TemplateScreenState extends State<TemplateScreen> {
     _redoStack.clear();
     _editRunKey = coalesce;
     _editRunAt = now;
+    _markDirty();
   }
+
+  /// Flags unsaved content and (re)arms the debounced save. Every content
+  /// change funnels through here — [_record] for edits, [_restore] for
+  /// undo/redo.
+  void _markDirty() {
+    if (widget.projects == null) return;
+    _dirty = true;
+    _saveTimer?.cancel();
+    _saveTimer = Timer(_kSaveDebounce, _saveProject);
+  }
+
+  /// Writes the project if there is unsaved content. Fire-and-forget: the
+  /// store queues writes, so overlapping calls can't interleave on disk. On
+  /// failure the content stays dirty (the next trigger retries) and the user
+  /// is warned once per session.
+  void _saveProject() {
+    final store = widget.projects;
+    final template = _resolvedTemplate;
+    if (!_dirty || store == null || template == null) return;
+    _saveTimer?.cancel();
+    _dirty = false;
+    final project = Project(
+      id: _projectId ??= _newProjectId(),
+      name: template.name,
+      updatedAt: DateTime.now(),
+      template: template,
+      content: _content,
+    );
+    store.save(project).catchError((_) {
+      _dirty = true;
+      if (mounted && !_saveErrorShown) {
+        _saveErrorShown = true;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not save your project.')),
+        );
+      }
+    });
+  }
+
+  String _newProjectId() => 'p_${DateTime.now().millisecondsSinceEpoch}';
 
   /// Applies a content edit with undo recording — for callbacks whose only
   /// state change is [_content]. Sites that also touch selection/focus call
@@ -170,12 +242,15 @@ class _TemplateScreenState extends State<TemplateScreen> {
         _selectedSlot = null;
       }
     });
+    _markDirty();
   }
 
   /// End of any touch interaction: breaks the undo coalescing run (the next
-  /// same-key edit starts a new step) and drops the drag/guide state.
+  /// same-key edit starts a new step), flushes unsaved content to disk (a
+  /// finished gesture is a natural checkpoint) and drops the drag/guide state.
   void _onPointerEnd() {
     _editRunKey = null;
+    _saveProject();
     if (_dragRaw == null && _guideXs.isEmpty && _guideYs.isEmpty) return;
     setState(() {
       _dragRaw = null;
@@ -557,10 +632,23 @@ class _TemplateScreenState extends State<TemplateScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _zoom.addListener(_onZoomChange);
-    _template = widget.draft != null
-        ? Future.value(widget.draft)
-        : _store.loadTemplate(widget.id!).then((r) => r.template);
+    final project = widget.project;
+    if (project != null) {
+      // Resuming: the saved document carries both the template snapshot and
+      // the user's edits.
+      _projectId = project.id;
+      _content = project.content;
+      _template = Future.value(project.template);
+    } else if (widget.draft != null) {
+      _template = Future.value(widget.draft);
+    } else {
+      _template = _store.loadTemplate(widget.id!).then((r) => r.template);
+    }
+    // Saving needs the template outside the FutureBuilder; load errors are
+    // already surfaced by build().
+    _template.then((t) => _resolvedTemplate = t, onError: (_) {});
     _loadCatalog();
   }
 
@@ -577,8 +665,34 @@ class _TemplateScreenState extends State<TemplateScreen> {
 
   @override
   void dispose() {
+    _saveTimer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    // Leaving the editor: flush unsaved content, then drop photo files only
+    // the (now dead) undo history still referenced. Both are queued on the
+    // store, so the cleanup runs strictly after the final save.
+    _saveProject();
+    final store = widget.projects;
+    final projectId = _projectId;
+    if (store != null && projectId != null) {
+      unawaited(
+        store.cleanupImages(projectId, {
+          for (final image in _content.images.values)
+            if (imageFileName(image) != null) imageFileName(image)!,
+        }),
+      );
+    }
     _zoom.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // The OS may kill a backgrounded app without any further callback; going
+    // inactive/paused is the last reliable moment to flush unsaved work.
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused) {
+      _saveProject();
+    }
   }
 
   // Flip the pan-axis lock only when crossing the 1x threshold (not on every
@@ -591,7 +705,6 @@ class _TemplateScreenState extends State<TemplateScreen> {
   }
 
   Future<void> _pickImage(String slotId) async {
-    // MemoryImage instead of FileImage so the same code works on web;
     // maxWidth caps decode memory (canvas is 1080 wide, 2x for sharpness).
     final file = await _picker.pickImage(
       source: ImageSource.gallery,
@@ -599,8 +712,29 @@ class _TemplateScreenState extends State<TemplateScreen> {
     );
     if (file == null) return;
     final bytes = await file.readAsBytes();
+    // With a project store the photo becomes a project file and rides in the
+    // content as a FileImage (a MemoryImage can't be saved, and its bytes
+    // wouldn't survive a restart anyway). The name is unique per pick:
+    // Flutter's ImageCache keys FileImage by path, and undo snapshots keep
+    // referencing the previous photo's file. Without a store (tests) the
+    // session-only MemoryImage path remains.
+    ImageProvider image = MemoryImage(bytes);
+    final store = widget.projects;
+    if (store != null) {
+      try {
+        image = FileImage(
+          await store.saveImage(
+            _projectId ??= _newProjectId(),
+            'img_${DateTime.now().millisecondsSinceEpoch}_${_imageSeq++}.jpg',
+            bytes,
+          ),
+        );
+      } catch (_) {
+        // Disk full/unwritable: keep the photo usable for this session.
+      }
+    }
     if (!mounted) return;
-    _edit(_content.withImage(slotId, MemoryImage(bytes)));
+    _edit(_content.withImage(slotId, image));
   }
 
   /// Tapping a slot selects it (shows the handles for move/resize). A text
