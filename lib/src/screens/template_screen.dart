@@ -312,9 +312,18 @@ class _TemplateScreenState extends State<TemplateScreen>
         case TextLayer l when l.slotId == key:
           final box = _selectionBox;
           if (box == null || box.$1 != key) return null;
-          final h = box.$2.height - 2 * kChromePad / _content.scaleFor(key);
-          if (h <= 0) return null;
-          return Rect.fromLTWH(l.x, l.y, l.width, h);
+          final pad = 2 * kChromePad / _content.scaleFor(key);
+          final h = box.$2.height - pad;
+          // The text hugs its glyphs inside the model box (see _TextSlot), so
+          // the snapped box is the measured one, shifted by the alignment.
+          final w = box.$2.width - pad;
+          if (h <= 0 || w <= 0) return null;
+          final dx = switch (_content.alignmentFor(key) ?? l.alignment) {
+            'center' => (l.width - w) / 2,
+            'right' => l.width - w,
+            _ => 0.0,
+          };
+          return Rect.fromLTWH(l.x + dx, l.y, w, h);
         case StickerLayer l when l.id == key:
           return Rect.fromLTWH(l.x, l.y, l.width, l.height);
         case GridLayer l when l.id == key:

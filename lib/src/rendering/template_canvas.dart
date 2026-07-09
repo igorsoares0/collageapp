@@ -524,6 +524,16 @@ class _LayerWidget extends StatelessWidget {
         // Text carries no template rotation; the TextField owns cursor/
         // selection gestures while editing.
         gestures: !editing,
+        // The chrome/gesture box hugs the glyphs (see _TextSlot); this frame
+        // keeps the model box as the layout/transform anchor and re-aligns
+        // the hugged paragraph inside it per the text alignment.
+        frameWidth: l.width,
+        frameAlignment:
+            switch (content.alignmentFor(l.slotId) ?? l.alignment) {
+              'center' => Alignment.topCenter,
+              'right' => Alignment.topRight,
+              _ => Alignment.topLeft,
+            },
       ),
       ShapeLayer l => _positioned(
         l.x,
@@ -651,6 +661,8 @@ class _LayerWidget extends StatelessWidget {
     Widget child, {
     bool gestures = true,
     double templateRotation = 0,
+    double? frameWidth,
+    Alignment frameAlignment = Alignment.topLeft,
   }) {
     final offset = content.offsetFor(slotId);
     final scale = content.scaleFor(slotId);
@@ -677,6 +689,19 @@ class _LayerWidget extends StatelessWidget {
         onRotateChange: onSlotRotate,
         onDelete: onSlotDelete,
         child: inner,
+      );
+    }
+    // Content that hugs its glyphs (text) still positions and transforms
+    // through the MODEL box: this frame is model-width (plus the chrome pad,
+    // which the -pad shift below cancels) and re-aligns the hugged child
+    // inside it, so x/y, the scale/rotation pivots and the painted glyphs
+    // are identical to a fixed-width child — only the chrome/gesture box
+    // (inside the Align) hugs. The frame itself takes no hits: touches
+    // outside the hugged child fall through to the layers beneath.
+    if (frameWidth != null) {
+      inner = SizedBox(
+        width: frameWidth + 2 * pad,
+        child: Align(alignment: frameAlignment, child: inner),
       );
     }
     // Rotations wrap the gesture surface (see the doc above). User rotation
@@ -1633,20 +1658,34 @@ class _TextSlot extends StatelessWidget {
       _ => TextAlign.left,
     };
     if (editing) {
-      return SizedBox(
+      // The editor hugs the typed text just like the display Text below
+      // (IntrinsicWidth re-runs on every text layout — RenderBox invalidates
+      // cached intrinsics up the tree — so the box grows per keystroke).
+      // minWidth keeps the caret visible on empty text; maxWidth preserves
+      // the wrap width.
+      return ConstrainedBox(
         key: fieldKey,
-        width: layer.width,
-        child: _InlineTextEditor(
-          initial: content.textFor(layer.slotId) ?? '',
-          hint: layer.slotId,
-          style: style,
-          textAlign: align,
-          onChanged: (value) => onTextChanged?.call(layer.slotId, value),
+        constraints: BoxConstraints(
+          minWidth: layer.fontSize,
+          maxWidth: layer.width,
+        ),
+        child: IntrinsicWidth(
+          child: _InlineTextEditor(
+            initial: content.textFor(layer.slotId) ?? '',
+            hint: layer.slotId,
+            style: style,
+            textAlign: align,
+            onChanged: (value) => onTextChanged?.call(layer.slotId, value),
+          ),
         ),
       );
     }
-    return SizedBox(
-      width: layer.width,
+    // Hug the glyphs (maxWidth keeps the wrap identical to a fixed-width
+    // box): the selection chrome and resize handles then wrap the text
+    // itself, not the model box. _slot's frame re-aligns the hugged
+    // paragraph inside the model box so the glyphs never move.
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxWidth: layer.width),
       child: Text(
         content.textFor(layer.slotId) ?? layer.slotId,
         style: style,
@@ -1695,22 +1734,28 @@ class _InlineTextEditorState extends State<_InlineTextEditor> {
   @override
   Widget build(BuildContext context) {
     // TextField needs a Material ancestor; transparency keeps the canvas
-    // pixels untouched.
+    // pixels untouched. The ListenableBuilder drops the hint as soon as
+    // there is text: the InputDecorator's intrinsic width is
+    // max(text, hint), so a lingering (invisible) hint would hold the
+    // hugging editor box open wider than the typed glyphs.
     return Material(
       type: MaterialType.transparency,
-      child: TextField(
-        controller: _controller,
-        autofocus: true,
-        maxLines: null,
-        style: widget.style,
-        textAlign: widget.textAlign,
-        decoration: InputDecoration.collapsed(
-          hintText: widget.hint,
-          hintStyle: widget.style.copyWith(
-            color: widget.style.color?.withValues(alpha: 0.4),
+      child: ListenableBuilder(
+        listenable: _controller,
+        builder: (context, _) => TextField(
+          controller: _controller,
+          autofocus: true,
+          maxLines: null,
+          style: widget.style,
+          textAlign: widget.textAlign,
+          decoration: InputDecoration.collapsed(
+            hintText: _controller.text.isEmpty ? widget.hint : null,
+            hintStyle: widget.style.copyWith(
+              color: widget.style.color?.withValues(alpha: 0.4),
+            ),
           ),
+          onChanged: widget.onChanged,
         ),
-        onChanged: widget.onChanged,
       ),
     );
   }

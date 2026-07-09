@@ -160,7 +160,7 @@ void main() {
       tester,
       TemplateCanvas(template: template, fontResolver: testFontResolver),
     );
-    final before = tester.getTopLeft(find.text('title'));
+    final before = tester.getRect(find.text('title'));
 
     await pump(
       tester,
@@ -170,12 +170,14 @@ void main() {
         fontResolver: testFontResolver,
       ),
     );
-    final after = tester.getTopLeft(find.text('title'));
+    final after = tester.getRect(find.text('title'));
 
-    // Center-anchored 2x scale: the 900-wide slot's top-left moves left by
-    // 450 template px → 225 screen px at FittedBox scale 0.5.
-    expect(after.dx - before.dx, -225);
-    expect(after.dy, lessThan(before.dy));
+    // Center-anchored 2x scale: the text box (which hugs its glyphs) doubles
+    // in place — same center, twice the extent.
+    expect(after.center.dx, closeTo(before.center.dx, 0.001));
+    expect(after.center.dy, closeTo(before.center.dy, 0.001));
+    expect(after.width, closeTo(before.width * 2, 0.001));
+    expect(after.height, closeTo(before.height * 2, 0.001));
   });
 
   testWidgets('pinching a selected slot updates its scale', (tester) async {

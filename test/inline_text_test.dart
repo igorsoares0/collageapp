@@ -62,6 +62,36 @@ void main() {
     expect(changes['title'], 'Verão 2026');
   });
 
+  testWidgets('the inline editor hugs its text and grows per keystroke', (
+    tester,
+  ) async {
+    var content = const SlotContent(texts: {'title': 'Hi'});
+    await pump(
+      tester,
+      StatefulBuilder(
+        builder: (context, setState) => TemplateCanvas(
+          template: template,
+          fontResolver: testFontResolver,
+          content: content,
+          editingSlotId: 'title',
+          onTextChanged: (slotId, value) =>
+              setState(() => content = content.withText(slotId, value)),
+        ),
+      ),
+    );
+
+    // getSize is in local (template) units: the title layer's model box is
+    // 900 wide; the editor hugs the two glyphs instead.
+    final small = tester.getSize(find.byType(TextField)).width;
+    expect(small, lessThan(300));
+
+    await tester.enterText(find.byType(TextField), 'Hi there');
+    await tester.pump();
+    final wide = tester.getSize(find.byType(TextField)).width;
+    expect(wide, greaterThan(small));
+    expect(wide, lessThan(900));
+  });
+
   testWidgets('per-slot color and font overrides reach the rendered text', (
     tester,
   ) async {
