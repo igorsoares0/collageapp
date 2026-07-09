@@ -22,12 +22,23 @@ import 'frame_assets.dart';
 /// because google_fonts fails asynchronously without network/assets.
 typedef FontResolver = TextStyle Function(String family, TextStyle base);
 
+/// Resolved-style cache. GoogleFonts.getFont is NOT cheap per call (variant
+/// map construction + a loadFontIfNecessary future every time), and the
+/// canvas + style bar call it on every rebuild — which during a drag means
+/// every frame. Keyed by (family, base) since the base style carries the
+/// per-layer size/weight/color.
+final Map<(String, TextStyle), TextStyle> _resolvedFontCache = {};
+
 TextStyle googleFontsResolver(String family, TextStyle base) {
-  try {
-    return GoogleFonts.getFont(family, textStyle: base);
-  } catch (_) {
-    return base;
-  }
+  // A styling spree can grow the key space; reset rather than grow forever.
+  if (_resolvedFontCache.length > 512) _resolvedFontCache.clear();
+  return _resolvedFontCache.putIfAbsent((family, base), () {
+    try {
+      return GoogleFonts.getFont(family, textStyle: base);
+    } catch (_) {
+      return base;
+    }
+  });
 }
 
 /// RENDERING CONTRACT (must match the editor's Konva renderer):
@@ -608,9 +619,10 @@ class _LayerWidget extends StatelessWidget {
 
     // Same transform chain as _slot: template rotation (top-left) then user
     // rotation (center) then scale; the offset/pad live in the Positioned.
+    // The repaint island sits inside the transforms, like _slot's.
     inner = Transform.scale(
       scale: gScale,
-      child: _userRotated(l.id, _rotated(l.rotation, inner)),
+      child: _userRotated(l.id, _rotated(l.rotation, _isolated(inner))),
     );
     return _positioned(l.x + gOffset.dx - pad, l.y + gOffset.dy - pad, inner);
   }
@@ -707,7 +719,7 @@ class _LayerWidget extends StatelessWidget {
     // Rotations wrap the gesture surface (see the doc above). User rotation
     // pivots around the element center (Canva-style); template rotation keeps
     // its top-left origin (the Konva contract shared with the web editor).
-    inner = _userRotated(slotId, _rotated(templateRotation, inner));
+    inner = _userRotated(slotId, _rotated(templateRotation, _isolated(inner)));
     // Always wrap in Transform.scale (identity at 1.0), never conditionally:
     // inserting it on the first resize would restructure the tree and remount
     // _SlotGestures mid-gesture — the one-time hitch on the first drag.
@@ -717,6 +729,17 @@ class _LayerWidget extends StatelessWidget {
 
   Widget _positioned(double x, double y, Widget child) =>
       Positioned(left: x, top: y, child: child);
+
+  /// Each slot is its own repaint island: dragging one element then only
+  /// re-offsets its cached raster in the compositor instead of re-painting
+  /// every photo and paragraph in the panel on each frame — the difference
+  /// between a drag that glides and one that feels heavy. The boundary sits
+  /// INSIDE the rotation/scale transforms (same box as the gesture surface,
+  /// which already gates hits to it): outside them its size check would
+  /// reject touches on a rotated element's handles, which fall past the
+  /// unrotated layout box — RenderTransform skips that check, proxy boxes
+  /// don't.
+  Widget _isolated(Widget child) => RepaintBoundary(child: child);
 
   Widget _rotated(double degrees, Widget child) {
     if (degrees == 0) return child;

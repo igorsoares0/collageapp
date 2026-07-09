@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
+
+import '../rendering/template_canvas.dart' show googleFontsResolver;
 
 /// Typefaces offered for text slots. Mirrors the editor's EDITOR_FONTS so a
 /// template's original font is always among the choices (and the current
@@ -250,12 +251,14 @@ class _FontChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Render each chip's label in its own typeface (same defensive pattern
-    // as googleFontsResolver — fall back to the plain label on failure).
-    TextStyle label = const TextStyle(color: Colors.white, fontSize: 18);
-    try {
-      label = GoogleFonts.getFont(font, textStyle: label);
-    } catch (_) {}
+    // Render each chip's label in its own typeface. Resolved through the
+    // cached googleFontsResolver (which also falls back to the plain label
+    // on failure): the bar rebuilds on every frame of a drag, and 20
+    // uncached GoogleFonts.getFont calls per frame drag it down.
+    final label = googleFontsResolver(
+      font,
+      const TextStyle(color: Colors.white, fontSize: 18),
+    );
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
       child: InkWell(
