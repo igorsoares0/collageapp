@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:flutter/gestures.dart' show kTouchSlop;
 import 'package:flutter/material.dart';
 // `show`: a bare import would clash with the app's own model `Layer`.
 import 'package:flutter/rendering.dart'
@@ -60,6 +61,11 @@ const double _kCornerReach = 72.0;
 /// touch zone — stay inside the chrome's hit region that _SlotGestures covers.
 const double _kRotateHandleDrop = 44.0;
 
+/// How far above the element's top edge the delete handle floats (pre-scale
+/// template px / scale) — the rotation handle's mirror on the opposite edge,
+/// under the same [kChromePad] constraint.
+const double _kDeleteHandleRise = 44.0;
+
 /// True when [local] is within reach of one of the element's four corners —
 /// the resize zones. [size] is the PADDED chrome box; corners are axis-aligned
 /// because both callers sit inside the rotation transforms, so [local] arrives
@@ -87,6 +93,16 @@ bool _nearRotateZone(Offset local, Size size, double scale) {
   final w = size.width - 2 * pad;
   final h = size.height - 2 * pad;
   final handle = Offset(pad + w / 2, pad + h + _kRotateHandleDrop / scale);
+  return (local - handle).distanceSquared <= reach * reach;
+}
+
+/// True when [local] is within reach of the delete handle, which floats above
+/// the element's top-center (axis-aligned, as with [_nearCornerZone]).
+bool _nearDeleteZone(Offset local, Size size, double scale) {
+  final pad = kChromePad / scale;
+  final reach = _kCornerReach / scale;
+  final w = size.width - 2 * pad;
+  final handle = Offset(pad + w / 2, pad - _kDeleteHandleRise / scale);
   return (local - handle).distanceSquared <= reach * reach;
 }
 
@@ -154,6 +170,11 @@ class PanelCanvas extends StatelessWidget {
   /// show the icon inline; a filled, selected slot shows a "replace" overlay.
   final void Function(String slotId)? onPickImage;
 
+  /// Tap on the selected element's delete handle (the ✕ above it). Reports the
+  /// same id the move/resize gestures use — the slot id, or the LAYER id for
+  /// stickers and grids. The screen decides what deleting means.
+  final void Function(String slotId)? onSlotDelete;
+
   /// Remote asset catalog (frames/stickers). A slot's frameAssetId resolves
   /// against this plus the bundled seeds; empty = seeds only.
   final List<AssetRecord> assetCatalog;
@@ -211,6 +232,7 @@ class PanelCanvas extends StatelessWidget {
     this.onSlotScale,
     this.onSlotRotate,
     this.onPickImage,
+    this.onSlotDelete,
     this.editingFieldKey,
     this.assetCatalog = const [],
     this.onGridFractions,
@@ -277,6 +299,7 @@ class PanelCanvas extends StatelessWidget {
                           onSlotScale: onSlotScale,
                           onSlotRotate: onSlotRotate,
                           onPickImage: onPickImage,
+                          onSlotDelete: onSlotDelete,
                           onTextChanged: onTextChanged,
                           assetCatalog: assetCatalog,
                           selectedSlotId: selectedSlotId,
@@ -365,6 +388,7 @@ class TemplateCanvas extends StatelessWidget {
   final void Function(String slotId, Offset delta)? onSlotDrag;
   final void Function(String slotId, double scale)? onSlotScale;
   final void Function(String slotId, double degrees)? onSlotRotate;
+  final void Function(String slotId)? onSlotDelete;
   final List<AssetRecord> assetCatalog;
 
   /// See [PanelCanvas.exportKey].
@@ -383,6 +407,7 @@ class TemplateCanvas extends StatelessWidget {
     this.onSlotDrag,
     this.onSlotScale,
     this.onSlotRotate,
+    this.onSlotDelete,
     this.assetCatalog = const [],
     this.exportKey,
   });
@@ -403,6 +428,7 @@ class TemplateCanvas extends StatelessWidget {
       onSlotDrag: onSlotDrag,
       onSlotScale: onSlotScale,
       onSlotRotate: onSlotRotate,
+      onSlotDelete: onSlotDelete,
       assetCatalog: assetCatalog,
       exportKey: exportKey,
     );
@@ -418,6 +444,7 @@ class _LayerWidget extends StatelessWidget {
   final void Function(String slotId, double scale)? onSlotScale;
   final void Function(String slotId, double degrees)? onSlotRotate;
   final void Function(String slotId)? onPickImage;
+  final void Function(String slotId)? onSlotDelete;
   final void Function(String slotId, String value)? onTextChanged;
   final List<AssetRecord> assetCatalog;
 
@@ -444,6 +471,7 @@ class _LayerWidget extends StatelessWidget {
     this.onSlotScale,
     this.onSlotRotate,
     this.onPickImage,
+    this.onSlotDelete,
     this.onTextChanged,
     this.assetCatalog = const [],
     this.selectedSlotId,
@@ -559,6 +587,7 @@ class _LayerWidget extends StatelessWidget {
               onDrag: onSlotDrag,
               onScaleChange: onSlotScale,
               onRotateChange: onSlotRotate,
+              onDelete: onSlotDelete,
               child: const SizedBox.expand(),
             ),
           ),
@@ -634,7 +663,8 @@ class _LayerWidget extends StatelessWidget {
         (onSlotTap != null ||
             onSlotDrag != null ||
             onSlotScale != null ||
-            onSlotRotate != null)) {
+            onSlotRotate != null ||
+            onSlotDelete != null)) {
       inner = _SlotGestures(
         slotId: slotId,
         currentScale: scale,
@@ -645,6 +675,7 @@ class _LayerWidget extends StatelessWidget {
         onDrag: onSlotDrag,
         onScaleChange: onSlotScale,
         onRotateChange: onSlotRotate,
+        onDelete: onSlotDelete,
         child: inner,
       );
     }
@@ -714,6 +745,10 @@ class _SlotGestures extends StatefulWidget {
   final void Function(String slotId, Offset delta)? onDrag;
   final void Function(String slotId, double scale)? onScaleChange;
   final void Function(String slotId, double degrees)? onRotateChange;
+
+  /// Tap on the delete handle above the selected element — deletes it. Only
+  /// meaningful while [selected] (the handle only exists then).
+  final void Function(String slotId)? onDelete;
   final Widget child;
 
   const _SlotGestures({
@@ -726,6 +761,7 @@ class _SlotGestures extends StatefulWidget {
     required this.onDrag,
     required this.onScaleChange,
     required this.onRotateChange,
+    required this.onDelete,
     required this.child,
   });
 
@@ -788,6 +824,65 @@ class _SlotGesturesState extends State<_SlotGestures> {
   /// The rotation-handle zone — see [_nearRotateZone].
   bool _nearRotationHandle(Offset local, Size size) =>
       _nearRotateZone(local, size, widget.currentScale);
+
+  // Delete-tap detection rides a raw Listener instead of a tap recognizer: a
+  // tap recognizer would join the gesture arena and delay the scale
+  // recognizer's accept until past touch slop, shifting onScaleStart's focal
+  // point off the corner/rotate zones and off the resize anchor distance
+  // (which is exactly calibrated to fire at pointer-down when scale is the
+  // sole member). The Listener sees the raw events without competing.
+  int _pointersDown = 0;
+  int? _deletePointer;
+  Offset _deleteDownGlobal = Offset.zero;
+
+  /// Whether a touch at [local] lands on the delete handle's zone (only
+  /// meaningful while selected — the handle only exists then).
+  bool _inDeleteZone(Offset local) {
+    final size = context.size;
+    return widget.selected &&
+        widget.onDelete != null &&
+        size != null &&
+        _nearDeleteZone(local, size, widget.currentScale);
+  }
+
+  void _onPointerDown(PointerDownEvent e) {
+    _pointersDown++;
+    if (_pointersDown == 1 && _inDeleteZone(e.localPosition)) {
+      _deletePointer = e.pointer;
+      _deleteDownGlobal = e.position;
+    } else {
+      // A second finger (or a touch elsewhere): not a delete tap.
+      _deletePointer = null;
+    }
+  }
+
+  void _onPointerMove(PointerMoveEvent e) {
+    if (e.pointer == _deletePointer &&
+        (e.position - _deleteDownGlobal).distance > kTouchSlop) {
+      _deletePointer = null; // Moved: it's a drag, not a tap.
+    }
+  }
+
+  void _onPointerUp(PointerUpEvent e) {
+    _pointersDown = math.max(0, _pointersDown - 1);
+    if (e.pointer != _deletePointer) return;
+    _deletePointer = null;
+    widget.onDelete!(widget.slotId);
+  }
+
+  void _onPointerCancel(PointerCancelEvent e) {
+    _pointersDown = math.max(0, _pointersDown - 1);
+    if (e.pointer == _deletePointer) _deletePointer = null;
+  }
+
+  /// Plain taps — but a tap on the delete zone belongs to the Listener above
+  /// (which deletes), so it must NOT also select / start editing here.
+  /// [d.localPosition] arrives un-rotated, like every zone check (the
+  /// detector sits inside the rotations).
+  void _onTapUp(TapUpDetails d) {
+    if (_inDeleteZone(d.localPosition)) return;
+    widget.onTap?.call(widget.slotId);
+  }
 
   void _onScaleStart(ScaleStartDetails d) {
     _baseScale = widget.currentScale;
@@ -877,20 +972,30 @@ class _SlotGesturesState extends State<_SlotGestures> {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      // Opaque, not the default deferToChild: a text slot is mostly empty
-      // space (glyphs only at the top) with IgnorePointer chrome, so
-      // deferToChild would drop touches on the corners and gaps — which was
-      // exactly why grabbing a handle so often did nothing.
-      behavior: HitTestBehavior.opaque,
-      onTap: widget.onTap == null ? null : () => widget.onTap!(widget.slotId),
-      // Wire move/resize/pinch ONLY when selected: an unwired scale recognizer
-      // would still win the arena over the canvas pan, dragging an unselected
-      // element. With these null, an unselected slot only taps (to select) and
-      // drags fall through to the canvas pan/zoom.
-      onScaleStart: widget.selected ? _onScaleStart : null,
-      onScaleUpdate: widget.selected ? _onScaleUpdate : null,
-      child: widget.child,
+    // The Listener handles delete taps outside the gesture arena (see the
+    // fields above); it never competes with the recognizers below.
+    return Listener(
+      onPointerDown: widget.onDelete == null ? null : _onPointerDown,
+      onPointerMove: widget.onDelete == null ? null : _onPointerMove,
+      onPointerUp: widget.onDelete == null ? null : _onPointerUp,
+      onPointerCancel: widget.onDelete == null ? null : _onPointerCancel,
+      child: GestureDetector(
+        // Opaque, not the default deferToChild: a text slot is mostly empty
+        // space (glyphs only at the top) with IgnorePointer chrome, so
+        // deferToChild would drop touches on the corners and gaps — which was
+        // exactly why grabbing a handle so often did nothing.
+        behavior: HitTestBehavior.opaque,
+        // TapUp (not onTap) because a tap on the delete zone must be left to
+        // the Listener instead of selecting.
+        onTapUp: widget.onTap == null ? null : _onTapUp,
+        // Wire move/resize/pinch ONLY when selected: an unwired scale
+        // recognizer would still win the arena over the canvas pan, dragging
+        // an unselected element. With these null, an unselected slot only
+        // taps (to select) and drags fall through to the canvas pan/zoom.
+        onScaleStart: widget.selected ? _onScaleStart : null,
+        onScaleUpdate: widget.selected ? _onScaleUpdate : null,
+        child: widget.child,
+      ),
     );
   }
 }
@@ -944,6 +1049,7 @@ class _SelectionChrome extends StatelessWidget {
                 final w = constraints.maxWidth - 2 * pad;
                 final h = constraints.maxHeight - 2 * pad;
                 final drop = _kRotateHandleDrop / scale;
+                final rise = _kDeleteHandleRise / scale;
                 return Stack(
                   clipBehavior: Clip.none,
                   children: [
@@ -959,7 +1065,20 @@ class _SelectionChrome extends StatelessWidget {
                     _corner('tr', pad + w, pad),
                     _corner('bl', pad, pad + h),
                     _corner('br', pad + w, pad + h),
-                    _rotateHandle(pad + w / 2, pad + h + drop),
+                    _glyphHandle(
+                      'rotate',
+                      Icons.rotate_right,
+                      const Color(0xFF3F3F46),
+                      pad + w / 2,
+                      pad + h + drop,
+                    ),
+                    _glyphHandle(
+                      'delete',
+                      Icons.close,
+                      const Color(0xFFEF4444),
+                      pad + w / 2,
+                      pad - rise,
+                    ),
                   ],
                 );
               },
@@ -970,11 +1089,17 @@ class _SelectionChrome extends StatelessWidget {
     );
   }
 
-  /// The rotation handle: a round button with a rotate glyph, centered at
-  /// ([cx], [cy]). Purely visual (the chrome is wrapped in IgnorePointer) —
-  /// the drag is recognized by _SlotGestures' _nearRotationHandle zone, which
-  /// is positioned to match.
-  Widget _rotateHandle(double cx, double cy) {
+  /// A round button with a glyph, centered at ([cx], [cy]) — the rotation
+  /// handle below the element and the delete handle above it. Purely visual
+  /// (the chrome is wrapped in IgnorePointer) — the interaction is recognized
+  /// by _SlotGestures' matching zone (_nearRotateZone / _nearDeleteZone).
+  Widget _glyphHandle(
+    String key,
+    IconData icon,
+    Color color,
+    double cx,
+    double cy,
+  ) {
     final dot = 60.0 / scale;
     return Positioned(
       left: cx - dot / 2,
@@ -982,7 +1107,7 @@ class _SelectionChrome extends StatelessWidget {
       width: dot,
       height: dot,
       child: Container(
-        key: const ValueKey('handle_rotate'),
+        key: ValueKey('handle_$key'),
         decoration: BoxDecoration(
           color: Colors.white,
           shape: BoxShape.circle,
@@ -998,11 +1123,7 @@ class _SelectionChrome extends StatelessWidget {
             ),
           ],
         ),
-        child: Icon(
-          Icons.rotate_right,
-          size: 40 / scale,
-          color: const Color(0xFF3F3F46),
-        ),
+        child: Icon(icon, size: 40 / scale, color: color),
       ),
     );
   }
@@ -1679,6 +1800,9 @@ class CanvasSelectionOverlay extends StatelessWidget {
   final void Function(String slotId, double scale)? onScaleChange;
   final void Function(String slotId, double degrees)? onRotateChange;
 
+  /// Tap on the chrome's delete handle (the ✕ above the element).
+  final void Function(String slotId)? onDelete;
+
   const CanvasSelectionOverlay({
     super.key,
     required this.link,
@@ -1690,6 +1814,7 @@ class CanvasSelectionOverlay extends StatelessWidget {
     this.onDrag,
     this.onScaleChange,
     this.onRotateChange,
+    this.onDelete,
   });
 
   @override
@@ -1712,13 +1837,14 @@ class CanvasSelectionOverlay extends StatelessWidget {
             currentRotation: currentRotation,
             templateRotation: templateRotation,
             selected: true,
-            // Ring taps are no-ops (the element is already selected);
-            // interior taps never reach here — _RingHitRegion lets them
-            // through to the canvas.
+            // Plain ring taps are no-ops (the element is already selected);
+            // only the delete zone means anything, and interior taps never
+            // reach here — _RingHitRegion lets them through to the canvas.
             onTap: null,
             onDrag: onDrag,
             onScaleChange: onScaleChange,
             onRotateChange: onRotateChange,
+            onDelete: onDelete,
             child: SizedBox(
               width: size.width,
               height: size.height,

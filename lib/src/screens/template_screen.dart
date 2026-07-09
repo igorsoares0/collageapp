@@ -608,6 +608,17 @@ class _TemplateScreenState extends State<TemplateScreen>
     }
   }
 
+  /// The ids under which [layer] can be selected: the slot id for image/text,
+  /// the layer id for stickers, every cell's slot id for grids. Used to clear
+  /// a selection pointing at an element being removed or hidden.
+  static Set<String> _selectionKeys(Layer layer) => switch (layer) {
+    ImageLayer l => {l.slotId},
+    TextLayer l => {l.slotId},
+    StickerLayer l => {l.id},
+    GridLayer l => {for (final c in l.cells) c.slotId},
+    _ => const <String>{},
+  };
+
   /// Deletes a user-added layer (template layers can only be hidden, not
   /// removed). Clears the selection if it pointed at the removed element —
   /// including a grid's cells and a sticker's layer-id key.
@@ -615,14 +626,46 @@ class _TemplateScreenState extends State<TemplateScreen>
     _record();
     setState(() {
       _content = _content.withoutAddedLayer(panelId, layer.id);
-      final slotIds = switch (layer) {
-        ImageLayer l => {l.slotId},
-        TextLayer l => {l.slotId},
-        StickerLayer l => {l.id},
-        GridLayer l => {for (final c in l.cells) c.slotId},
-        _ => const <String>{},
+      if (_selectionKeys(layer).contains(_selectedSlot)) {
+        _selectedSlot = null;
+        _editingSlot = null;
+      }
+    });
+  }
+
+  /// Deletes the selected element via its ✕ handle. [targetId] is the gesture
+  /// target id — the slot id for image/text, the LAYER id for stickers and
+  /// grids. A user-added layer is removed outright; a template layer can't
+  /// leave the immutable template, so it gets a hidden override instead (it
+  /// disappears from canvas and export, and the layers sheet can bring it
+  /// back). Both paths are one undo step.
+  void _deleteSelected(Template template, String targetId) {
+    Layer? target;
+    for (final layer in _allLayers(template)) {
+      final hit = switch (layer) {
+        ImageLayer l => l.slotId == targetId,
+        TextLayer l => l.slotId == targetId,
+        StickerLayer l => l.id == targetId,
+        GridLayer l => l.id == targetId,
+        _ => false,
       };
-      if (slotIds.contains(_selectedSlot)) {
+      if (hit) {
+        target = layer;
+        break;
+      }
+    }
+    if (target == null) return;
+    for (final entry in _content.addedLayers.entries) {
+      if (entry.value.any((l) => l.id == target!.id)) {
+        _removeAddedLayer(entry.key, target);
+        return;
+      }
+    }
+    final layer = target;
+    _record();
+    setState(() {
+      _content = _content.withLayerHidden(layer.id, true);
+      if (_selectionKeys(layer).contains(_selectedSlot)) {
         _selectedSlot = null;
         _editingSlot = null;
       }
@@ -809,18 +852,10 @@ class _TemplateScreenState extends State<TemplateScreen>
                 setState(() {
                   _content = _content.withLayerHidden(layer.id, nowHidden);
                   // A hidden element can't stay selected/edited.
-                  if (nowHidden) {
-                    final slotIds = switch (layer) {
-                      ImageLayer l => {l.slotId},
-                      TextLayer l => {l.slotId},
-                      StickerLayer l => {l.id},
-                      GridLayer l => {for (final c in l.cells) c.slotId},
-                      _ => const <String>{},
-                    };
-                    if (slotIds.contains(_selectedSlot)) {
-                      _selectedSlot = null;
-                      _editingSlot = null;
-                    }
+                  if (nowHidden &&
+                      _selectionKeys(layer).contains(_selectedSlot)) {
+                    _selectedSlot = null;
+                    _editingSlot = null;
                   }
                 });
                 setSheetState(() {});
@@ -1178,6 +1213,8 @@ class _TemplateScreenState extends State<TemplateScreen>
                                     _focusedPanelId = panel.id;
                                     _onPickImage(slotId);
                                   },
+                                  onSlotDelete: (slotId) =>
+                                      _deleteSelected(template, slotId),
                                   onCanvasTap: () => setState(() {
                                     _focusedPanelId = panel.id;
                                     _selectedSlot = null;
@@ -1304,6 +1341,7 @@ class _TemplateScreenState extends State<TemplateScreen>
                             onDrag: dragSelected,
                             onScaleChange: scaleSelected,
                             onRotateChange: rotateSelected,
+                            onDelete: (id) => _deleteSelected(template, id),
                           ),
                         ),
                       ],

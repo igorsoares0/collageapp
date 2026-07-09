@@ -41,7 +41,14 @@ void main() {
   // leader, CanvasSelectionOverlay stacked above it — the same wiring
   // TemplateScreen uses. Returns closures reading the live SlotContent and
   // the canvas-tap count.
-  Future<({SlotContent Function() content, int Function() taps})> pumpHarness(
+  Future<
+    ({
+      SlotContent Function() content,
+      int Function() taps,
+      List<String> Function() deleted,
+    })
+  >
+  pumpHarness(
     WidgetTester tester, {
     Template? withTemplate,
     double canvasSize = 400,
@@ -55,6 +62,7 @@ void main() {
     final link = LayerLink();
     var content = const SlotContent();
     var taps = 0;
+    final deleted = <String>[];
     (String, Size)? box;
 
     await tester.pumpWidget(
@@ -106,6 +114,7 @@ void main() {
                       onDrag: drag,
                       onScaleChange: scale,
                       onRotateChange: rotate,
+                      onDelete: deleted.add,
                     ),
                   ),
               ],
@@ -117,7 +126,7 @@ void main() {
     // The leader box size lands in a post-frame callback; the overlay mounts
     // on the frame after.
     await tester.pumpAndSettle();
-    return (content: () => content, taps: () => taps);
+    return (content: () => content, taps: () => taps, deleted: () => deleted);
   }
 
   testWidgets('corner resize works past the canvas edge', (tester) async {
@@ -209,6 +218,20 @@ void main() {
     await tester.pump();
 
     expect(h.taps(), 1);
+    expect(h.content().offsetFor('slot_1'), Offset.zero);
+  });
+
+  testWidgets('tapping the delete handle reports onDelete', (tester) async {
+    final h = await pumpHarness(tester);
+
+    // The delete handle floats 44 leader-local units above the element's
+    // top-center — template (350,100) → screen (475,250) — so it paints at
+    // screen (475,228). The tap must fire onDelete, not select or move.
+    await tester.tapAt(const Offset(475, 228));
+    await tester.pump();
+
+    expect(h.deleted(), ['slot_1']);
+    expect(h.taps(), 0);
     expect(h.content().offsetFor('slot_1'), Offset.zero);
   });
 }
