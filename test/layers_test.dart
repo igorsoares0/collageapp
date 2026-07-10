@@ -378,7 +378,7 @@ void main() {
     ) async {
       final selected = <String>[];
       final toggled = <String>[];
-      final reordered = <(String, bool)>[];
+      final reordered = <List<String>>[];
       await pump(
         tester,
         LayersSheet(
@@ -386,7 +386,7 @@ void main() {
           content: const SlotContent(),
           onSelect: selected.add,
           onToggleHidden: (l) => toggled.add(l.id),
-          onReorder: (l, {required toFront}) => reordered.add((l.id, toFront)),
+          onReorderList: reordered.add,
         ),
       );
 
@@ -404,6 +404,15 @@ void main() {
       expect(find.byTooltip('Hide'), findsWidgets);
       await tester.tap(find.byTooltip('Hide').first);
       expect(toggled, isNotEmpty);
+
+      // Dragging a row by its handle reports the panel's complete new stack
+      // order (bottom-first) with every layer still present.
+      final handles = find.byIcon(Icons.drag_indicator);
+      expect(handles, findsNWidgets(panel.layers.length));
+      await tester.drag(handles.first, const Offset(0, 60));
+      await tester.pumpAndSettle();
+      expect(reordered, isNotEmpty);
+      expect(reordered.last.toSet(), {for (final l in panel.layers) l.id});
     });
 
     testWidgets('only user-added layers expose a delete button', (
@@ -435,7 +444,7 @@ void main() {
           content: const SlotContent(),
           onSelect: (_) {},
           onToggleHidden: (_) {},
-          onReorder: (_, {required toFront}) {},
+          onReorderList: (_) {},
           removableLayerIds: const {'text_1'},
           onRemove: (l) => removed.add(l.id),
         ),

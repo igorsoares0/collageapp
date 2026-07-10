@@ -88,6 +88,31 @@ void main() {
     expect(find.byKey(const ValueKey('canvas-background')), findsNWidgets(2));
   });
 
+  testWidgets('carousel dots appear with a second panel and a tap refocuses', (
+    tester,
+  ) async {
+    await pumpDraft(tester);
+    // Single panel: no dots.
+    expect(find.byKey(const ValueKey('panel-dot-0')), findsNothing);
+
+    await addFromToolbar(tester, 'Panel');
+    expect(find.byKey(const ValueKey('panel-dot-0')), findsOneWidget);
+    expect(find.byKey(const ValueKey('panel-dot-1')), findsOneWidget);
+
+    // The added panel took focus; the first dot hands it back to panel 1 —
+    // a new text element must land on THAT panel.
+    await tester.tap(find.byKey(const ValueKey('panel-dot-0')));
+    await tester.pumpAndSettle();
+    await addFromToolbar(tester, 'Text');
+    final firstCanvas = tester.getRect(
+      find.byKey(const ValueKey('canvas-background')).first,
+    );
+    expect(
+      firstCanvas.contains(tester.getCenter(find.byType(TextField))),
+      isTrue,
+    );
+  });
+
   testWidgets('asset sheet offers the bundled frames', (tester) async {
     await pumpDraft(tester);
     await addFromToolbar(tester, 'Sticker');

@@ -1093,6 +1093,27 @@ class _TemplateScreenState extends State<TemplateScreen>
     _pickImage(slotId);
   }
 
+  /// A carousel dot's tap: focus panel [index] and slide it into view. The
+  /// navigation happens at 1x — any pinch zoom resets, which is what you want
+  /// when hopping between slides.
+  void _focusPanelAt(
+    int index,
+    List<Panel> panels,
+    double panelWidth,
+    double viewportWidth,
+  ) {
+    setState(() {
+      _focusedPanelId = panels[index].id;
+      _selectedSlot = null;
+      _editingSlot = null;
+    });
+    // Mirror the strip's layout: 16px strip padding + 6px per-panel padding.
+    final stripWidth = 32 + panels.length * (panelWidth + 12.0);
+    final maxTx = (stripWidth - viewportWidth).clamp(0.0, double.infinity);
+    final tx = (index * (panelWidth + 12.0)).clamp(0.0, maxTx);
+    _zoom.value = Matrix4.identity()..setTranslationRaw(-tx, 0, 0);
+  }
+
   /// The contextual bar's Done: deselect and return the bottom strip to the
   /// toolbar (also closes the inline text editor and the background mode).
   void _closeContextBar() {
@@ -1104,7 +1125,7 @@ class _TemplateScreenState extends State<TemplateScreen>
   }
 
   /// Opens the layer manager for the focused panel: select an element (useful
-  /// when slots overlap), reorder its z-position, or hide/show it. All edits
+  /// when slots overlap), drag rows to restack, or hide/show it. All edits
   /// are SlotContent overrides, so the sheet reflects them live and the canvas
   /// updates underneath.
   void _showLayersSheet(Template template) {
@@ -1119,10 +1140,10 @@ class _TemplateScreenState extends State<TemplateScreen>
           builder: (context, setSheetState) {
             // Recompute each rebuild so an added/removed layer shows up live.
             final panel = _effectivePanel(templatePanel);
-            final natural = [for (final l in panel.layers) l.id];
             return LayersSheet(
               panel: panel,
               content: _content,
+              assetCatalog: _catalog,
               // Only the user's own added layers can be deleted; template
               // layers can be hidden but not removed.
               removableLayerIds: {
@@ -1153,15 +1174,10 @@ class _TemplateScreenState extends State<TemplateScreen>
                 });
                 setSheetState(() {});
               },
-              onReorder: (layer, {required toFront}) {
+              onReorderList: (orderedIds) {
                 _record();
                 setState(() {
-                  _content = _content.withLayerMoved(
-                    panel.id,
-                    natural,
-                    layer.id,
-                    toFront: toFront,
-                  );
+                  _content = _content.withLayerOrder(panel.id, orderedIds);
                 });
                 setSheetState(() {});
               },
@@ -1609,6 +1625,54 @@ class _TemplateScreenState extends State<TemplateScreen>
                       onScaleChange: scaleSelected,
                       onRotateChange: _rotateSelected,
                       child: body,
+                    );
+                  }
+                  if (panels.length > 1) {
+                    // Carousel dots: which panel is focused, out of how many.
+                    // Tapping one focuses that panel and slides it into view.
+                    body = Stack(
+                      children: [
+                        Positioned.fill(child: body),
+                        Positioned(
+                          left: 0,
+                          right: 0,
+                          bottom: 6,
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              for (final (i, panel) in panels.indexed)
+                                GestureDetector(
+                                  key: ValueKey('panel-dot-$i'),
+                                  behavior: HitTestBehavior.opaque,
+                                  onTap: () => _focusPanelAt(
+                                    i,
+                                    panels,
+                                    panelWidth,
+                                    constraints.maxWidth,
+                                  ),
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(6),
+                                    child: AnimatedContainer(
+                                      duration: const Duration(
+                                        milliseconds: 150,
+                                      ),
+                                      width: panel.id == focusedPanel.id
+                                          ? 18
+                                          : 8,
+                                      height: 8,
+                                      decoration: BoxDecoration(
+                                        color: panel.id == focusedPanel.id
+                                            ? const Color(0xFF3B82F6)
+                                            : Colors.white38,
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ],
                     );
                   }
                   return body;

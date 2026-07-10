@@ -3,21 +3,36 @@ import 'package:flutter/material.dart';
 import '../api/project_store.dart';
 import 'template_screen.dart';
 
-/// The user's saved editing sessions, newest first — everything auto-saved by
-/// the editor (templates they edited and collages created from scratch). The
-/// home screen shows only the published templates; this screen is reached
-/// from its app bar.
-class ProjectsScreen extends StatefulWidget {
+/// Standalone screen wrapper around [ProjectsList] — kept for direct
+/// navigation; the home screen embeds the list as its "My projects" tab.
+class ProjectsScreen extends StatelessWidget {
   /// Injectable for tests; the app uses the default documents-dir store.
   final ProjectStore? store;
 
   const ProjectsScreen({super.key, this.store});
 
   @override
-  State<ProjectsScreen> createState() => _ProjectsScreenState();
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Your projects')),
+      body: ProjectsList(store: store),
+    );
+  }
 }
 
-class _ProjectsScreenState extends State<ProjectsScreen> {
+/// The user's saved editing sessions, newest first — everything auto-saved by
+/// the editor (templates they edited and collages created from scratch).
+class ProjectsList extends StatefulWidget {
+  /// Injectable for tests; the app uses the default documents-dir store.
+  final ProjectStore? store;
+
+  const ProjectsList({super.key, this.store});
+
+  @override
+  State<ProjectsList> createState() => _ProjectsListState();
+}
+
+class _ProjectsListState extends State<ProjectsList> {
   late final ProjectStore _store = widget.store ?? ProjectStore();
   late Future<List<ProjectSummary>> _list;
 
@@ -92,9 +107,7 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Your projects')),
-      body: FutureBuilder<List<ProjectSummary>>(
+    return FutureBuilder<List<ProjectSummary>>(
         future: _list,
         builder: (context, snapshot) {
           if (snapshot.connectionState != ConnectionState.done) {
@@ -137,7 +150,6 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
             },
           );
         },
-      ),
     );
   }
 }

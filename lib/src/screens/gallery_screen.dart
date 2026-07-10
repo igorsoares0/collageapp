@@ -47,12 +47,6 @@ class _GalleryScreenState extends State<GalleryScreen> {
     );
   }
 
-  void _openProjects() {
-    Navigator.of(
-      context,
-    ).push(MaterialPageRoute(builder: (_) => ProjectsScreen(store: _projects)));
-  }
-
   /// Create-from-scratch entry: pick a canvas size, then open the editor on a
   /// blank draft — everything (text, images, grids, assets, panels) is built
   /// there with the bottom toolbar.
@@ -107,23 +101,38 @@ class _GalleryScreenState extends State<GalleryScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Collage Studio'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.folder_outlined),
-            tooltip: 'Your projects',
-            onPressed: _openProjects,
+    // Two tabs: published templates and the user's own saved projects — the
+    // projects are a first-class destination, not an icon in a corner. The
+    // projects tab rebuilds when switched to, so it always lists fresh saves.
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Collage Studio'),
+          bottom: const TabBar(
+            tabs: [
+              Tab(text: 'Templates'),
+              Tab(text: 'My projects'),
+            ],
           ),
-        ],
+        ),
+        floatingActionButton: FloatingActionButton.extended(
+          onPressed: _createFromScratch,
+          icon: const Icon(Icons.add),
+          label: const Text('Create'),
+        ),
+        body: TabBarView(
+          children: [
+            _buildTemplatesTab(),
+            ProjectsList(store: _projects),
+          ],
+        ),
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _createFromScratch,
-        icon: const Icon(Icons.add),
-        label: const Text('Create'),
-      ),
-      body: FutureBuilder<IndexResult>(
+    );
+  }
+
+  Widget _buildTemplatesTab() {
+    return FutureBuilder<IndexResult>(
         future: _index,
         builder: (context, snapshot) {
           if (snapshot.connectionState != ConnectionState.done) {
@@ -193,7 +202,6 @@ class _GalleryScreenState extends State<GalleryScreen> {
             ],
           );
         },
-      ),
     );
   }
 }
