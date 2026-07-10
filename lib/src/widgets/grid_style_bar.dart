@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 
-/// Bottom bar shown while a grid cell is selected: adjust the whole grid's
-/// spacing (gutter) and corner radius. Both are per-grid user overrides stored
-/// in SlotContent — the template is never mutated. (Dividers are dragged
-/// directly on the canvas.)
+import 'editor_toolbar.dart' show ContextBarShell;
+
+/// Contextual bar shown while a grid cell is selected: adjust the whole
+/// grid's spacing (gutter) and corner radius. Both are per-grid user
+/// overrides stored in SlotContent — the template is never mutated.
+/// (Dividers are dragged directly on the canvas.) Delete removes the whole
+/// grid, mirroring the canvas ✕ handle.
 class GridStyleBar extends StatelessWidget {
   final double gutter;
   final double cornerRadius;
@@ -11,6 +14,8 @@ class GridStyleBar extends StatelessWidget {
   final double maxCorner;
   final ValueChanged<double> onGutter;
   final ValueChanged<double> onCorner;
+  final VoidCallback onDelete;
+  final VoidCallback onDone;
 
   const GridStyleBar({
     super.key,
@@ -20,41 +25,32 @@ class GridStyleBar extends StatelessWidget {
     required this.maxCorner,
     required this.onGutter,
     required this.onCorner,
+    required this.onDelete,
+    required this.onDone,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: const Color(0xFF27272A),
-      child: SafeArea(
-        top: false,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Padding(
-              padding: EdgeInsets.fromLTRB(16, 8, 16, 0),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  'Grade',
-                  style: TextStyle(color: Colors.white70, fontSize: 12),
-                ),
-              ),
-            ),
-            _LabeledSlider(
-              icon: Icons.space_bar,
-              value: gutter.clamp(0, maxGutter),
-              max: maxGutter,
-              onChanged: onGutter,
-            ),
-            _LabeledSlider(
-              icon: Icons.rounded_corner,
-              value: cornerRadius.clamp(0, maxCorner),
-              max: maxCorner,
-              onChanged: onCorner,
-            ),
-          ],
-        ),
+    return ContextBarShell(
+      title: 'Grid',
+      onDelete: onDelete,
+      onDone: onDone,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _LabeledSlider(
+            icon: Icons.space_bar,
+            value: gutter.clamp(0, maxGutter),
+            max: maxGutter,
+            onChanged: onGutter,
+          ),
+          _LabeledSlider(
+            icon: Icons.rounded_corner,
+            value: cornerRadius.clamp(0, maxCorner),
+            max: maxCorner,
+            onChanged: onCorner,
+          ),
+        ],
       ),
     );
   }

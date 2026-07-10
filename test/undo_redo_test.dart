@@ -25,9 +25,8 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  Future<void> addFromMenu(WidgetTester tester, String item) async {
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pumpAndSettle();
+  // Taps a bottom-toolbar button by its label (Text, Layout, Panel, ...).
+  Future<void> addFromToolbar(WidgetTester tester, String item) async {
     await tester.tap(find.text(item));
     await tester.pumpAndSettle();
   }
@@ -42,7 +41,7 @@ void main() {
     expect(enabled(tester, undoButton), isFalse);
     expect(enabled(tester, redoButton), isFalse);
 
-    await addFromMenu(tester, 'Panel');
+    await addFromToolbar(tester, 'Panel');
     expect(canvas, findsNWidgets(2));
     expect(enabled(tester, undoButton), isTrue);
 
@@ -60,7 +59,7 @@ void main() {
 
   testWidgets('typing coalesces into one undo step', (tester) async {
     await pumpDraft(tester);
-    await addFromMenu(tester, 'Text');
+    await addFromToolbar(tester, 'Text');
     expect(find.byType(TextField), findsOneWidget);
 
     // Two keystroke batches within the coalescing window share the
@@ -89,12 +88,12 @@ void main() {
 
   testWidgets('a new edit clears the redo branch', (tester) async {
     await pumpDraft(tester);
-    await addFromMenu(tester, 'Panel');
+    await addFromToolbar(tester, 'Panel');
     await tester.tap(undoButton);
     await tester.pumpAndSettle();
     expect(enabled(tester, redoButton), isTrue);
 
-    await addFromMenu(tester, 'Text');
+    await addFromToolbar(tester, 'Text');
     expect(enabled(tester, redoButton), isFalse);
   });
 
@@ -102,7 +101,7 @@ void main() {
     tester,
   ) async {
     await pumpDraft(tester);
-    await addFromMenu(tester, 'Grid');
+    await addFromToolbar(tester, 'Layout');
     await tester.tap(find.text('2 × 2'));
     await tester.pumpAndSettle();
     // First cell selected → grid styling bar (two sliders) is up.
@@ -111,8 +110,8 @@ void main() {
     await tester.tap(undoButton);
     await tester.pumpAndSettle();
 
-    // Grid gone AND selection cleared — the background bar state, not a
-    // stale empty bar.
+    // Grid gone AND selection cleared — the bottom strip is back to the
+    // toolbar, not a stale grid bar.
     expect(find.byIcon(Icons.add_photo_alternate_outlined), findsNothing);
     expect(find.byType(Slider), findsNothing);
   });

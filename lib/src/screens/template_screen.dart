@@ -12,6 +12,7 @@ import '../model/template.dart';
 import '../rendering/export.dart';
 import '../rendering/snap.dart';
 import '../rendering/template_canvas.dart';
+import '../widgets/editor_toolbar.dart';
 import '../widgets/grid_style_bar.dart';
 import '../widgets/insert_sheets.dart';
 import '../widgets/layers_sheet.dart';
@@ -24,7 +25,7 @@ import '../widgets/text_style_bar.dart';
 ///
 /// Three entry points: a published template by [id] (fetched through the
 /// store), a local [draft] — the create-from-scratch flow hands in
-/// [Template.blank] and the user builds everything with the add menu
+/// [Template.blank] and the user builds everything with the bottom toolbar
 /// (text, images, grids, assets, panels) — or a saved [project] being
 /// resumed (its embedded template snapshot plus the user's edits).
 ///
@@ -91,6 +92,10 @@ class _TemplateScreenState extends State<TemplateScreen>
   String? _editingSlot;
   // Panel the styling bars act on (last one the user touched).
   String? _focusedPanelId;
+  // Background contextual bar open (entered via the toolbar's Background
+  // button; selecting any element leaves it). Stays across canvas taps so the
+  // user can hop between panels while recoloring.
+  bool _backgroundMode = false;
   bool _exporting = false;
   // Screen-space selection overlay (CanvasSelectionOverlay): the leader link
   // the selected element's chrome box publishes inside its PanelCanvas, and
@@ -459,6 +464,7 @@ class _TemplateScreenState extends State<TemplateScreen>
       _focusedPanelId = panel.id;
       _selectedSlot = token;
       _editingSlot = token;
+      _backgroundMode = false;
     });
   }
 
@@ -494,6 +500,7 @@ class _TemplateScreenState extends State<TemplateScreen>
       _focusedPanelId = panel.id;
       _selectedSlot = token;
       _editingSlot = null;
+      _backgroundMode = false;
     });
     _pickImage(token);
   }
@@ -552,6 +559,7 @@ class _TemplateScreenState extends State<TemplateScreen>
       _focusedPanelId = panel.id;
       _selectedSlot = cellIds.first;
       _editingSlot = null;
+      _backgroundMode = false;
     });
   }
 
@@ -577,6 +585,7 @@ class _TemplateScreenState extends State<TemplateScreen>
       _focusedPanelId = panel.id;
       _selectedSlot = token;
       _editingSlot = null;
+      _backgroundMode = false;
     });
   }
 
@@ -801,6 +810,7 @@ class _TemplateScreenState extends State<TemplateScreen>
       setState(() {
         _selectedSlot = slotId;
         _editingSlot = null;
+        _backgroundMode = false;
       });
     }
     if (isText && wasSelected) {
@@ -815,8 +825,19 @@ class _TemplateScreenState extends State<TemplateScreen>
     setState(() {
       _selectedSlot = slotId;
       _editingSlot = null;
+      _backgroundMode = false;
     });
     _pickImage(slotId);
+  }
+
+  /// The contextual bar's Done: deselect and return the bottom strip to the
+  /// toolbar (also closes the inline text editor and the background mode).
+  void _closeContextBar() {
+    setState(() {
+      _selectedSlot = null;
+      _editingSlot = null;
+      _backgroundMode = false;
+    });
   }
 
   /// Opens the layer manager for the focused panel: select an element (useful
@@ -948,7 +969,7 @@ class _TemplateScreenState extends State<TemplateScreen>
           appBar: AppBar(
             title: Text(template?.name ?? '…'),
             actions: [
-              if (template != null)
+              if (template != null) ...[
                 IconButton(
                   icon: const Icon(Icons.undo),
                   tooltip: 'Undo',
@@ -956,7 +977,6 @@ class _TemplateScreenState extends State<TemplateScreen>
                       ? null
                       : () => _undoEdit(template),
                 ),
-              if (template != null)
                 IconButton(
                   icon: const Icon(Icons.redo),
                   tooltip: 'Redo',
@@ -964,79 +984,24 @@ class _TemplateScreenState extends State<TemplateScreen>
                       ? null
                       : () => _redoEdit(template),
                 ),
-              if (template != null)
-                PopupMenuButton<String>(
-                  icon: const Icon(Icons.add),
-                  tooltip: 'Add element',
-                  onSelected: (value) => switch (value) {
-                    'text' => _addTextLayer(template),
-                    'image' => _addImageLayer(template),
-                    'grid' => _insertGrid(template),
-                    'asset' => _insertAsset(template),
-                    'panel' => _addPanel(template),
-                    _ => null,
-                  },
-                  itemBuilder: (context) => const [
-                    PopupMenuItem(
-                      value: 'text',
-                      child: ListTile(
-                        leading: Icon(Icons.title),
-                        title: Text('Text'),
-                        contentPadding: EdgeInsets.zero,
-                      ),
+                // Export is the flow's finish line — a labeled button, not
+                // one more icon. Inserting/layers live in the bottom toolbar.
+                Center(
+                  child: Padding(
+                    padding: const EdgeInsets.only(left: 4, right: 12),
+                    child: FilledButton(
+                      onPressed: _exporting ? null : () => _exportPng(template),
+                      child: _exporting
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Text('Export'),
                     ),
-                    PopupMenuItem(
-                      value: 'image',
-                      child: ListTile(
-                        leading: Icon(Icons.image_outlined),
-                        title: Text('Image'),
-                        contentPadding: EdgeInsets.zero,
-                      ),
-                    ),
-                    PopupMenuItem(
-                      value: 'grid',
-                      child: ListTile(
-                        leading: Icon(Icons.grid_view),
-                        title: Text('Grid'),
-                        contentPadding: EdgeInsets.zero,
-                      ),
-                    ),
-                    PopupMenuItem(
-                      value: 'asset',
-                      child: ListTile(
-                        leading: Icon(Icons.star_outline),
-                        title: Text('Sticker / frame'),
-                        contentPadding: EdgeInsets.zero,
-                      ),
-                    ),
-                    PopupMenuItem(
-                      value: 'panel',
-                      child: ListTile(
-                        leading: Icon(Icons.splitscreen_outlined),
-                        title: Text('Panel'),
-                        contentPadding: EdgeInsets.zero,
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
-              if (template != null)
-                IconButton(
-                  icon: const Icon(Icons.layers_outlined),
-                  tooltip: 'Layers',
-                  onPressed: () => _showLayersSheet(template),
-                ),
-              if (template != null)
-                IconButton(
-                  icon: _exporting
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.ios_share),
-                  tooltip: 'Export PNG',
-                  onPressed: _exporting ? null : () => _exportPng(template),
-                ),
+              ],
             ],
           ),
           body: switch (snapshot.connectionState) {
@@ -1065,6 +1030,27 @@ class _TemplateScreenState extends State<TemplateScreen>
     if (slot == null) return null;
     for (final layer in _allLayers(template)) {
       if (layer is TextLayer && layer.slotId == slot) return layer;
+    }
+    return null;
+  }
+
+  /// The ImageLayer of the currently selected slot (or null). Grid cells are
+  /// not ImageLayers, so a selected cell falls through to the grid bar.
+  ImageLayer? _selectedImageLayer(Template template) {
+    final slot = _selectedSlot;
+    if (slot == null) return null;
+    for (final layer in _allLayers(template)) {
+      if (layer is ImageLayer && layer.slotId == slot) return layer;
+    }
+    return null;
+  }
+
+  /// The StickerLayer selected by its layer id (or null).
+  StickerLayer? _selectedStickerLayer(Template template) {
+    final slot = _selectedSlot;
+    if (slot == null) return null;
+    for (final layer in _allLayers(template)) {
+      if (layer is StickerLayer && layer.id == slot) return layer;
     }
     return null;
   }
@@ -1125,12 +1111,9 @@ class _TemplateScreenState extends State<TemplateScreen>
     double keyboardInset,
     double safeBottom,
   ) {
-    final textLayer = _selectedTextLayer(template);
     final panels = _panels(template);
     final focusedPanel = _focusedPanel(template);
-
-    final gridLayer = _selectedGridLayer(template);
-    final bottomBar = _buildBottomBar(textLayer, focusedPanel, gridLayer);
+    final bottomBar = _buildBottomBar(template);
     // Constant height for the bar strip (incl. the home-indicator inset), so
     // the canvas area is a fixed size regardless of which bar shows.
     final barArea = _kBottomBarHeight + safeBottom;
@@ -1385,9 +1368,7 @@ class _TemplateScreenState extends State<TemplateScreen>
             child: SizedBox(
               height: barArea,
               width: double.infinity,
-              child: bottomBar == null
-                  ? null
-                  : Align(alignment: Alignment.bottomCenter, child: bottomBar),
+              child: Align(alignment: Alignment.bottomCenter, child: bottomBar),
             ),
           ),
         ],
@@ -1395,23 +1376,13 @@ class _TemplateScreenState extends State<TemplateScreen>
     );
   }
 
-  /// The bar shown under the canvas: background colors when nothing is
-  /// selected, text styling for a text slot, grid spacing/corners for a grid
-  /// cell, and nothing for a plain image slot.
-  Widget? _buildBottomBar(
-    TextLayer? textLayer,
-    Panel focusedPanel,
-    GridLayer? gridLayer,
-  ) {
-    if (textLayer == null && _selectedSlot == null) {
-      return BackgroundColorBar(
-        currentColor:
-            _content.backgroundFor(focusedPanel.id) ??
-            focusedPanel.backgroundColor,
-        onColor: (color) =>
-            _edit(_content.withPanelBackground(focusedPanel.id, color)),
-      );
-    }
+  /// The bar strip under the canvas. Home state is the [EditorToolbar]
+  /// (insert/layers/background); a selected element swaps in its own
+  /// contextual bar with an explicit title and Done, so the strip never
+  /// changes silently: text styling, grid spacing/corners, photo actions,
+  /// sticker actions — and background colors while [_backgroundMode] is on.
+  Widget _buildBottomBar(Template template) {
+    final textLayer = _selectedTextLayer(template);
     if (textLayer != null) {
       final weight =
           _content.weightFor(textLayer.slotId) ?? textLayer.fontWeight;
@@ -1428,8 +1399,11 @@ class _TemplateScreenState extends State<TemplateScreen>
         onBoldToggle: () => _edit(
           _content.withWeight(textLayer.slotId, weight >= 700 ? 400 : 700),
         ),
+        onDelete: () => _deleteSelected(template, textLayer.slotId),
+        onDone: _closeContextBar,
       );
     }
+    final gridLayer = _selectedGridLayer(template);
     if (gridLayer != null) {
       final g = gridLayer;
       final minSide = g.width < g.height ? g.width : g.height;
@@ -1445,8 +1419,66 @@ class _TemplateScreenState extends State<TemplateScreen>
           _content.withGridCornerRadius(g.id, v),
           coalesce: 'corner:${g.id}',
         ),
+        onDelete: () => _deleteSelected(template, g.id),
+        onDone: _closeContextBar,
       );
     }
-    return null;
+    final imageLayer = _selectedImageLayer(template);
+    if (imageLayer != null) {
+      return ContextBarShell(
+        title: 'Photo',
+        onDelete: () => _deleteSelected(template, imageLayer.slotId),
+        onDone: _closeContextBar,
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: Padding(
+            padding: const EdgeInsets.only(left: 8),
+            child: ToolButton(
+              icon: Icons.photo_library_outlined,
+              label: 'Replace',
+              onTap: () => _pickImage(imageLayer.slotId),
+            ),
+          ),
+        ),
+      );
+    }
+    final stickerLayer = _selectedStickerLayer(template);
+    if (stickerLayer != null) {
+      return ContextBarShell(
+        title: 'Sticker',
+        onDelete: () => _deleteSelected(template, stickerLayer.id),
+        onDone: _closeContextBar,
+        child: const Padding(
+          padding: EdgeInsets.fromLTRB(16, 0, 16, 12),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              'Drag to move · pinch to resize · twist to rotate',
+              style: TextStyle(color: Colors.white38, fontSize: 12),
+            ),
+          ),
+        ),
+      );
+    }
+    if (_backgroundMode) {
+      final focusedPanel = _focusedPanel(template);
+      return BackgroundColorBar(
+        currentColor:
+            _content.backgroundFor(focusedPanel.id) ??
+            focusedPanel.backgroundColor,
+        onColor: (color) =>
+            _edit(_content.withPanelBackground(focusedPanel.id, color)),
+        onDone: _closeContextBar,
+      );
+    }
+    return EditorToolbar(
+      onLayout: () => _insertGrid(template),
+      onText: () => _addTextLayer(template),
+      onPhoto: () => _addImageLayer(template),
+      onSticker: () => _insertAsset(template),
+      onBackground: () => setState(() => _backgroundMode = true),
+      onPanel: () => _addPanel(template),
+      onLayers: () => _showLayersSheet(template),
+    );
   }
 }

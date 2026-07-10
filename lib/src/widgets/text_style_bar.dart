@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../rendering/template_canvas.dart' show googleFontsResolver;
+import 'editor_toolbar.dart' show ContextBarShell;
 
 /// Typefaces offered for text slots. Mirrors the editor's EDITOR_FONTS so a
 /// template's original font is always among the choices (and the current
@@ -49,9 +50,11 @@ const List<Color> kColorChoices = [
 
 const Color _accent = Color(0xFF3B82F6);
 
-/// Bottom bar shown while a text slot is selected: pick a typeface or color
-/// for that slot. The choice is a per-slot override stored in SlotContent,
-/// never a mutation of the template.
+/// Contextual bar shown while a text slot is selected: alignment/bold plus
+/// typeface and color for that slot. The choice is a per-slot override stored
+/// in SlotContent, never a mutation of the template. Delete/Done live in the
+/// first row (a separate header would push the bar past the fixed strip
+/// height), so this bar builds its own frame instead of [ContextBarShell].
 class TextStyleBar extends StatelessWidget {
   final String currentFont;
   final Color currentColor;
@@ -61,6 +64,8 @@ class TextStyleBar extends StatelessWidget {
   final ValueChanged<Color> onColor;
   final ValueChanged<String> onAlignment;
   final VoidCallback onBoldToggle;
+  final VoidCallback onDelete;
+  final VoidCallback onDone;
 
   const TextStyleBar({
     super.key,
@@ -72,6 +77,8 @@ class TextStyleBar extends StatelessWidget {
     required this.onColor,
     required this.onAlignment,
     required this.onBoldToggle,
+    required this.onDelete,
+    required this.onDone,
   });
 
   @override
@@ -103,13 +110,28 @@ class TextStyleBar extends StatelessWidget {
                   selected: currentAlignment == 'right',
                   onTap: () => onAlignment('right'),
                 ),
-                const Spacer(),
                 _IconToggle(
                   icon: Icons.format_bold,
                   selected: isBold,
                   onTap: onBoldToggle,
                 ),
-                const SizedBox(width: 8),
+                const Spacer(),
+                IconButton(
+                  icon: const Icon(
+                    Icons.delete_outline,
+                    size: 20,
+                    color: Colors.white70,
+                  ),
+                  tooltip: 'Delete',
+                  onPressed: onDelete,
+                ),
+                TextButton.icon(
+                  onPressed: onDone,
+                  icon: const Icon(Icons.check, size: 18),
+                  label: const Text('Done'),
+                  style: TextButton.styleFrom(foregroundColor: _accent),
+                ),
+                const SizedBox(width: 4),
               ],
             ),
             SizedBox(
@@ -185,52 +207,38 @@ class _IconToggle extends StatelessWidget {
   }
 }
 
-/// Bottom bar shown when no slot is selected: recolor the canvas background
-/// (a user override of the template's background, included in the export).
+/// Contextual bar for the toolbar's Background action: recolor the focused
+/// panel's background (a user override of the template's background, included
+/// in the export).
 class BackgroundColorBar extends StatelessWidget {
   final Color currentColor;
   final ValueChanged<Color> onColor;
+  final VoidCallback onDone;
 
   const BackgroundColorBar({
     super.key,
     required this.currentColor,
     required this.onColor,
+    required this.onDone,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: const Color(0xFF27272A),
-      child: SafeArea(
-        top: false,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
+    return ContextBarShell(
+      title: 'Background',
+      onDone: onDone,
+      child: SizedBox(
+        height: 52,
+        child: ListView(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
           children: [
-            const Padding(
-              padding: EdgeInsets.fromLTRB(16, 8, 16, 0),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  'Background',
-                  style: TextStyle(color: Colors.white70, fontSize: 12),
-                ),
+            for (final color in kColorChoices)
+              _ColorDot(
+                color: color,
+                selected: color == currentColor,
+                onTap: () => onColor(color),
               ),
-            ),
-            SizedBox(
-              height: 52,
-              child: ListView(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                children: [
-                  for (final color in kColorChoices)
-                    _ColorDot(
-                      color: color,
-                      selected: color == currentColor,
-                      onTap: () => onColor(color),
-                    ),
-                ],
-              ),
-            ),
           ],
         ),
       ),

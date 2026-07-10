@@ -24,7 +24,7 @@ AssetRecord _stickerRecord(String id) => AssetRecord(
 
 void main() {
   // The create-from-scratch editor: a blank draft opened directly (no store),
-  // built up entirely through the add menu.
+  // built up entirely through the bottom toolbar.
   Future<void> pumpDraft(WidgetTester tester) async {
     tester.view.physicalSize = const Size(540, 960);
     tester.view.devicePixelRatio = 1;
@@ -40,9 +40,9 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  Future<void> addFromMenu(WidgetTester tester, String item) async {
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pumpAndSettle();
+  // Taps a bottom-toolbar button by its label (Text, Layout, Photo, Sticker,
+  // Panel, ...). The toolbar shows whenever nothing is selected.
+  Future<void> addFromToolbar(WidgetTester tester, String item) async {
     await tester.tap(find.text(item));
     await tester.pumpAndSettle();
   }
@@ -53,11 +53,11 @@ void main() {
     expect(find.textContaining('Could not load'), findsNothing);
   });
 
-  testWidgets('add menu inserts a text element and starts inline editing', (
+  testWidgets('toolbar inserts a text element and starts inline editing', (
     tester,
   ) async {
     await pumpDraft(tester);
-    await addFromMenu(tester, 'Text');
+    await addFromToolbar(tester, 'Text');
 
     expect(find.byType(TextField), findsOneWidget);
     await tester.enterText(find.byType(TextField), 'Hello');
@@ -69,7 +69,7 @@ void main() {
     tester,
   ) async {
     await pumpDraft(tester);
-    await addFromMenu(tester, 'Grid');
+    await addFromToolbar(tester, 'Layout');
 
     // The preset sheet is open; pick the classic 2×2.
     await tester.tap(find.text('2 × 2'));
@@ -81,16 +81,16 @@ void main() {
     expect(find.byType(Slider), findsNWidgets(2));
   });
 
-  testWidgets('panel menu item appends an empty second panel', (tester) async {
+  testWidgets('toolbar Panel appends an empty second panel', (tester) async {
     await pumpDraft(tester);
-    await addFromMenu(tester, 'Panel');
+    await addFromToolbar(tester, 'Panel');
 
     expect(find.byKey(const ValueKey('canvas-background')), findsNWidgets(2));
   });
 
   testWidgets('asset sheet offers the bundled frames', (tester) async {
     await pumpDraft(tester);
-    await addFromMenu(tester, 'Sticker / frame');
+    await addFromToolbar(tester, 'Sticker');
 
     // No remote catalog in tests, so no stickers — but the seed frames are
     // always available.

@@ -55,7 +55,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
 
   /// Create-from-scratch entry: pick a canvas size, then open the editor on a
   /// blank draft — everything (text, images, grids, assets, panels) is built
-  /// there with the add menu.
+  /// there with the bottom toolbar.
   Future<void> _createFromScratch() async {
     final canvas = await showModalBottomSheet<(String, double, double)>(
       context: context,

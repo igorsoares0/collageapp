@@ -22,9 +22,8 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  Future<void> addFromMenu(WidgetTester tester, String item) async {
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pumpAndSettle();
+  // Taps a bottom-toolbar button by its label (Text, Layout, Panel, ...).
+  Future<void> addFromToolbar(WidgetTester tester, String item) async {
     await tester.tap(find.text(item));
     await tester.pumpAndSettle();
   }
@@ -43,7 +42,7 @@ void main() {
     tester,
   ) async {
     await pumpEditor(tester, Template.blank());
-    await addFromMenu(tester, 'Text');
+    await addFromToolbar(tester, 'Text');
     await tester.enterText(find.byType(TextField), 'Hello');
     await tester.pump();
 
@@ -116,7 +115,7 @@ void main() {
     tester,
   ) async {
     await pumpEditor(tester, Template.blank());
-    await addFromMenu(tester, 'Grid');
+    await addFromToolbar(tester, 'Layout');
     await tester.tap(find.text('2 × 2'));
     await tester.pumpAndSettle();
     expect(find.byIcon(Icons.add_photo_alternate_outlined), findsNWidgets(4));

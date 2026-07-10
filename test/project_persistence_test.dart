@@ -37,9 +37,8 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  Future<void> addFromMenu(WidgetTester tester, String item) async {
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pumpAndSettle();
+  // Taps a bottom-toolbar button by its label (Text, Layout, Panel, ...).
+  Future<void> addFromToolbar(WidgetTester tester, String item) async {
     await tester.tap(find.text(item));
     await tester.pumpAndSettle();
   }
@@ -86,7 +85,7 @@ void main() {
     tester,
   ) async {
     await pumpDraft(tester);
-    await addFromMenu(tester, 'Panel');
+    await addFromToolbar(tester, 'Panel');
     expect(find.byKey(const ValueKey('canvas-background')), findsNWidgets(2));
 
     // The debounced save fires without any further interaction (typing-style
@@ -123,11 +122,11 @@ void main() {
     tester,
   ) async {
     await pumpDraft(tester);
-    await addFromMenu(tester, 'Panel');
+    await addFromToolbar(tester, 'Panel');
     await tester.pump(const Duration(seconds: 3));
     await drainWrites(tester, done: () => savedContains('"panel_2"'));
 
-    await addFromMenu(tester, 'Panel');
+    await addFromToolbar(tester, 'Panel');
     await tester.pump(const Duration(seconds: 3));
     await drainWrites(tester, done: () => savedContains('"panel_3"'));
 
