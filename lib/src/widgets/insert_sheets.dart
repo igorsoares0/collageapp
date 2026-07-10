@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../model/asset_record.dart';
@@ -23,14 +25,51 @@ class GridPreset {
 const List<GridPreset> kGridPresets = [
   GridPreset('2 columns', 2, 1, [(0, 0, 1, 1), (1, 0, 1, 1)]),
   GridPreset('2 rows', 1, 2, [(0, 0, 1, 1), (0, 1, 1, 1)]),
+  GridPreset('3 rows', 1, 3, [(0, 0, 1, 1), (0, 1, 1, 1), (0, 2, 1, 1)]),
+  GridPreset('1 + 2', 2, 2, [(0, 0, 1, 2), (1, 0, 1, 1), (1, 1, 1, 1)]),
+  GridPreset('2 + 1', 2, 2, [(0, 0, 1, 1), (0, 1, 1, 1), (1, 0, 1, 2)]),
   GridPreset('2 × 2', 2, 2, [
     (0, 0, 1, 1),
     (1, 0, 1, 1),
     (0, 1, 1, 1),
     (1, 1, 1, 1),
   ]),
-  GridPreset('1 + 2', 2, 2, [(0, 0, 1, 2), (1, 0, 1, 1), (1, 1, 1, 1)]),
-  GridPreset('2 + 1', 2, 2, [(0, 0, 1, 1), (0, 1, 1, 1), (1, 0, 1, 2)]),
+  GridPreset('1 + 3', 2, 3, [
+    (0, 0, 1, 3),
+    (1, 0, 1, 1),
+    (1, 1, 1, 1),
+    (1, 2, 1, 1),
+  ]),
+  GridPreset('2 + 3', 6, 2, [
+    (0, 0, 3, 1),
+    (3, 0, 3, 1),
+    (0, 1, 2, 1),
+    (2, 1, 2, 1),
+    (4, 1, 2, 1),
+  ]),
+  GridPreset('1 + 4', 2, 4, [
+    (0, 0, 1, 4),
+    (1, 0, 1, 1),
+    (1, 1, 1, 1),
+    (1, 2, 1, 1),
+    (1, 3, 1, 1),
+  ]),
+  GridPreset('2 × 3', 2, 3, [
+    (0, 0, 1, 1),
+    (1, 0, 1, 1),
+    (0, 1, 1, 1),
+    (1, 1, 1, 1),
+    (0, 2, 1, 1),
+    (1, 2, 1, 1),
+  ]),
+  GridPreset('3 + 3', 3, 2, [
+    (0, 0, 1, 1),
+    (1, 0, 1, 1),
+    (2, 0, 1, 1),
+    (0, 1, 1, 1),
+    (1, 1, 1, 1),
+    (2, 1, 1, 1),
+  ]),
   GridPreset('3 × 3', 3, 3, [
     (0, 0, 1, 1),
     (1, 0, 1, 1),
@@ -43,6 +82,25 @@ const List<GridPreset> kGridPresets = [
     (2, 2, 1, 1),
   ]),
 ];
+
+/// A near-square uniform grid for [count] photos — the fallback when no
+/// curated preset matches that count exactly.
+GridPreset autoGridPreset(int count) {
+  final cols = math.sqrt(count).ceil();
+  return GridPreset('Grid', cols, (count + cols - 1) ~/ cols, [
+    for (var i = 0; i < count; i++) (i % cols, i ~/ cols, 1, 1),
+  ]);
+}
+
+/// The layouts suggested for exactly [count] photos: every curated preset
+/// with that many cells, or the auto grid when none matches.
+List<GridPreset> layoutPresetsFor(int count) {
+  final exact = [
+    for (final p in kGridPresets)
+      if (p.cells.length == count) p,
+  ];
+  return exact.isEmpty ? [autoGridPreset(count)] : exact;
+}
 
 /// Bottom sheet of grid layouts; resolves to the chosen preset or null.
 Future<GridPreset?> showGridPresetSheet(BuildContext context) {
@@ -99,6 +157,151 @@ Future<GridPreset?> showGridPresetSheet(BuildContext context) {
       ),
     ),
   );
+}
+
+/// Bottom sheet of layout suggestions for the photos the user just picked:
+/// every preset matching that photo count, drawn as a miniature of the real
+/// collage — the photos cover-fitted into the cells with the same [cellRect]
+/// math the canvas uses. Resolves to the chosen preset or null.
+Future<GridPreset?> showLayoutPickerSheet(
+  BuildContext context, {
+  required List<ImageProvider> photos,
+  required double canvasAspect,
+}) {
+  final presets = layoutPresetsFor(photos.length);
+  return showModalBottomSheet<GridPreset>(
+    context: context,
+    backgroundColor: _surface,
+    builder: (sheetContext) => SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Choose a layout',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              '${photos.length} photos',
+              style: const TextStyle(color: Colors.white54, fontSize: 12),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              height: 176,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                children: [
+                  for (final preset in presets)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 12),
+                      child: InkWell(
+                        onTap: () => Navigator.pop(sheetContext, preset),
+                        borderRadius: BorderRadius.circular(8),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            SizedBox(
+                              height: 150,
+                              child: AspectRatio(
+                                aspectRatio: canvasAspect,
+                                child: DecoratedBox(
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: _FilledLayoutThumb(
+                                    preset: preset,
+                                    photos: photos,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              preset.label,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+/// A preset miniature with the picked photos inside its cells (cover-fitted,
+/// in pick order — exactly how the inserted grid will look).
+class _FilledLayoutThumb extends StatelessWidget {
+  final GridPreset preset;
+  final List<ImageProvider> photos;
+
+  const _FilledLayoutThumb({required this.preset, required this.photos});
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final grid = GridLayer(
+          id: 'preview',
+          hidden: false,
+          x: 0,
+          y: 0,
+          width: constraints.maxWidth,
+          height: constraints.maxHeight,
+          rotation: 0,
+          cols: preset.cols,
+          rows: preset.rows,
+          colFractions: List.filled(preset.cols, 1),
+          rowFractions: List.filled(preset.rows, 1),
+          gutter: 3,
+          cornerRadius: 0,
+          gutterColor: null,
+          cells: [
+            for (final (i, c) in preset.cells.indexed)
+              GridCell(
+                slotId: 'c$i',
+                col: c.$1,
+                row: c.$2,
+                colSpan: c.$3,
+                rowSpan: c.$4,
+              ),
+          ],
+        );
+        return Stack(
+          children: [
+            for (final (i, cell) in grid.cells.indexed)
+              Positioned.fromRect(
+                rect: cellRect(grid, cell),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(2),
+                  child: Image(
+                    image: photos[i % photos.length],
+                    fit: BoxFit.cover,
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
 }
 
 /// Paints a preset's cells with the same [cellRect] math the canvas uses, so

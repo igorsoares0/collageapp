@@ -25,6 +25,8 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^5.0.0
+  # Lets tests swap in a fake gallery picker (photos-first flow).
+  image_picker_platform_interface: ^2.11.1
 
 flutter:
   uses-material-design: true

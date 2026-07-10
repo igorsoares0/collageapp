@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
@@ -468,14 +469,16 @@ class _TemplateScreenState extends State<TemplateScreen>
     });
   }
 
-  /// Adds a fresh image element to the focused panel, centered, and opens the
-  /// gallery right away (an empty image element is useless on its own).
+  /// Adds a fresh image element to the focused panel, centered. With [image]
+  /// the photo lands in the same undo step; without one the gallery opens
+  /// right away (an empty image element is useless on its own).
   /// [frameAssetId]/[aspect] make it a framed photo slot (polaroid etc.) —
   /// the box follows the frame's aspect so the window isn't distorted.
   void _addImageLayer(
     Template template, {
     String? frameAssetId,
     double aspect = 1,
+    ImageProvider? image,
   }) {
     final panel = _focusedPanel(template);
     final token = _uniqueToken('image', template);
@@ -496,21 +499,20 @@ class _TemplateScreenState extends State<TemplateScreen>
     );
     _record();
     setState(() {
-      _content = _content.withAddedLayer(panel.id, layer);
+      var next = _content.withAddedLayer(panel.id, layer);
+      if (image != null) next = next.withImage(token, image);
+      _content = next;
       _focusedPanelId = panel.id;
       _selectedSlot = token;
       _editingSlot = null;
       _backgroundMode = false;
     });
-    _pickImage(token);
+    if (image == null) _pickImage(token);
   }
 
-  /// Adds a grid in the chosen layout, inset from the canvas edges, and
-  /// selects its first cell so the grid chrome and styling bar appear. Cell
-  /// slot ids derive from the grid's unique id, checked as a set so none can
-  /// collide with existing slots.
-  void _addGridLayer(Template template, GridPreset preset) {
-    final panel = _focusedPanel(template);
+  /// A grid id and its cell slot ids unused by the template or anything the
+  /// user added, checked as a set so none can collide with existing slots.
+  (String, List<String>) _uniqueGridIds(Template template, int cellCount) {
     final used = {
       for (final l in _allLayers(template)) l.id,
       ...template.slotIds,
@@ -521,13 +523,21 @@ class _TemplateScreenState extends State<TemplateScreen>
     List<String> cellIds;
     do {
       gridId = 'grid_$n';
-      cellIds = [
-        for (var i = 0; i < preset.cells.length; i++) '${gridId}_c${i + 1}',
-      ];
+      cellIds = [for (var i = 0; i < cellCount; i++) '${gridId}_c${i + 1}'];
       n++;
     } while (used.contains(gridId) || cellIds.any(used.contains));
+    return (gridId, cellIds);
+  }
+
+  /// A GridLayer in [preset]'s layout, inset from the canvas edges.
+  GridLayer _buildGridLayer(
+    Template template,
+    GridPreset preset,
+    String gridId,
+    List<String> cellIds,
+  ) {
     final inset = template.canvasWidth * 0.08;
-    final layer = GridLayer(
+    return GridLayer(
       id: gridId,
       hidden: false,
       x: inset,
@@ -553,11 +563,44 @@ class _TemplateScreenState extends State<TemplateScreen>
           ),
       ],
     );
+  }
+
+  /// Adds an empty grid in the chosen layout and selects its first cell so
+  /// the grid chrome and styling bar appear.
+  void _addGridLayer(Template template, GridPreset preset) {
+    final panel = _focusedPanel(template);
+    final (gridId, cellIds) = _uniqueGridIds(template, preset.cells.length);
+    final layer = _buildGridLayer(template, preset, gridId, cellIds);
     _record();
     setState(() {
       _content = _content.withAddedLayer(panel.id, layer);
       _focusedPanelId = panel.id;
       _selectedSlot = cellIds.first;
+      _editingSlot = null;
+      _backgroundMode = false;
+    });
+  }
+
+  /// Adds [preset] with [images] already in its cells (in pick order) as ONE
+  /// undo step — the photos-first flow's landing point. Nothing ends up
+  /// selected: the result is the collage itself, ready to fine-tune.
+  void _insertFilledGrid(
+    Template template,
+    GridPreset preset,
+    List<ImageProvider> images,
+  ) {
+    final panel = _focusedPanel(template);
+    final (gridId, cellIds) = _uniqueGridIds(template, preset.cells.length);
+    final layer = _buildGridLayer(template, preset, gridId, cellIds);
+    _record();
+    setState(() {
+      var next = _content.withAddedLayer(panel.id, layer);
+      for (var i = 0; i < cellIds.length && i < images.length; i++) {
+        next = next.withImage(cellIds[i], images[i]);
+      }
+      _content = next;
+      _focusedPanelId = panel.id;
+      _selectedSlot = null;
       _editingSlot = null;
       _backgroundMode = false;
     });
@@ -765,6 +808,8 @@ class _TemplateScreenState extends State<TemplateScreen>
     }
   }
 
+  /// Picks ONE photo from the gallery into [slotId] — the flow behind a
+  /// slot's pick icon and the photo bar's Replace.
   Future<void> _pickImage(String slotId) async {
     // maxWidth caps decode memory (canvas is 1080 wide, 2x for sharpness).
     final file = await _picker.pickImage(
@@ -772,18 +817,23 @@ class _TemplateScreenState extends State<TemplateScreen>
       maxWidth: 2160,
     );
     if (file == null) return;
-    final bytes = await file.readAsBytes();
-    // With a project store the photo becomes a project file and rides in the
-    // content as a FileImage (a MemoryImage can't be saved, and its bytes
-    // wouldn't survive a restart anyway). The name is unique per pick:
-    // Flutter's ImageCache keys FileImage by path, and undo snapshots keep
-    // referencing the previous photo's file. Without a store (tests) the
-    // session-only MemoryImage path remains.
-    ImageProvider image = MemoryImage(bytes);
+    final image = await _persistImage(await file.readAsBytes());
+    if (!mounted) return;
+    _edit(_content.withImage(slotId, image));
+  }
+
+  /// Turns picked photo bytes into the ImageProvider the content stores.
+  /// With a project store the photo becomes a project file and rides in the
+  /// content as a FileImage (a MemoryImage can't be saved, and its bytes
+  /// wouldn't survive a restart anyway). The name is unique per pick:
+  /// Flutter's ImageCache keys FileImage by path, and undo snapshots keep
+  /// referencing the previous photo's file. Without a store (tests) the
+  /// session-only MemoryImage path remains.
+  Future<ImageProvider> _persistImage(Uint8List bytes) async {
     final store = widget.projects;
     if (store != null) {
       try {
-        image = FileImage(
+        return FileImage(
           await store.saveImage(
             _projectId ??= _newProjectId(),
             'img_${DateTime.now().millisecondsSinceEpoch}_${_imageSeq++}.jpg',
@@ -794,8 +844,39 @@ class _TemplateScreenState extends State<TemplateScreen>
         // Disk full/unwritable: keep the photo usable for this session.
       }
     }
+    return MemoryImage(bytes);
+  }
+
+  /// The toolbar's Photo action — photos first, layout second. A multi-select
+  /// gallery pick: one photo becomes a plain image element; several open the
+  /// layout picker (presets for that exact count, previewed with the actual
+  /// photos) and land as a pre-filled grid, one undo step, nothing selected.
+  Future<void> _insertPhotos(Template template) async {
+    final files = await _picker.pickMultiImage(maxWidth: 2160);
+    if (files.isEmpty) return;
+    final bytesList = <Uint8List>[
+      for (final file in files) await file.readAsBytes(),
+    ];
     if (!mounted) return;
-    _edit(_content.withImage(slotId, image));
+    if (bytesList.length == 1) {
+      final image = await _persistImage(bytesList.single);
+      if (!mounted) return;
+      _addImageLayer(template, image: image);
+      return;
+    }
+    // Previews stay in memory; the photos are only persisted to project
+    // files after the user commits to a layout (cancelling leaves no files).
+    final preset = await showLayoutPickerSheet(
+      context,
+      photos: [for (final bytes in bytesList) MemoryImage(bytes)],
+      canvasAspect: template.canvasWidth / template.canvasHeight,
+    );
+    if (preset == null || !mounted) return;
+    final images = <ImageProvider>[
+      for (final bytes in bytesList) await _persistImage(bytes),
+    ];
+    if (!mounted) return;
+    _insertFilledGrid(template, preset, images);
   }
 
   /// Tapping a slot selects it (shows the handles for move/resize). A text
@@ -1474,7 +1555,7 @@ class _TemplateScreenState extends State<TemplateScreen>
     return EditorToolbar(
       onLayout: () => _insertGrid(template),
       onText: () => _addTextLayer(template),
-      onPhoto: () => _addImageLayer(template),
+      onPhoto: () => _insertPhotos(template),
       onSticker: () => _insertAsset(template),
       onBackground: () => setState(() => _backgroundMode = true),
       onPanel: () => _addPanel(template),
