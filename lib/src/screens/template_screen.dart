@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show HapticFeedback;
 import 'package:image_picker/image_picker.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -67,7 +69,7 @@ class TemplateScreen extends StatefulWidget {
 /// inset is added at build time). Sized to the TALLEST bar (the text styling
 /// bar) and reserved in EVERY state, so the canvas area — and thus the canvas
 /// size — never changes when a different bar shows or a slot is selected.
-const double _kBottomBarHeight = 164;
+const double _kBottomBarHeight = 196;
 
 class _TemplateScreenState extends State<TemplateScreen>
     with WidgetsBindingObserver {
@@ -291,6 +293,12 @@ class _TemplateScreenState extends State<TemplateScreen>
       snapped = result.offset;
       xs = result.guideXs;
       ys = result.guideYs;
+    }
+    // A tick the moment the element locks onto a (new) guide — not on every
+    // frame it stays snapped.
+    if ((xs.isNotEmpty || ys.isNotEmpty) &&
+        (!listEquals(xs, _guideXs) || !listEquals(ys, _guideYs))) {
+      HapticFeedback.selectionClick();
     }
     _record('drag:$slotId');
     setState(() {
@@ -733,6 +741,168 @@ class _TemplateScreenState extends State<TemplateScreen>
     });
   }
 
+  /// Duplicates the selected element as a user-added layer on the focused
+  /// panel, one undo step, and selects the copy. Styling overrides (font,
+  /// color, grid spacing, …) are BAKED into the copied layer — the copy then
+  /// owns them — while content (text, photos) and transform overrides are
+  /// carried over, with the offset nudged so the copy is visibly its own
+  /// element. Template layers duplicate into added layers; the template
+  /// itself is never touched. [targetId] is the gesture target id, like
+  /// [_deleteSelected]'s.
+  void _duplicateSelected(Template template, String targetId) {
+    Layer? source;
+    for (final layer in _allLayers(template)) {
+      final hit = switch (layer) {
+        ImageLayer l => l.slotId == targetId,
+        TextLayer l => l.slotId == targetId,
+        StickerLayer l => l.id == targetId,
+        GridLayer l => l.id == targetId,
+        _ => false,
+      };
+      if (hit) {
+        source = layer;
+        break;
+      }
+    }
+    if (source == null) return;
+    final panel = _focusedPanel(template);
+    final nudge = Offset(
+      template.canvasWidth * 0.04,
+      template.canvasWidth * 0.04,
+    );
+
+    final String selectKey;
+    SlotContent next;
+    switch (source) {
+      case TextLayer l:
+        final token = _uniqueToken('text', template);
+        selectKey = token;
+        next = _content.withAddedLayer(
+          panel.id,
+          TextLayer(
+            id: token,
+            hidden: false,
+            slotId: token,
+            x: l.x,
+            y: l.y,
+            width: l.width,
+            fontFamily: _content.fontFor(l.slotId) ?? l.fontFamily,
+            fontSize: l.fontSize,
+            fontWeight: _content.weightFor(l.slotId) ?? l.fontWeight,
+            color: _content.colorFor(l.slotId) ?? l.color,
+            alignment: _content.alignmentFor(l.slotId) ?? l.alignment,
+          ),
+        );
+        final text = _content.textFor(l.slotId);
+        if (text != null) next = next.withText(token, text);
+        next = _copyTransforms(next, l.slotId, token, nudge);
+      case ImageLayer l:
+        final token = _uniqueToken('image', template);
+        selectKey = token;
+        next = _content.withAddedLayer(
+          panel.id,
+          ImageLayer(
+            id: token,
+            hidden: false,
+            slotId: token,
+            x: l.x,
+            y: l.y,
+            width: l.width,
+            height: l.height,
+            rotation: l.rotation,
+            opacity: l.opacity,
+            borderRadius: l.borderRadius,
+            frameAssetId: l.frameAssetId,
+          ),
+        );
+        // Both slots reference the same photo file; the cleanup on dispose
+        // keeps any file the content still points at.
+        final image = _content.imageFor(l.slotId);
+        if (image != null) next = next.withImage(token, image);
+        next = _copyTransforms(next, l.slotId, token, nudge);
+      case StickerLayer l:
+        final token = _uniqueToken('sticker', template);
+        selectKey = token;
+        next = _content.withAddedLayer(
+          panel.id,
+          StickerLayer(
+            id: token,
+            hidden: false,
+            assetId: l.assetId,
+            x: l.x,
+            y: l.y,
+            width: l.width,
+            height: l.height,
+          ),
+        );
+        next = _copyTransforms(next, l.id, token, nudge);
+      case GridLayer l:
+        final (gridId, cellIds) = _uniqueGridIds(template, l.cells.length);
+        selectKey = cellIds.first;
+        next = _content.withAddedLayer(
+          panel.id,
+          GridLayer(
+            id: gridId,
+            hidden: false,
+            x: l.x,
+            y: l.y,
+            width: l.width,
+            height: l.height,
+            rotation: l.rotation,
+            cols: l.cols,
+            rows: l.rows,
+            colFractions: _content.gridColFractions(l.id, l.colFractions),
+            rowFractions: _content.gridRowFractions(l.id, l.rowFractions),
+            gutter: _content.gridGutter(l.id, l.gutter),
+            cornerRadius: _content.gridCornerRadius(l.id, l.cornerRadius),
+            gutterColor: l.gutterColor,
+            cells: [
+              for (final (i, c) in l.cells.indexed)
+                GridCell(
+                  slotId: cellIds[i],
+                  col: c.col,
+                  row: c.row,
+                  colSpan: c.colSpan,
+                  rowSpan: c.rowSpan,
+                  borderRadius: c.borderRadius,
+                ),
+            ],
+          ),
+        );
+        for (final (i, c) in l.cells.indexed) {
+          final image = _content.imageFor(c.slotId);
+          if (image != null) next = next.withImage(cellIds[i], image);
+        }
+        next = _copyTransforms(next, l.id, gridId, nudge);
+      default:
+        return;
+    }
+    _record();
+    setState(() {
+      _content = next;
+      _focusedPanelId = panel.id;
+      _selectedSlot = selectKey;
+      _editingSlot = null;
+      _backgroundMode = false;
+    });
+  }
+
+  /// Carries the per-slot transform overrides from [from] onto [to], with
+  /// the offset nudged by [nudge].
+  SlotContent _copyTransforms(
+    SlotContent content,
+    String from,
+    String to,
+    Offset nudge,
+  ) {
+    var next = content.withOffset(to, content.offsetFor(from) + nudge);
+    final scale = content.scaleFor(from);
+    if (scale != 1) next = next.withScale(to, scale);
+    final rotation = content.rotationFor(from);
+    if (rotation != 0) next = next.withRotation(to, rotation);
+    return next;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -897,6 +1067,18 @@ class _TemplateScreenState extends State<TemplateScreen>
     if (isText && wasSelected) {
       setState(() => _editingSlot = slotId);
     }
+  }
+
+  /// Applies a rotation gesture with angle snapping: the raw angle arrives
+  /// every frame, so the snap is stateless — the element locks onto straight
+  /// angles (0°/45°/90°…) and escapes as soon as the raw angle leaves the
+  /// reach. A tick marks the moment it locks on.
+  void _rotateSelected(String slotId, double degrees) {
+    final snapped = snapRotation(degrees);
+    if (snapped != degrees && _content.rotationFor(slotId) != snapped) {
+      HapticFeedback.selectionClick();
+    }
+    _edit(_content.withRotation(slotId, snapped), coalesce: 'rotate:$slotId');
   }
 
   /// Opens the gallery for an image slot — triggered only by tapping the
@@ -1303,10 +1485,7 @@ class _TemplateScreenState extends State<TemplateScreen>
                                     _content.withScale(slotId, scale),
                                     coalesce: 'scale:$slotId',
                                   ),
-                                  onSlotRotate: (slotId, degrees) => _edit(
-                                    _content.withRotation(slotId, degrees),
-                                    coalesce: 'rotate:$slotId',
-                                  ),
+                                  onSlotRotate: _rotateSelected,
                                   onGridFractions:
                                       (gridId, columns, fractions) {
                                         _record('fractions:$gridId');
@@ -1392,10 +1571,6 @@ class _TemplateScreenState extends State<TemplateScreen>
                     _content.withScale(slotId, scale),
                     coalesce: 'scale:$slotId',
                   );
-                  void rotateSelected(String slotId, double degrees) => _edit(
-                    _content.withRotation(slotId, degrees),
-                    coalesce: 'rotate:$slotId',
-                  );
                   final box = _selectionBox;
                   Widget body = scroll;
                   if (target != null && box != null && box.$1 == target.$1) {
@@ -1413,7 +1588,7 @@ class _TemplateScreenState extends State<TemplateScreen>
                             templateRotation: target.$2,
                             onDrag: dragSelected,
                             onScaleChange: scaleSelected,
-                            onRotateChange: rotateSelected,
+                            onRotateChange: _rotateSelected,
                             onDelete: (id) => _deleteSelected(template, id),
                           ),
                         ),
@@ -1432,7 +1607,7 @@ class _TemplateScreenState extends State<TemplateScreen>
                       screenToTemplate: () => _screenToTemplate(template),
                       onDrag: dragSelected,
                       onScaleChange: scaleSelected,
-                      onRotateChange: rotateSelected,
+                      onRotateChange: _rotateSelected,
                       child: body,
                     );
                   }
@@ -1480,6 +1655,12 @@ class _TemplateScreenState extends State<TemplateScreen>
         onBoldToggle: () => _edit(
           _content.withWeight(textLayer.slotId, weight >= 700 ? 400 : 700),
         ),
+        scale: _content.scaleFor(textLayer.slotId),
+        onScale: (v) => _edit(
+          _content.withScale(textLayer.slotId, v),
+          coalesce: 'scale:${textLayer.slotId}',
+        ),
+        onDuplicate: () => _duplicateSelected(template, textLayer.slotId),
         onDelete: () => _deleteSelected(template, textLayer.slotId),
         onDone: _closeContextBar,
       );
@@ -1500,6 +1681,7 @@ class _TemplateScreenState extends State<TemplateScreen>
           _content.withGridCornerRadius(g.id, v),
           coalesce: 'corner:${g.id}',
         ),
+        onDuplicate: () => _duplicateSelected(template, g.id),
         onDelete: () => _deleteSelected(template, g.id),
         onDone: _closeContextBar,
       );
@@ -1508,6 +1690,7 @@ class _TemplateScreenState extends State<TemplateScreen>
     if (imageLayer != null) {
       return ContextBarShell(
         title: 'Photo',
+        onDuplicate: () => _duplicateSelected(template, imageLayer.slotId),
         onDelete: () => _deleteSelected(template, imageLayer.slotId),
         onDone: _closeContextBar,
         child: Align(
@@ -1527,6 +1710,7 @@ class _TemplateScreenState extends State<TemplateScreen>
     if (stickerLayer != null) {
       return ContextBarShell(
         title: 'Sticker',
+        onDuplicate: () => _duplicateSelected(template, stickerLayer.id),
         onDelete: () => _deleteSelected(template, stickerLayer.id),
         onDone: _closeContextBar,
         child: const Padding(

@@ -89,3 +89,12 @@ import 'dart:ui';
     guideYs: [if (y.guide != null) y.guide!],
   );
 }
+
+/// Snaps a rotation gesture's RAW angle to the nearest multiple of [step]
+/// (0°, 45°, 90°, …) when within [reach]. Stateless on purpose: the raw
+/// angle arrives every frame, so the element locks onto straight angles and
+/// escapes the moment the raw angle leaves the reach.
+double snapRotation(double degrees, {double step = 45, double reach = 5}) {
+  final nearest = (degrees / step).round() * step;
+  return (degrees - nearest).abs() <= reach ? nearest.toDouble() : degrees;
+}

@@ -50,20 +50,25 @@ const List<Color> kColorChoices = [
 
 const Color _accent = Color(0xFF3B82F6);
 
-/// Contextual bar shown while a text slot is selected: alignment/bold plus
-/// typeface and color for that slot. The choice is a per-slot override stored
-/// in SlotContent, never a mutation of the template. Delete/Done live in the
-/// first row (a separate header would push the bar past the fixed strip
-/// height), so this bar builds its own frame instead of [ContextBarShell].
+/// Contextual bar shown while a text slot is selected: alignment/bold, a
+/// size slider (driving the slot's scale override — same thing the pinch
+/// does, but discoverable), plus typeface and color for that slot. Every
+/// choice is a per-slot override stored in SlotContent, never a mutation of
+/// the template. Duplicate/Delete/Done live in the first row (a separate
+/// header would push the bar past the fixed strip height), so this bar
+/// builds its own frame instead of [ContextBarShell].
 class TextStyleBar extends StatelessWidget {
   final String currentFont;
   final Color currentColor;
   final String currentAlignment;
   final bool isBold;
+  final double scale;
   final ValueChanged<String> onFont;
   final ValueChanged<Color> onColor;
   final ValueChanged<String> onAlignment;
   final VoidCallback onBoldToggle;
+  final ValueChanged<double> onScale;
+  final VoidCallback onDuplicate;
   final VoidCallback onDelete;
   final VoidCallback onDone;
 
@@ -73,10 +78,13 @@ class TextStyleBar extends StatelessWidget {
     required this.currentColor,
     required this.currentAlignment,
     required this.isBold,
+    required this.scale,
     required this.onFont,
     required this.onColor,
     required this.onAlignment,
     required this.onBoldToggle,
+    required this.onScale,
+    required this.onDuplicate,
     required this.onDelete,
     required this.onDone,
   });
@@ -118,6 +126,15 @@ class TextStyleBar extends StatelessWidget {
                 const Spacer(),
                 IconButton(
                   icon: const Icon(
+                    Icons.content_copy,
+                    size: 18,
+                    color: Colors.white70,
+                  ),
+                  tooltip: 'Duplicate',
+                  onPressed: onDuplicate,
+                ),
+                IconButton(
+                  icon: const Icon(
                     Icons.delete_outline,
                     size: 20,
                     color: Colors.white70,
@@ -125,14 +142,38 @@ class TextStyleBar extends StatelessWidget {
                   tooltip: 'Delete',
                   onPressed: onDelete,
                 ),
-                TextButton.icon(
+                // Label-only (no check icon): this row is the tightest of all
+                // the bars on narrow screens.
+                TextButton(
                   onPressed: onDone,
-                  icon: const Icon(Icons.check, size: 18),
-                  label: const Text('Done'),
                   style: TextButton.styleFrom(foregroundColor: _accent),
+                  child: const Text('Done'),
                 ),
                 const SizedBox(width: 4),
               ],
+            ),
+            SizedBox(
+              height: 40,
+              child: Row(
+                children: [
+                  const SizedBox(width: 16),
+                  const Icon(
+                    Icons.format_size,
+                    size: 20,
+                    color: Colors.white70,
+                  ),
+                  Expanded(
+                    child: Slider(
+                      value: scale.clamp(0.25, 3),
+                      min: 0.25,
+                      max: 3,
+                      activeColor: _accent,
+                      onChanged: onScale,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                ],
+              ),
             ),
             SizedBox(
               height: 56,
@@ -185,7 +226,7 @@ class _IconToggle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(8),

@@ -14,6 +14,7 @@ class GridStyleBar extends StatelessWidget {
   final double maxCorner;
   final ValueChanged<double> onGutter;
   final ValueChanged<double> onCorner;
+  final VoidCallback onDuplicate;
   final VoidCallback onDelete;
   final VoidCallback onDone;
 
@@ -25,6 +26,7 @@ class GridStyleBar extends StatelessWidget {
     required this.maxCorner,
     required this.onGutter,
     required this.onCorner,
+    required this.onDuplicate,
     required this.onDelete,
     required this.onDone,
   });
@@ -33,6 +35,7 @@ class GridStyleBar extends StatelessWidget {
   Widget build(BuildContext context) {
     return ContextBarShell(
       title: 'Grid',
+      onDuplicate: onDuplicate,
       onDelete: onDelete,
       onDone: onDone,
       child: Column(

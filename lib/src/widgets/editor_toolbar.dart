@@ -124,11 +124,13 @@ class ToolButton extends StatelessWidget {
 }
 
 /// Frame shared by the contextual bars: a header naming what is selected,
-/// optional Delete, and an explicit Done that returns to the toolbar — so the
-/// bottom bar never changes silently. [child] holds the bar's controls.
+/// optional Duplicate/Delete, and an explicit Done that returns to the
+/// toolbar — so the bottom bar never changes silently. [child] holds the
+/// bar's controls.
 class ContextBarShell extends StatelessWidget {
   final String title;
   final VoidCallback onDone;
+  final VoidCallback? onDuplicate;
   final VoidCallback? onDelete;
   final Widget? child;
 
@@ -136,6 +138,7 @@ class ContextBarShell extends StatelessWidget {
     super.key,
     required this.title,
     required this.onDone,
+    this.onDuplicate,
     this.onDelete,
     this.child,
   });
@@ -163,6 +166,16 @@ class ContextBarShell extends StatelessWidget {
                     ),
                   ),
                   const Spacer(),
+                  if (onDuplicate != null)
+                    IconButton(
+                      icon: const Icon(
+                        Icons.content_copy,
+                        size: 18,
+                        color: Colors.white70,
+                      ),
+                      tooltip: 'Duplicate',
+                      onPressed: onDuplicate,
+                    ),
                   if (onDelete != null)
                     IconButton(
                       icon: const Icon(
