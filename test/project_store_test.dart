@@ -169,6 +169,8 @@ void main() {
       images: {'img': FileImage(photo)},
       offsets: const {'img': Offset(12.5, -30)},
       scales: const {'img': 1.5},
+      stretchX: const {'img': 1.25},
+      stretchY: const {'img': 0.8},
       rotations: const {'img': 45},
       colors: const {'txt': Color(0xFF224466)},
       fonts: const {'txt': 'Lobster'},
@@ -212,6 +214,8 @@ void main() {
     expect((c.images['img']! as FileImage).file.path, endsWith('img_1.jpg'));
     expect(c.offsets, {'img': const Offset(12.5, -30)});
     expect(c.scales, {'img': 1.5});
+    expect(c.stretchX, {'img': 1.25});
+    expect(c.stretchY, {'img': 0.8});
     expect(c.rotations, {'img': 45});
     expect(c.colors, {'txt': const Color(0xFF224466)});
     expect(c.fonts, {'txt': 'Lobster'});
@@ -248,6 +252,10 @@ void main() {
     await photo.delete();
     final loaded = (await store.load('p_1'))!;
     expect(loaded.content.images, isEmpty);
+    // Documents saved before the edge-stretch feature carry no stretch
+    // sections; they decode to the neutral factor.
+    expect(loaded.content.stretchXFor('img'), 1.0);
+    expect(loaded.content.stretchYFor('img'), 1.0);
   });
 
   test(

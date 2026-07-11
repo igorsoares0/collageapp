@@ -62,6 +62,13 @@ class SlotContent {
   final Map<String, Offset> offsets;
   final Map<String, double> scales;
 
+  /// Per-axis stretch factors from the edge handles, multiplying the layer's
+  /// LAYOUT width/height (not the paint transform, so images re-run their
+  /// BoxFit and text re-wraps instead of distorting). Independent of the
+  /// uniform [scales] factor; a missing entry means 1.0.
+  final Map<String, double> stretchX;
+  final Map<String, double> stretchY;
+
   /// User rotation override per slot, in degrees clockwise. This is added on
   /// top of the layer's own template rotation (image layers carry one; text
   /// layers don't), so the slot rotates from wherever the designer placed it.
@@ -109,6 +116,8 @@ class SlotContent {
     this.images = const {},
     this.offsets = const {},
     this.scales = const {},
+    this.stretchX = const {},
+    this.stretchY = const {},
     this.rotations = const {},
     this.colors = const {},
     this.fonts = const {},
@@ -126,6 +135,8 @@ class SlotContent {
   ImageProvider? imageFor(String slotId) => images[slotId];
   Offset offsetFor(String slotId) => offsets[slotId] ?? Offset.zero;
   double scaleFor(String slotId) => scales[slotId] ?? 1.0;
+  double stretchXFor(String slotId) => stretchX[slotId] ?? 1.0;
+  double stretchYFor(String slotId) => stretchY[slotId] ?? 1.0;
 
   /// The user's rotation override for [slotId] in degrees (0 = none). Added to
   /// the layer's own template rotation at render time.
@@ -193,6 +204,12 @@ class SlotContent {
 
   SlotContent withScale(String slotId, double value) =>
       _copy(scales: {...scales, slotId: value});
+
+  SlotContent withStretchX(String slotId, double value) =>
+      _copy(stretchX: {...stretchX, slotId: value});
+
+  SlotContent withStretchY(String slotId, double value) =>
+      _copy(stretchY: {...stretchY, slotId: value});
 
   SlotContent withRotation(String slotId, double degrees) =>
       _copy(rotations: {...rotations, slotId: degrees});
@@ -308,6 +325,8 @@ class SlotContent {
     Map<String, ImageProvider>? images,
     Map<String, Offset>? offsets,
     Map<String, double>? scales,
+    Map<String, double>? stretchX,
+    Map<String, double>? stretchY,
     Map<String, double>? rotations,
     Map<String, Color>? colors,
     Map<String, String>? fonts,
@@ -324,6 +343,8 @@ class SlotContent {
     images: images ?? this.images,
     offsets: offsets ?? this.offsets,
     scales: scales ?? this.scales,
+    stretchX: stretchX ?? this.stretchX,
+    stretchY: stretchY ?? this.stretchY,
     rotations: rotations ?? this.rotations,
     colors: colors ?? this.colors,
     fonts: fonts ?? this.fonts,

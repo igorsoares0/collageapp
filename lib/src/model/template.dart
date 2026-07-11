@@ -485,6 +485,8 @@ Rect cellRect(
   List<double>? colFractions,
   List<double>? rowFractions,
   double? gutter,
+  double? width,
+  double? height,
 }) {
   final colF = colFractions ?? grid.colFractions;
   final rowF = rowFractions ?? grid.rowFractions;
@@ -492,8 +494,8 @@ Rect cellRect(
   final rs = cell.rowSpan < 1 ? 1 : cell.rowSpan;
   final g = gutter ?? grid.gutter;
 
-  final usableW = math.max(0.0, grid.width - g * (grid.cols + 1));
-  final usableH = math.max(0.0, grid.height - g * (grid.rows + 1));
+  final usableW = math.max(0.0, (width ?? grid.width) - g * (grid.cols + 1));
+  final usableH = math.max(0.0, (height ?? grid.height) - g * (grid.rows + 1));
   final sc = _sum(colF) == 0 ? 1.0 : _sum(colF);
   final sr = _sum(rowF) == 0 ? 1.0 : _sum(rowF);
 

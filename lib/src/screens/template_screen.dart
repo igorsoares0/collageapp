@@ -318,11 +318,15 @@ class _TemplateScreenState extends State<TemplateScreen>
   /// exactly what center guides track.) Text height isn't in the model; it
   /// comes from the measured selection box.
   Rect? _dragTargetBox(Template template, String key) {
+    // Edge stretch grows the LAYOUT box (top-left pinned), so the snapped
+    // box is the model box with the stretched dimensions.
+    final fx = _content.stretchXFor(key);
+    final fy = _content.stretchYFor(key);
     for (final layer in _allLayers(template)) {
       switch (layer) {
         case ImageLayer l when l.slotId == key:
           if (l.rotation != 0) return null;
-          return Rect.fromLTWH(l.x, l.y, l.width, l.height);
+          return Rect.fromLTWH(l.x, l.y, l.width * fx, l.height * fy);
         case TextLayer l when l.slotId == key:
           final box = _selectionBox;
           if (box == null || box.$1 != key) return null;
@@ -332,17 +336,18 @@ class _TemplateScreenState extends State<TemplateScreen>
           // the snapped box is the measured one, shifted by the alignment.
           final w = box.$2.width - pad;
           if (h <= 0 || w <= 0) return null;
+          final frameW = l.width * fx;
           final dx = switch (_content.alignmentFor(key) ?? l.alignment) {
-            'center' => (l.width - w) / 2,
-            'right' => l.width - w,
+            'center' => (frameW - w) / 2,
+            'right' => frameW - w,
             _ => 0.0,
           };
           return Rect.fromLTWH(l.x + dx, l.y, w, h);
         case StickerLayer l when l.id == key:
-          return Rect.fromLTWH(l.x, l.y, l.width, l.height);
+          return Rect.fromLTWH(l.x, l.y, l.width * fx, l.height * fy);
         case GridLayer l when l.id == key:
           if (l.rotation != 0) return null;
-          return Rect.fromLTWH(l.x, l.y, l.width, l.height);
+          return Rect.fromLTWH(l.x, l.y, l.width * fx, l.height * fy);
         default:
       }
     }
@@ -378,11 +383,19 @@ class _TemplateScreenState extends State<TemplateScreen>
       }
       if (_content.rotationFor(key) != 0) continue;
       final s = _content.scaleFor(key);
+      // Painted bounds: the LAYOUT box stretched from its top-left, then
+      // scaled around the stretched box's center, then user-offset.
+      final stretched = Rect.fromLTWH(
+        box.left,
+        box.top,
+        box.width * _content.stretchXFor(key),
+        box.height * _content.stretchYFor(key),
+      );
       targets.add(
         Rect.fromCenter(
-          center: box.center + _content.offsetFor(key),
-          width: box.width * s,
-          height: box.height * s,
+          center: stretched.center + _content.offsetFor(key),
+          width: stretched.width * s,
+          height: stretched.height * s,
         ),
       );
     }
@@ -898,6 +911,10 @@ class _TemplateScreenState extends State<TemplateScreen>
     var next = content.withOffset(to, content.offsetFor(from) + nudge);
     final scale = content.scaleFor(from);
     if (scale != 1) next = next.withScale(to, scale);
+    final stretchX = content.stretchXFor(from);
+    if (stretchX != 1) next = next.withStretchX(to, stretchX);
+    final stretchY = content.stretchYFor(from);
+    if (stretchY != 1) next = next.withStretchY(to, stretchY);
     final rotation = content.rotationFor(from);
     if (rotation != 0) next = next.withRotation(to, rotation);
     return next;
@@ -1079,6 +1096,25 @@ class _TemplateScreenState extends State<TemplateScreen>
       HapticFeedback.selectionClick();
     }
     _edit(_content.withRotation(slotId, snapped), coalesce: 'rotate:$slotId');
+  }
+
+  /// Applies an edge-pill drag: the new single-axis stretch factor plus the
+  /// offset compensation that keeps the opposite edge fixed (Canva-style),
+  /// in ONE edit so undo restores both together.
+  void _edgeResizeSelected(
+    String slotId,
+    SlotEdge edge,
+    double factor,
+    Offset offsetDelta,
+  ) {
+    final horizontal = edge == SlotEdge.left || edge == SlotEdge.right;
+    _edit(
+      (horizontal
+              ? _content.withStretchX(slotId, factor)
+              : _content.withStretchY(slotId, factor))
+          .withOffset(slotId, _content.offsetFor(slotId) + offsetDelta),
+      coalesce: 'stretch:$slotId',
+    );
   }
 
   /// Opens the gallery for an image slot — triggered only by tapping the
@@ -1349,23 +1385,26 @@ class _TemplateScreenState extends State<TemplateScreen>
 
   /// What the selection overlay manipulates for [_selectedSlot]: the gesture
   /// target id (the slot id, or the LAYER id when a grid cell is selected —
-  /// moving/resizing acts on the whole grid) and the layer's template
-  /// rotation. Null when nothing is selected.
-  (String, double)? _selectionTarget(Template template) {
+  /// moving/resizing acts on the whole grid), the layer's template rotation,
+  /// its model size (pre-stretch, for the edge pills' anchoring math) and
+  /// whether it's text (edge pills then stretch the wrap width only). Null
+  /// when nothing is selected.
+  (String, double, Size, bool)? _selectionTarget(Template template) {
     final slot = _selectedSlot;
     if (slot == null) return null;
     for (final layer in _allLayers(template)) {
       switch (layer) {
         case ImageLayer l when l.slotId == slot:
-          return (l.slotId, l.rotation);
+          return (l.slotId, l.rotation, Size(l.width, l.height), false);
         case TextLayer l when l.slotId == slot:
-          // Text carries no template rotation (mirrors _LayerWidget).
-          return (l.slotId, 0);
+          // Text carries no template rotation (mirrors _LayerWidget) and no
+          // model height (it's automatic).
+          return (l.slotId, 0, Size(l.width, 0), true);
         case StickerLayer l when l.id == slot:
           // Stickers select by layer id and carry no template rotation.
-          return (l.id, 0);
+          return (l.id, 0, Size(l.width, l.height), false);
         case GridLayer l when l.cells.any((c) => c.slotId == slot):
-          return (l.id, l.rotation);
+          return (l.id, l.rotation, Size(l.width, l.height), false);
         default:
       }
     }
@@ -1502,6 +1541,7 @@ class _TemplateScreenState extends State<TemplateScreen>
                                     coalesce: 'scale:$slotId',
                                   ),
                                   onSlotRotate: _rotateSelected,
+                                  onSlotEdgeResize: _edgeResizeSelected,
                                   onGridFractions:
                                       (gridId, columns, fractions) {
                                         _record('fractions:$gridId');
@@ -1602,9 +1642,14 @@ class _TemplateScreenState extends State<TemplateScreen>
                             currentScale: _content.scaleFor(target.$1),
                             currentRotation: _content.rotationFor(target.$1),
                             templateRotation: target.$2,
+                            currentStretchX: _content.stretchXFor(target.$1),
+                            currentStretchY: _content.stretchYFor(target.$1),
+                            baseSize: target.$3,
+                            verticalEdges: !target.$4,
                             onDrag: dragSelected,
                             onScaleChange: scaleSelected,
                             onRotateChange: _rotateSelected,
+                            onEdgeResize: _edgeResizeSelected,
                             onDelete: (id) => _deleteSelected(template, id),
                           ),
                         ),
