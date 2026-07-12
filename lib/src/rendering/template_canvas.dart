@@ -137,14 +137,15 @@ enum SlotEdge { top, right, bottom, left }
 
 /// Edge pill dimensions (pre-scale template px / scale): a capsule lying along
 /// its edge — wide on top/bottom, tall on left/right.
-const double _kEdgePillLength = 64.0;
-const double _kEdgePillThickness = 18.0;
+const double _kEdgePillLength = 100.0;
+const double _kEdgePillThickness = 30.0;
 
 /// Whether a side is long enough to host its edge pill without colliding with
-/// the corner dots (corner dot 52 + pill 64 + breathing room, all /scale).
-/// Shared by the chrome (draw) and the hit zone (grab), so a visible pill is
-/// always grabbable and an absent one never steals the touch.
-bool _edgePillsFit(double sideLen, double scale) => sideLen >= 168.0 / scale;
+/// the corner dots: pill 100 + corner dot 60 is the collision-free minimum
+/// (160), plus 18 of breathing room per side, all /scale. Shared by the
+/// chrome (draw) and the hit zone (grab), so a visible pill is always
+/// grabbable and an absent one never steals the touch.
+bool _edgePillsFit(double sideLen, double scale) => sideLen >= 196.0 / scale;
 
 /// The nearest edge-pill zone within reach of [local], with its center
 /// distance² (for arbitration against the rotate/delete handles, whose zones
@@ -1548,7 +1549,7 @@ class _SelectionChrome extends StatelessWidget {
 
   /// One round corner handle centered at ([cx], [cy]) in the padded space.
   Widget _corner(String key, double cx, double cy) {
-    final dot = 52.0 / scale;
+    final dot = 60.0 / scale;
     return Positioned(
       left: cx - dot / 2,
       top: cy - dot / 2,
