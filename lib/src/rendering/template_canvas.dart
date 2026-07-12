@@ -58,16 +58,32 @@ const double _kMaxSlotScale = 4.0;
 /// template px, divided by the slot scale to stay visually constant) so the
 /// corner handles — which sit on the element corners and spill outward — are
 /// fully touchable. `_slot` shifts the element back by the same amount so it
-/// doesn't move on selection. Must exceed _kCornerReach AND the floating
+/// doesn't move on selection. Must exceed _kResizeReach AND the floating
 /// handles' far edge (_kRotateHandleDrop/_kDeleteHandleRise + glyph radius 30)
 /// so those buttons stay fully inside the touchable chrome box.
 const double kChromePad = 100.0;
 
-/// Radius of each corner's resize touch zone (pre-scale template px / scale).
-/// Starting a one-finger drag within this distance of a corner resizes;
-/// anywhere else moves. Generous so the handles are easy to grab even when the
-/// whole canvas is scaled down to fit the screen.
+/// Radius of the rotate/delete buttons' touch zones (pre-scale template px /
+/// scale). Kept tighter than the resize zones: these buttons float OUTSIDE
+/// the element, so a bigger radius would steal taps meant for the canvas or
+/// neighboring elements.
 const double _kCornerReach = 72.0;
+
+/// Base radius of the corner/edge RESIZE touch zones — more generous than the
+/// glyph buttons because a missed grab silently degrades into an element
+/// move. Capped per element by [_resizeReach].
+const double _kResizeReach = 96.0;
+
+/// The effective resize-zone radius for an element: [_kResizeReach], but
+/// never more than 45% of the shorter side — so the four corner and four
+/// edge zones can never swallow the interior, and dragging the middle of a
+/// small element still MOVES it.
+double _resizeReach(Size size, double scale) {
+  final pad = kChromePad / scale;
+  final w = size.width - 2 * pad;
+  final h = size.height - 2 * pad;
+  return math.min(_kResizeReach / scale, 0.45 * math.min(w, h));
+}
 
 /// How far below the element's bottom edge the rotation handle floats (pre-
 /// scale template px / scale). Far enough that the glyph clears the bottom
@@ -87,7 +103,7 @@ const double _kDeleteHandleRise = 68.0;
 /// and _RingHitRegion (which touches the overlay claims at all).
 bool _nearCornerZone(Offset local, Size size, double scale) {
   final pad = kChromePad / scale;
-  final reach = _kCornerReach / scale;
+  final reach = _resizeReach(size, scale);
   final w = size.width - 2 * pad;
   final h = size.height - 2 * pad;
   final corners = [
@@ -163,21 +179,28 @@ bool _edgePillsFit(double sideLen, double scale) => sideLen >= 196.0 / scale;
   bool vertical = true,
 }) {
   final pad = kChromePad / scale;
-  final reach = _kCornerReach / scale;
+  final reach = _resizeReach(size, scale);
+  final half = _kEdgePillLength / 2 / scale;
   final w = size.width - 2 * pad;
   final h = size.height - 2 * pad;
   final horizontalPills = vertical && _edgePillsFit(w, scale);
   final verticalPills = _edgePillsFit(h, scale);
-  final mids = <(SlotEdge, Offset, bool)>[
-    (SlotEdge.top, Offset(pad + w / 2, pad), horizontalPills),
-    (SlotEdge.bottom, Offset(pad + w / 2, pad + h), horizontalPills),
-    (SlotEdge.left, Offset(pad, pad + h / 2), verticalPills),
-    (SlotEdge.right, Offset(pad + w, pad + h / 2), verticalPills),
+  // The zone is a CAPSULE around the pill, not a circle around its center:
+  // distance to the pill's segment, so a grab near either tip still counts.
+  // [horizontal] is the pill's long axis, along its edge.
+  final mids = <(SlotEdge, Offset, bool, bool)>[
+    (SlotEdge.top, Offset(pad + w / 2, pad), true, horizontalPills),
+    (SlotEdge.bottom, Offset(pad + w / 2, pad + h), true, horizontalPills),
+    (SlotEdge.left, Offset(pad, pad + h / 2), false, verticalPills),
+    (SlotEdge.right, Offset(pad + w, pad + h / 2), false, verticalPills),
   ];
   (SlotEdge, double)? best;
-  for (final (edge, mid, exists) in mids) {
+  for (final (edge, mid, horizontal, exists) in mids) {
     if (!exists) continue;
-    final d2 = (local - mid).distanceSquared;
+    final along = horizontal ? local.dx - mid.dx : local.dy - mid.dy;
+    final across = horizontal ? local.dy - mid.dy : local.dx - mid.dx;
+    final overshoot = math.max(0.0, along.abs() - half);
+    final d2 = overshoot * overshoot + across * across;
     if (d2 <= reach * reach && (best == null || d2 < best.$2)) {
       best = (edge, d2);
     }

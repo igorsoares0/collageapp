@@ -169,11 +169,12 @@ void main() {
   ) async {
     final h = await pumpHarness(tester);
 
-    // (560,240): on the chrome ring's top-right diagonal, past the canvas
+    // (565,205): on the chrome ring's top-right diagonal, past the canvas
     // edge (x=500) and outside every handle zone — with the edge pills the
     // straight ring bands between the corners now resize, so a plain ring
-    // move has to start in a diagonal gap.
-    final gesture = await tester.startGesture(const Offset(560, 240));
+    // move has to start in a diagonal gap (60 screen px from the corner,
+    // beyond the 45 the widened resize zones reach).
+    final gesture = await tester.startGesture(const Offset(565, 205));
     // First move eats the touch slop; the second is delivered in full.
     await gesture.moveBy(const Offset(40, 0));
     await tester.pump();
