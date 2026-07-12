@@ -58,8 +58,10 @@ const double _kMaxSlotScale = 4.0;
 /// template px, divided by the slot scale to stay visually constant) so the
 /// corner handles — which sit on the element corners and spill outward — are
 /// fully touchable. `_slot` shifts the element back by the same amount so it
-/// doesn't move on selection. Must exceed _kCornerReach.
-const double kChromePad = 80.0;
+/// doesn't move on selection. Must exceed _kCornerReach AND the floating
+/// handles' far edge (_kRotateHandleDrop/_kDeleteHandleRise + glyph radius 30)
+/// so those buttons stay fully inside the touchable chrome box.
+const double kChromePad = 100.0;
 
 /// Radius of each corner's resize touch zone (pre-scale template px / scale).
 /// Starting a one-finger drag within this distance of a corner resizes;
@@ -68,14 +70,15 @@ const double kChromePad = 80.0;
 const double _kCornerReach = 72.0;
 
 /// How far below the element's bottom edge the rotation handle floats (pre-
-/// scale template px / scale). Kept under [kChromePad] so the handle — and its
-/// touch zone — stay inside the chrome's hit region that _SlotGestures covers.
-const double _kRotateHandleDrop = 44.0;
+/// scale template px / scale). Far enough that the glyph clears the bottom
+/// edge pill (half-thickness 17 + gap), yet kept under [kChromePad] so the
+/// handle stays inside the chrome's hit region that _SlotGestures covers.
+const double _kRotateHandleDrop = 68.0;
 
 /// How far above the element's top edge the delete handle floats (pre-scale
 /// template px / scale) — the rotation handle's mirror on the opposite edge,
 /// under the same [kChromePad] constraint.
-const double _kDeleteHandleRise = 44.0;
+const double _kDeleteHandleRise = 68.0;
 
 /// True when [local] is within reach of one of the element's four corners —
 /// the resize zones. [size] is the PADDED chrome box; corners are axis-aligned
@@ -137,12 +140,12 @@ enum SlotEdge { top, right, bottom, left }
 
 /// Edge pill dimensions (pre-scale template px / scale): a capsule lying along
 /// its edge — wide on top/bottom, tall on left/right.
-const double _kEdgePillLength = 100.0;
-const double _kEdgePillThickness = 30.0;
+const double _kEdgePillLength = 112.0;
+const double _kEdgePillThickness = 34.0;
 
 /// Whether a side is long enough to host its edge pill without colliding with
-/// the corner dots: pill 100 + corner dot 60 is the collision-free minimum
-/// (160), plus 18 of breathing room per side, all /scale. Shared by the
+/// the corner dots: pill 112 + corner dot 60 is the collision-free minimum
+/// (172), plus 12 of breathing room per side, all /scale. Shared by the
 /// chrome (draw) and the hit zone (grab), so a visible pill is always
 /// grabbable and an absent one never steals the touch.
 bool _edgePillsFit(double sideLen, double scale) => sideLen >= 196.0 / scale;

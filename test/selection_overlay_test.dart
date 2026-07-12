@@ -245,10 +245,10 @@ void main() {
   testWidgets('tapping the delete handle reports onDelete', (tester) async {
     final h = await pumpHarness(tester);
 
-    // The delete handle floats 44 leader-local units above the element's
+    // The delete handle floats 68 leader-local units above the element's
     // top-center — template (350,100) → screen (475,250) — so it paints at
-    // screen (475,228). The tap must fire onDelete, not select or move.
-    await tester.tapAt(const Offset(475, 228));
+    // screen (475,216). The tap must fire onDelete, not select or move.
+    await tester.tapAt(const Offset(475, 216));
     await tester.pump();
 
     expect(h.deleted(), ['slot_1']);
@@ -374,12 +374,12 @@ void main() {
   ) async {
     final h = await pumpHarness(tester);
 
-    // (475,372) is the rotation handle's center — 22 screen px below the
+    // (475,384) is the rotation handle's center — 34 screen px below the
     // bottom pill, inside BOTH zones; the closer center (rotate) wins.
-    final gesture = await tester.startGesture(const Offset(475, 372));
-    await gesture.moveBy(const Offset(36, -36));
+    final gesture = await tester.startGesture(const Offset(475, 384));
+    await gesture.moveBy(const Offset(36, -42));
     await tester.pump();
-    await gesture.moveBy(const Offset(36, -36));
+    await gesture.moveBy(const Offset(36, -42));
     await tester.pump();
     await gesture.up();
 
