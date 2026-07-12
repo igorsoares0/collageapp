@@ -294,9 +294,12 @@ class PanelCanvas extends StatelessWidget {
   /// against this plus the bundled seeds; empty = seeds only.
   final List<AssetRecord> assetCatalog;
 
-  /// Dragging a grid divider reports the grid layer's id, whether the COLUMN
-  /// tracks changed (else rows), and the new full fraction list. Store it as a
-  /// SlotContent grid override. Wired only when a grid cell is selected.
+  /// A finished grid-divider drag reports the grid layer's id, whether the
+  /// COLUMN tracks changed (else rows), and the new full fraction list. Store
+  /// it as a SlotContent grid override. Fired ONCE per drag, on release — the
+  /// in-flight drag repaints the grid locally, so per-frame content updates
+  /// (and the whole-screen rebuilds they cause) never happen. Wired only when
+  /// a grid cell is selected.
   final void Function(String gridId, bool columns, List<double> fractions)?
   onGridFractions;
 
@@ -1724,7 +1727,7 @@ class _ImageSlot extends StatelessWidget {
 /// tracks). Each cell is a fillable photo slot the user can pan/zoom within.
 /// The grid element itself isn't moved/rotated by the user here (that's the
 /// designer's job) — only the cell photos are edited.
-class _GridSlot extends StatelessWidget {
+class _GridSlot extends StatefulWidget {
   final GridLayer grid;
   final SlotContent content;
   final List<AssetRecord> assetCatalog;
@@ -1732,6 +1735,9 @@ class _GridSlot extends StatelessWidget {
   final String? selectedSlotId;
   final void Function(String slotId)? onSlotTap;
   final void Function(String slotId)? onPickImage;
+
+  /// Reported ONCE per divider drag, on release — not per pointer delta;
+  /// the in-flight drag repaints locally (see [_GridSlotState]).
   final void Function(String gridId, bool columns, List<double> fractions)?
   onGridFractions;
 
@@ -1753,23 +1759,37 @@ class _GridSlot extends StatelessWidget {
     this.height,
   });
 
-  double get _w => width ?? grid.width;
-  double get _h => height ?? grid.height;
+  @override
+  State<_GridSlot> createState() => _GridSlotState();
+}
+
+class _GridSlotState extends State<_GridSlot> {
+  /// Fractions being live-edited by an in-flight divider drag. Deliberately
+  /// LOCAL state: pushing every pointer delta through onGridFractions rebuilt
+  /// the whole screen per frame (undo bookkeeping, save debounce, every
+  /// panel's layers) and made the drag stutter. The drag repaints only this
+  /// grid; the result is committed upward once, on release.
+  List<double>? _dragColF, _dragRowF;
+
+  GridLayer get grid => widget.grid;
+  double get _w => widget.width ?? grid.width;
+  double get _h => widget.height ?? grid.height;
 
   @override
   Widget build(BuildContext context) {
+    final content = widget.content;
     // Effective (user-overridden) grid values; falling back to the template's.
     final gutter = content.gridGutter(grid.id, grid.gutter);
     final corner = content.gridCornerRadius(grid.id, grid.cornerRadius);
-    final colF = content.gridColFractions(grid.id, grid.colFractions);
-    final rowF = content.gridRowFractions(grid.id, grid.rowFractions);
+    final colF = _dragColF ?? content.gridColFractions(grid.id, grid.colFractions);
+    final rowF = _dragRowF ?? content.gridRowFractions(grid.id, grid.rowFractions);
 
     // Dividers appear once one of this grid's cells is selected (so the user is
     // "in" the grid), and only when a fraction handler is wired.
     final active =
-        onGridFractions != null &&
-        selectedSlotId != null &&
-        grid.cells.any((c) => c.slotId == selectedSlotId);
+        widget.onGridFractions != null &&
+        widget.selectedSlotId != null &&
+        grid.cells.any((c) => c.slotId == widget.selectedSlotId);
 
     Rect rectOf(GridCell cell) => cellRect(
       grid,
@@ -1781,31 +1801,41 @@ class _GridSlot extends StatelessWidget {
       height: _h,
     );
 
-    return SizedBox(
-      width: _w,
-      height: _h,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          // Gutter colour paints behind the cells and shows through the gaps;
-          // absent = transparent (the panel background shows through).
-          if (grid.gutterColor != null)
-            Positioned.fill(child: ColoredBox(color: grid.gutterColor!)),
-          for (final cell in grid.cells)
-            Positioned.fromRect(
-              rect: rectOf(cell),
-              child: _GridCell(
-                slotId: cell.slotId,
-                radius: cell.borderRadius ?? corner,
-                image: content.imageFor(cell.slotId),
-                selected: cell.slotId == selectedSlotId,
-                interactive: interactive,
-                onTap: onSlotTap,
-                onPick: onPickImage,
+    // The outer RepaintBoundary keeps a divider drag's per-frame repaints
+    // from dirtying the panel's export boundary — without it, every OTHER
+    // layer of the panel (photos, text) re-painted on every drag frame. The
+    // per-cell boundaries then confine the repaint to the cells whose rect
+    // actually changed (the two tracks beside the dragged divider).
+    return RepaintBoundary(
+      child: SizedBox(
+        width: _w,
+        height: _h,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            // Gutter colour paints behind the cells and shows through the
+            // gaps; absent = transparent (the panel background shows
+            // through).
+            if (grid.gutterColor != null)
+              Positioned.fill(child: ColoredBox(color: grid.gutterColor!)),
+            for (final cell in grid.cells)
+              Positioned.fromRect(
+                rect: rectOf(cell),
+                child: RepaintBoundary(
+                  child: _GridCell(
+                    slotId: cell.slotId,
+                    radius: cell.borderRadius ?? corner,
+                    image: content.imageFor(cell.slotId),
+                    selected: cell.slotId == widget.selectedSlotId,
+                    interactive: widget.interactive,
+                    onTap: widget.onSlotTap,
+                    onPick: widget.onPickImage,
+                  ),
+                ),
               ),
-            ),
-          if (active) ..._dividers(colF, rowF, gutter),
-        ],
+            if (active) ..._dividers(colF, rowF, gutter),
+          ],
+        ),
       ),
     );
   }
@@ -1814,62 +1844,89 @@ class _GridSlot extends StatelessWidget {
   /// grid's local (unrotated) frame, and a drag's local delta is in that same
   /// frame, so shifting a boundary is a direct px→fraction conversion — no
   /// rotation math even when the grid is rotated.
+  ///
+  /// A boundary only exists where a cell actually ENDS at it — a spanning
+  /// cell crosses it and erases the line there. Each divider's strip covers
+  /// just that extent (leaving the rest of the line free to move the grid),
+  /// and its pill sits on the LARGEST single cell segment, so the handle
+  /// always lies between the two cells it splits and two pills never stack
+  /// into a "+" at the grid centre.
   List<Widget> _dividers(List<double> colF, List<double> rowF, double gutter) {
     const handleW = 40.0;
+    Rect rectOf(GridCell cell) => cellRect(
+      grid,
+      cell,
+      colFractions: colF,
+      rowFractions: rowF,
+      gutter: gutter,
+      width: _w,
+      height: _h,
+    );
+
+    // (strip start, strip end, pill centre) along the boundary's long axis —
+    // null when no cell ends at track [i] (the line is fully erased by
+    // spanning cells), which also drops the divider entirely.
+    (double, double, double)? extentOf(bool columns, int i) {
+      double? start, end;
+      var largest = -1.0, pill = 0.0;
+      for (final cell in grid.cells) {
+        final span = columns ? cell.colSpan : cell.rowSpan;
+        final first = columns ? cell.col : cell.row;
+        if (first + (span < 1 ? 1 : span) - 1 != i) continue;
+        final r = rectOf(cell);
+        final (s, e) = columns ? (r.top, r.bottom) : (r.left, r.right);
+        start = math.min(start ?? s, s);
+        end = math.max(end ?? e, e);
+        if (e - s > largest) {
+          largest = e - s;
+          pill = (s + e) / 2;
+        }
+      }
+      return start == null ? null : (start, end!, pill);
+    }
+
     double colCenter(int i) =>
-        cellRect(
-          grid,
-          GridCell(slotId: '', col: i, row: 0),
-          colFractions: colF,
-          rowFractions: rowF,
-          gutter: gutter,
-          width: _w,
-          height: _h,
-        ).right +
-        gutter / 2;
+        rectOf(GridCell(slotId: '', col: i, row: 0)).right + gutter / 2;
     double rowCenter(int j) =>
-        cellRect(
-          grid,
-          GridCell(slotId: '', col: 0, row: j),
-          colFractions: colF,
-          rowFractions: rowF,
-          gutter: gutter,
-          width: _w,
-          height: _h,
-        ).bottom +
-        gutter / 2;
+        rectOf(GridCell(slotId: '', col: 0, row: j)).bottom + gutter / 2;
 
     return [
       for (var i = 0; i < grid.cols - 1; i++)
-        Positioned(
-          left: colCenter(i) - handleW / 2,
-          top: 0,
-          width: handleW,
-          height: _h,
-          child: _GridDivider(
-            key: ValueKey('grid_div_col_$i'),
-            vertical: true,
-            onDelta: (d) => _shift(true, colF, gutter, i, d),
+        if (extentOf(true, i) case (final start, final end, final pill))
+          Positioned(
+            left: colCenter(i) - handleW / 2,
+            top: start,
+            width: handleW,
+            height: end - start,
+            child: _GridDivider(
+              key: ValueKey('grid_div_col_$i'),
+              vertical: true,
+              pillCenter: pill - start,
+              onDelta: (d) => _shift(true, colF, gutter, i, d),
+              onEnd: () => _commit(true),
+            ),
           ),
-        ),
       for (var j = 0; j < grid.rows - 1; j++)
-        Positioned(
-          left: 0,
-          top: rowCenter(j) - handleW / 2,
-          width: _w,
-          height: handleW,
-          child: _GridDivider(
-            key: ValueKey('grid_div_row_$j'),
-            vertical: false,
-            onDelta: (d) => _shift(false, rowF, gutter, j, d),
+        if (extentOf(false, j) case (final start, final end, final pill))
+          Positioned(
+            left: start,
+            top: rowCenter(j) - handleW / 2,
+            width: end - start,
+            height: handleW,
+            child: _GridDivider(
+              key: ValueKey('grid_div_row_$j'),
+              vertical: false,
+              pillCenter: pill - start,
+              onDelta: (d) => _shift(false, rowF, gutter, j, d),
+              onEnd: () => _commit(false),
+            ),
           ),
-        ),
     ];
   }
 
   /// Moves the boundary between tracks [i] and [i+1] by [deltaPx] (grid-local),
   /// transferring fraction between the two while keeping their sum — clamped so
-  /// neither track collapses.
+  /// neither track collapses. Repaints only this grid (see [_dragColF]).
   void _shift(
     bool columns,
     List<double> fractions,
@@ -1893,31 +1950,51 @@ class _GridSlot extends StatelessWidget {
     final next = List<double>.from(fractions);
     next[i] = fi;
     next[i + 1] = pairFrac - fi;
-    onGridFractions!(grid.id, columns, next);
+    setState(() => columns ? _dragColF = next : _dragRowF = next);
+  }
+
+  /// Drag released: hand the final fractions to the screen (one undo step,
+  /// one save) and drop the local override — the committed content now holds
+  /// the same values, so nothing jumps.
+  void _commit(bool columns) {
+    final next = columns ? _dragColF : _dragRowF;
+    if (next != null) widget.onGridFractions!(grid.id, columns, next);
+    setState(() => columns ? _dragColF = null : _dragRowF = null);
   }
 }
 
-/// A thin, draggable divider between two grid tracks. Visual pill sits on the
-/// boundary; a pan reports its local delta along the relevant axis.
+/// A thin, draggable divider between two grid tracks. The visual pill sits on
+/// the boundary at [pillCenter] — the middle of the largest cell segment the
+/// boundary actually splits, not necessarily the strip's middle; a pan reports
+/// its local delta along the relevant axis.
 class _GridDivider extends StatelessWidget {
   final bool vertical;
+
+  /// Centre of the pill along the strip's long axis, in strip-local px.
+  final double pillCenter;
   final void Function(double deltaPx) onDelta;
+
+  /// The drag finished (released or cancelled) — commit the result.
+  final VoidCallback onEnd;
 
   const _GridDivider({
     super.key,
     required this.vertical,
+    required this.pillCenter,
     required this.onDelta,
+    required this.onEnd,
   });
 
   @override
   Widget build(BuildContext context) {
-    // A short capsule centred on the boundary hints at the drag direction.
+    // A short capsule on the boundary hints at the drag direction.
+    const long = 64.0, thick = 8.0, strip = 40.0;
     final pill = Container(
-      width: vertical ? 8 : 64,
-      height: vertical ? 64 : 8,
+      width: vertical ? thick : long,
+      height: vertical ? long : thick,
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(4),
+        borderRadius: BorderRadius.circular(thick / 2),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.3),
@@ -1930,8 +2007,21 @@ class _GridDivider extends StatelessWidget {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onVerticalDragUpdate: vertical ? null : (d) => onDelta(d.delta.dy),
+      onVerticalDragEnd: vertical ? null : (_) => onEnd(),
+      onVerticalDragCancel: vertical ? null : onEnd,
       onHorizontalDragUpdate: vertical ? (d) => onDelta(d.delta.dx) : null,
-      child: Center(child: pill),
+      onHorizontalDragEnd: vertical ? (_) => onEnd() : null,
+      onHorizontalDragCancel: vertical ? onEnd : null,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Positioned(
+            left: vertical ? (strip - thick) / 2 : pillCenter - long / 2,
+            top: vertical ? pillCenter - long / 2 : (strip - thick) / 2,
+            child: pill,
+          ),
+        ],
+      ),
     );
   }
 }

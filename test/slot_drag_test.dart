@@ -513,12 +513,74 @@ void main() {
     await tester.pump();
     await g.up();
 
-    expect(calls, isNotEmpty);
+    // ONE commit on release with the whole drag accumulated — the in-flight
+    // frames repaint the grid locally instead of updating the content.
+    expect(calls, hasLength(1));
     expect(sawColumns, isTrue);
     // The boundary moved right → the left track grew past its original half.
     expect(calls.last[0], greaterThan(1.0));
     // Sum is preserved (fraction is transferred between the pair).
     expect(calls.last[0] + calls.last[1], closeTo(2.0, 0.0001));
+  });
+
+  testWidgets('a spanning cell trims the crossing divider to its real '
+      'segment', (tester) async {
+    // The user's collage layout: the left cell spans both rows, so the row
+    // boundary only exists in the RIGHT column. Its handle strip (and pill)
+    // must sit there — not run across the whole grid and stack a "+" onto
+    // the column divider at the grid centre.
+    final template = Template.fromJson({
+      'id': 'grid_t',
+      'schemaVersion': 3,
+      'version': 0,
+      'name': 'Grid',
+      'aspectRatio': 'story',
+      'canvas': {'width': 1080, 'height': 1920, 'backgroundColor': '#FFFFFF'},
+      'layers': [
+        {
+          'type': 'grid',
+          'id': 'g',
+          'x': 40,
+          'y': 400,
+          'width': 1000,
+          'height': 1000,
+          'rotation': 0,
+          'cols': 2,
+          'rows': 2,
+          'colFractions': [1, 1],
+          'rowFractions': [1, 1],
+          'gutter': 20,
+          'cornerRadius': 0,
+          'cells': [
+            {'slotId': 'cell_1', 'col': 0, 'row': 0, 'rowSpan': 2},
+            {'slotId': 'cell_2', 'col': 1, 'row': 0},
+            {'slotId': 'cell_3', 'col': 1, 'row': 1},
+          ],
+        },
+      ],
+    });
+    await pump(
+      tester,
+      PanelCanvas(
+        panel: template.panels.first,
+        canvasWidth: template.canvasWidth,
+        canvasHeight: template.canvasHeight,
+        fontResolver: testFontResolver,
+        selectedSlotId: 'cell_1',
+        onSlotTap: (_) {},
+        onGridFractions: (_, _, _) {},
+      ),
+    );
+
+    final colStrip = tester.getRect(find.byKey(const ValueKey('grid_div_col_0')));
+    final rowStrip = tester.getRect(find.byKey(const ValueKey('grid_div_row_0')));
+    // The row strip lives entirely in the right column, past the column
+    // boundary — the spanning left cell erased its left half.
+    expect(rowStrip.left, greaterThanOrEqualTo(colStrip.center.dx));
+    // The column boundary splits the full-height left cell, so its strip
+    // still spans well past the row strip's band on both sides.
+    expect(colStrip.top, lessThan(rowStrip.top - 50));
+    expect(colStrip.bottom, greaterThan(rowStrip.bottom + 50));
   });
 
   testWidgets('selecting a grid cell reveals the whole-grid handles', (
