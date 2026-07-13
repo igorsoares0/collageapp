@@ -1852,7 +1852,7 @@ class _GridSlotState extends State<_GridSlot> {
   /// always lies between the two cells it splits and two pills never stack
   /// into a "+" at the grid centre.
   List<Widget> _dividers(List<double> colF, List<double> rowF, double gutter) {
-    const handleW = 40.0;
+    const handleW = _kGridDividerStrip;
     Rect rectOf(GridCell cell) => cellRect(
       grid,
       cell,
@@ -1963,6 +1963,11 @@ class _GridSlotState extends State<_GridSlot> {
   }
 }
 
+/// Thickness of a grid divider's draggable strip (template px, straddling the
+/// boundary). Wider than the gutter on purpose: the strip is the divider's
+/// whole touch target, so it borrows a margin from each neighboring cell.
+const double _kGridDividerStrip = 72.0;
+
 /// A thin, draggable divider between two grid tracks. The visual pill sits on
 /// the boundary at [pillCenter] — the middle of the largest cell segment the
 /// boundary actually splits, not necessarily the strip's middle; a pan reports
@@ -1988,7 +1993,7 @@ class _GridDivider extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // A short capsule on the boundary hints at the drag direction.
-    const long = 64.0, thick = 8.0, strip = 40.0;
+    const long = 96.0, thick = 16.0, strip = _kGridDividerStrip;
     final pill = Container(
       width: vertical ? thick : long,
       height: vertical ? long : thick,
