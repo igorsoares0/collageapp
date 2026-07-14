@@ -2,22 +2,29 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 
+import '../api/entitlements.dart';
 import '../api/project_store.dart';
 import '../api/template_api.dart';
 import '../api/template_store.dart';
 import '../model/template.dart';
+import 'paywall_screen.dart';
 import 'projects_screen.dart';
 import 'template_screen.dart';
 
 class GalleryScreen extends StatefulWidget {
-  const GalleryScreen({super.key});
+  /// Both are owned by `main()` in production; tests inject fakes.
+  final EntitlementsService? entitlements;
+  final TemplateStore? store;
+
+  const GalleryScreen({super.key, this.entitlements, this.store});
 
   @override
   State<GalleryScreen> createState() => _GalleryScreenState();
 }
 
 class _GalleryScreenState extends State<GalleryScreen> {
-  final _store = TemplateStore();
+  late final _entitlements = widget.entitlements ?? EntitlementsService();
+  late final _store = widget.store ?? TemplateStore();
   // Handed to every editor session so it auto-saves as a project; the
   // projects themselves are listed on ProjectsScreen, not here.
   final _projects = ProjectStore();
@@ -39,10 +46,20 @@ class _GalleryScreenState extends State<GalleryScreen> {
     await next;
   }
 
-  Future<void> _openTemplate(String id) async {
+  Future<void> _openTemplate(TemplateSummary summary) async {
+    // Premium templates can only be seen in the gallery: opening (even just
+    // to edit) goes through the paywall until the `pro` entitlement exists.
+    if (summary.premium && !_entitlements.isPro.value) {
+      final unlocked = await Navigator.of(context).push<bool>(
+        MaterialPageRoute(
+          builder: (_) => PaywallScreen(entitlements: _entitlements),
+        ),
+      );
+      if (unlocked != true || !mounted) return;
+    }
     await Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => TemplateScreen(id: id, projects: _projects),
+        builder: (_) => TemplateScreen(id: summary.id, projects: _projects),
       ),
     );
   }
@@ -133,56 +150,56 @@ class _GalleryScreenState extends State<GalleryScreen> {
 
   Widget _buildTemplatesTab() {
     return FutureBuilder<IndexResult>(
-        future: _index,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState != ConnectionState.done) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      'Could not load templates.\n${snapshot.error}',
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 12),
-                    FilledButton(
-                      onPressed: _refresh,
-                      child: const Text('Retry'),
-                    ),
-                  ],
+      future: _index,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasError) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Could not load templates.\n${snapshot.error}',
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 12),
+                  FilledButton(onPressed: _refresh, child: const Text('Retry')),
+                ],
+              ),
+            ),
+          );
+        }
+        final result = snapshot.data!;
+        final templates = result.templates;
+        return Column(
+          children: [
+            if (result.fromCache)
+              Container(
+                width: double.infinity,
+                color: const Color(0xFF78350F),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
+                child: const Text(
+                  'Offline — showing downloaded templates',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 12),
                 ),
               ),
-            );
-          }
-          final result = snapshot.data!;
-          final templates = result.templates;
-          return Column(
-            children: [
-              if (result.fromCache)
-                Container(
-                  width: double.infinity,
-                  color: const Color(0xFF78350F),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 6,
-                  ),
-                  child: const Text(
-                    'Offline — showing downloaded templates',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 12),
-                  ),
-                ),
-              Expanded(
-                child: templates.isEmpty
-                    ? const Center(child: Text('No templates published yet.'))
-                    : RefreshIndicator(
-                        onRefresh: _refresh,
-                        child: GridView.builder(
+            Expanded(
+              child: templates.isEmpty
+                  ? const Center(child: Text('No templates published yet.'))
+                  : RefreshIndicator(
+                      onRefresh: _refresh,
+                      // Rebuilds when a purchase lands so the locks vanish.
+                      child: ValueListenableBuilder<bool>(
+                        valueListenable: _entitlements.isPro,
+                        builder: (context, isPro, _) => GridView.builder(
                           padding: const EdgeInsets.all(12),
                           gridDelegate:
                               const SliverGridDelegateWithFixedCrossAxisCount(
@@ -194,23 +211,30 @@ class _GalleryScreenState extends State<GalleryScreen> {
                           itemCount: templates.length,
                           itemBuilder: (context, i) => _TemplateCard(
                             summary: templates[i],
-                            onTap: () => _openTemplate(templates[i].id),
+                            locked: templates[i].premium && !isPro,
+                            onTap: () => _openTemplate(templates[i]),
                           ),
                         ),
                       ),
-              ),
-            ],
-          );
-        },
+                    ),
+            ),
+          ],
+        );
+      },
     );
   }
 }
 
 class _TemplateCard extends StatelessWidget {
   final TemplateSummary summary;
+  final bool locked;
   final VoidCallback onTap;
 
-  const _TemplateCard({required this.summary, required this.onTap});
+  const _TemplateCard({
+    required this.summary,
+    required this.locked,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -223,15 +247,33 @@ class _TemplateCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Expanded(
-              child: thumb != null && thumb.contains(',')
-                  ? Image.memory(
-                      base64Decode(thumb.split(',').last),
-                      fit: BoxFit.contain,
-                    )
-                  : const ColoredBox(
-                      color: Color(0xFF27272A),
-                      child: Center(child: Icon(Icons.image_outlined)),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  thumb != null && thumb.contains(',')
+                      ? Image.memory(
+                          base64Decode(thumb.split(',').last),
+                          fit: BoxFit.contain,
+                        )
+                      : const ColoredBox(
+                          color: Color(0xFF27272A),
+                          child: Center(child: Icon(Icons.image_outlined)),
+                        ),
+                  if (locked)
+                    Positioned(
+                      top: 8,
+                      right: 8,
+                      child: Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: const BoxDecoration(
+                          color: Colors.black54,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.lock, size: 16),
+                      ),
                     ),
+                ],
+              ),
             ),
             Padding(
               padding: const EdgeInsets.all(8),

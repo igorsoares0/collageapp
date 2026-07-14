@@ -938,8 +938,11 @@ class _TemplateScreenState extends State<TemplateScreen>
       _template = _store.loadTemplate(widget.id!).then((r) => r.template);
     }
     // Saving needs the template outside the FutureBuilder; load errors are
-    // already surfaced by build().
-    _template.then((t) => _resolvedTemplate = t, onError: (_) {});
+    // already surfaced by build(). Block body: an arrow would type the chain
+    // as Future<Template>, which the void-returning onError then violates.
+    _template.then((t) {
+      _resolvedTemplate = t;
+    }, onError: (_) {});
     _loadCatalog();
   }
 

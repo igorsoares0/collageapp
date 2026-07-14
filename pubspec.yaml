@@ -20,6 +20,7 @@ dependencies:
   path_provider: ^2.1.4
   # PNG export goes through the system share sheet (no storage permissions).
   share_plus: ^10.1.0
+  purchases_flutter: ^10.4.1
 
 dev_dependencies:
   flutter_test:

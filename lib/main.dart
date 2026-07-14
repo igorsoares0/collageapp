@@ -1,13 +1,23 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
+import 'src/api/entitlements.dart';
 import 'src/screens/gallery_screen.dart';
 
 void main() {
-  runApp(const CollageApp());
+  WidgetsFlutterBinding.ensureInitialized();
+  final entitlements = EntitlementsService();
+  // Fire-and-forget: the gallery renders immediately and the locks resolve
+  // as soon as RevenueCat answers (or stay on when it can't).
+  unawaited(entitlements.init());
+  runApp(CollageApp(entitlements: entitlements));
 }
 
 class CollageApp extends StatelessWidget {
-  const CollageApp({super.key});
+  final EntitlementsService entitlements;
+
+  const CollageApp({super.key, required this.entitlements});
 
   @override
   Widget build(BuildContext context) {
@@ -19,7 +29,7 @@ class CollageApp extends StatelessWidget {
           brightness: Brightness.dark,
         ),
       ),
-      home: const GalleryScreen(),
+      home: GalleryScreen(entitlements: entitlements),
     );
   }
 }
