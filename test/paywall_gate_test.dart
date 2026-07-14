@@ -5,12 +5,15 @@ import 'package:collageapp/src/api/template_api.dart';
 import 'package:collageapp/src/api/template_store.dart';
 import 'package:collageapp/src/screens/gallery_screen.dart';
 import 'package:collageapp/src/screens/paywall_screen.dart';
+import 'package:collageapp/src/screens/template_preview_screen.dart';
 import 'package:collageapp/src/screens/template_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:purchases_flutter/purchases_flutter.dart';
+
+TextStyle testFontResolver(String family, TextStyle base) => base;
 
 /// Never touches the SDK: purchases just flip [isPro], like the Test Store
 /// would after a successful (fake) payment.
@@ -114,7 +117,11 @@ void main() {
     final entitlements = FakeEntitlements()..isPro.value = pro;
     await tester.pumpWidget(
       MaterialApp(
-        home: GalleryScreen(entitlements: entitlements, store: store()),
+        home: GalleryScreen(
+          entitlements: entitlements,
+          store: store(),
+          fontResolver: testFontResolver,
+        ),
       ),
     );
     await pumpUntil(
@@ -125,18 +132,38 @@ void main() {
     return entitlements;
   }
 
-  testWidgets('free user: premium card is locked and opens the paywall, '
-      'buying unlocks and proceeds to the editor', (tester) async {
+  /// Taps a gallery card and waits for its read-only preview.
+  Future<void> openPreview(WidgetTester tester, String name) async {
+    await tester.tap(find.text(name));
+    await pumpUntil(
+      tester,
+      () =>
+          tester.any(find.byType(TemplatePreviewScreen)) &&
+          !tester.any(find.byType(CircularProgressIndicator)),
+      reason: 'the preview of $name never rendered',
+    );
+  }
+
+  testWidgets('free user: locked card opens the read-only preview, '
+      '"Unlock with Pro" paywalls, buying proceeds to the editor', (
+    tester,
+  ) async {
     await tester.runAsync(() async {
       final entitlements = await pumpGallery(tester);
       // Only the premium card carries the lock badge.
       expect(find.byIcon(Icons.lock), findsOneWidget);
 
-      await tester.tap(find.text('Fancy'));
+      await openPreview(tester, 'Fancy');
+      // Looking is free: the template's real render, no paywall yet, and the
+      // button announces the gate.
+      expect(find.byType(PaywallScreen), findsNothing);
+      expect(find.text('Unlock with Pro'), findsOneWidget);
+
+      await tester.tap(find.text('Unlock with Pro'));
       await pumpUntil(
         tester,
         () => tester.any(find.byType(PaywallScreen)),
-        reason: 'tapping a premium template never opened the paywall',
+        reason: 'the locked button never opened the paywall',
       );
       expect(find.textContaining(r'$29.99'), findsOneWidget);
       expect(find.textContaining(r'$4.99'), findsOneWidget);
@@ -156,14 +183,16 @@ void main() {
     });
   });
 
-  testWidgets('pro user: premium template opens directly, no lock badge', (
-    tester,
-  ) async {
+  testWidgets('pro user: no lock badge, preview button opens the editor '
+      'directly', (tester) async {
     await tester.runAsync(() async {
       await pumpGallery(tester, pro: true);
       expect(find.byIcon(Icons.lock), findsNothing);
 
-      await tester.tap(find.text('Fancy'));
+      await openPreview(tester, 'Fancy');
+      expect(find.text('Use this template'), findsOneWidget);
+
+      await tester.tap(find.text('Use this template'));
       await pumpUntil(
         tester,
         () => tester.any(find.byType(TemplateScreen)),
@@ -173,10 +202,14 @@ void main() {
     });
   });
 
-  testWidgets('free template never hits the paywall', (tester) async {
+  testWidgets('free template: preview shows "Use this template" and never '
+      'hits the paywall', (tester) async {
     await tester.runAsync(() async {
       await pumpGallery(tester);
-      await tester.tap(find.text('Basic'));
+      await openPreview(tester, 'Basic');
+      expect(find.text('Use this template'), findsOneWidget);
+
+      await tester.tap(find.text('Use this template'));
       await pumpUntil(
         tester,
         () => tester.any(find.byType(TemplateScreen)),
@@ -186,27 +219,66 @@ void main() {
     });
   });
 
-  testWidgets('closing the paywall without buying stays in the gallery', (
+  testWidgets('closing the paywall without buying returns to the preview', (
     tester,
   ) async {
     await tester.runAsync(() async {
       final entitlements = await pumpGallery(tester);
-      await tester.tap(find.text('Fancy'));
+      await openPreview(tester, 'Fancy');
+      await tester.tap(find.text('Unlock with Pro'));
       await pumpUntil(
         tester,
         () => tester.any(find.byType(PaywallScreen)),
-        reason: 'tapping a premium template never opened the paywall',
+        reason: 'the locked button never opened the paywall',
       );
 
-      await tester.tap(find.byType(BackButton));
+      // The preview's app bar (route below) also has a BackButton — scope to
+      // the paywall's.
+      await tester.tap(
+        find.descendant(
+          of: find.byType(PaywallScreen),
+          matching: find.byType(BackButton),
+        ),
+      );
       await pumpUntil(
         tester,
         () => !tester.any(find.byType(PaywallScreen)),
         reason: 'the paywall never closed',
       );
       expect(find.byType(TemplateScreen), findsNothing);
+      expect(find.byType(TemplatePreviewScreen), findsOneWidget);
       expect(entitlements.isPro.value, isFalse);
-      expect(find.text('Fancy'), findsOneWidget);
+    });
+  });
+
+  testWidgets('preview renders the template read-only: real content, '
+      'no editor gestures', (tester) async {
+    await tester.runAsync(() async {
+      await pumpGallery(tester);
+      await openPreview(tester, 'Fancy');
+
+      // Fixture content actually rendered (not the gallery thumbnail).
+      expect(
+        find.descendant(
+          of: find.byType(TemplatePreviewScreen),
+          matching: find.byType(IgnorePointer),
+        ),
+        findsWidgets,
+      );
+      // Tapping the middle of the canvas selects nothing and changes nothing:
+      // still the preview, no editor chrome (delete/rotate handles).
+      // The gallery's TabBarView (route below) is a PageView too — scope to
+      // the preview's own.
+      await tester.tap(
+        find.descendant(
+          of: find.byType(TemplatePreviewScreen),
+          matching: find.byType(PageView),
+        ),
+        warnIfMissed: false,
+      );
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.byType(TemplatePreviewScreen), findsOneWidget);
+      expect(find.byType(TemplateScreen), findsNothing);
     });
   });
 }

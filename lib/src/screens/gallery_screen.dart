@@ -7,8 +7,9 @@ import '../api/project_store.dart';
 import '../api/template_api.dart';
 import '../api/template_store.dart';
 import '../model/template.dart';
-import 'paywall_screen.dart';
+import '../rendering/template_canvas.dart';
 import 'projects_screen.dart';
+import 'template_preview_screen.dart';
 import 'template_screen.dart';
 
 class GalleryScreen extends StatefulWidget {
@@ -16,7 +17,15 @@ class GalleryScreen extends StatefulWidget {
   final EntitlementsService? entitlements;
   final TemplateStore? store;
 
-  const GalleryScreen({super.key, this.entitlements, this.store});
+  /// Threaded through preview/editor; tests inject a synchronous fake.
+  final FontResolver fontResolver;
+
+  const GalleryScreen({
+    super.key,
+    this.entitlements,
+    this.store,
+    this.fontResolver = googleFontsResolver,
+  });
 
   @override
   State<GalleryScreen> createState() => _GalleryScreenState();
@@ -47,19 +56,17 @@ class _GalleryScreenState extends State<GalleryScreen> {
   }
 
   Future<void> _openTemplate(TemplateSummary summary) async {
-    // Premium templates can only be seen in the gallery: opening (even just
-    // to edit) goes through the paywall until the `pro` entitlement exists.
-    if (summary.premium && !_entitlements.isPro.value) {
-      final unlocked = await Navigator.of(context).push<bool>(
-        MaterialPageRoute(
-          builder: (_) => PaywallScreen(entitlements: _entitlements),
-        ),
-      );
-      if (unlocked != true || !mounted) return;
-    }
+    // Always lands on the read-only preview — looking is free for everyone;
+    // the premium gate sits on the preview's "Use this template" button.
     await Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => TemplateScreen(id: summary.id, projects: _projects),
+        builder: (_) => TemplatePreviewScreen(
+          summary: summary,
+          store: _store,
+          entitlements: _entitlements,
+          projects: _projects,
+          fontResolver: widget.fontResolver,
+        ),
       ),
     );
   }
@@ -111,6 +118,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
             canvasHeight: canvas.$3,
           ),
           projects: _projects,
+          fontResolver: widget.fontResolver,
         ),
       ),
     );
