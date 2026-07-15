@@ -1462,9 +1462,13 @@ class _TemplateScreenState extends State<TemplateScreen>
                   // (keyboardInset comes from above the Scaffold — see build().)
                   final canvasHeight = constraints.maxHeight + keyboardInset;
                   // Panels sit side by side; with more than one, each is a bit
-                  // narrower than the viewport so the next one peeks in.
-                  final panelWidth =
-                      constraints.maxWidth * (panels.length == 1 ? 1.0 : 0.82);
+                  // narrower than the viewport so the next one peeks in. A
+                  // single panel instead fills the viewport minus the strip's
+                  // 16px + per-panel 6px paddings (44px total), so the strip
+                  // is exactly viewport-wide and the panel sits centered.
+                  final panelWidth = panels.length == 1
+                      ? constraints.maxWidth - 44
+                      : constraints.maxWidth * 0.82;
                   // With nothing selected the surface is an InteractiveViewer
                   // (pinch zoom + pan). With a slot selected it becomes a STATIC
                   // transform — same matrix and layout, but NO gesture detector:
