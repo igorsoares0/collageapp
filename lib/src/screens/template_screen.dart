@@ -1606,7 +1606,7 @@ class _TemplateScreenState extends State<TemplateScreen>
                           panAxis: _isZoomed
                               ? PanAxis.free
                               : PanAxis.horizontal,
-                          minScale: 1,
+                          minScale: 0.25,
                           maxScale: 4,
                           boundaryMargin: const EdgeInsets.all(64),
                           child: strip,
