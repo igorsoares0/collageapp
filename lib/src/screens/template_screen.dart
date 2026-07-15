@@ -1243,23 +1243,26 @@ class _TemplateScreenState extends State<TemplateScreen>
       // to post as a carousel.
       final panels = _panels(template);
       final files = <XFile>[];
+      final names = <String>[];
       for (var i = 0; i < panels.length; i++) {
         final panel = panels[i];
         final bytes = await capturePng(
           _panelKey(panel.id),
           template.canvasWidth,
         );
-        files.add(
-          XFile.fromData(
-            bytes,
-            mimeType: 'image/png',
-            name: panels.length == 1
-                ? '${template.id}.png'
-                : '${template.id}_${i + 1}.png',
-          ),
+        files.add(XFile.fromData(bytes, mimeType: 'image/png'));
+        names.add(
+          panels.length == 1
+              ? '${template.id}.png'
+              : '${template.id}_${i + 1}.png',
         );
       }
-      await Share.shareXFiles(files);
+      // fileNameOverrides is REQUIRED with XFile.fromData: cross_file drops
+      // the name off-web, share_plus then invents one whose uuid-v1 slice is
+      // identical across a burst, and Android flattens the temp files into
+      // one cache folder by basename — every panel after the first would
+      // overwrite it and the sheet would share the same PNG N times.
+      await Share.shareXFiles(files, fileNameOverrides: names);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(
