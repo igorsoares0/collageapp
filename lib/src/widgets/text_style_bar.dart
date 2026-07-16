@@ -50,7 +50,7 @@ const List<Color> kColorChoices = [
   Color(0xFFEC4899),
 ];
 
-const Color _accent = AppColors.coral;
+const Color _accent = AppColors.accent;
 
 /// Contextual bar shown while a text slot is selected: alignment/bold, a
 /// size slider (driving the slot's scale override — same thing the pinch

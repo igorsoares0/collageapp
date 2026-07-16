@@ -243,7 +243,7 @@ class _TemplatePreviewScreenState extends State<TemplatePreviewScreen> {
                               height: 8,
                               decoration: BoxDecoration(
                                 color: i == _page
-                                    ? AppColors.coral
+                                    ? AppColors.accent
                                     : AppColors.surfaceBright,
                                 borderRadius: BorderRadius.circular(4),
                               ),

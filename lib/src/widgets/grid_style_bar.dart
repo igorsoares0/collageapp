@@ -85,7 +85,7 @@ class _LabeledSlider extends StatelessWidget {
             child: Slider(
               value: value,
               max: max <= 0 ? 1 : max,
-              activeColor: AppColors.coral,
+              activeColor: AppColors.accent,
               onChanged: max <= 0 ? null : onChanged,
             ),
           ),

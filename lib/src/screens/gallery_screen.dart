@@ -510,8 +510,8 @@ class _AppearFromBelowState extends State<_AppearFromBelow>
   }
 }
 
-/// A category pill: coral when active (selection is an action), quiet
-/// otherwise.
+/// A category pill: accent-filled when active (selection is an action),
+/// quiet otherwise.
 class _FilterChip extends StatelessWidget {
   final String label;
   final bool selected;
@@ -535,7 +535,7 @@ class _FilterChip extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 14),
           alignment: Alignment.center,
           decoration: BoxDecoration(
-            color: selected ? AppColors.coral : AppColors.surfaceHigh,
+            color: selected ? AppColors.accent : AppColors.surfaceHigh,
             borderRadius: BorderRadius.circular(999),
           ),
           child: Text(
@@ -543,7 +543,7 @@ class _FilterChip extends StatelessWidget {
             style: TextStyle(
               fontSize: 13,
               fontWeight: FontWeight.w600,
-              color: selected ? AppColors.onCoral : AppColors.textSecondary,
+              color: selected ? AppColors.onAccent : AppColors.textSecondary,
             ),
           ),
         ),

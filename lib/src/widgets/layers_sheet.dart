@@ -222,7 +222,7 @@ class _LayerRow extends StatelessWidget {
                     : Symbols.visibility_rounded,
                 tooltip: hidden ? 'Show' : 'Hide',
                 // Neutral, not accent: visibility is state, not an action —
-                // coral stays reserved for selection and primary actions.
+                // the accent stays reserved for selection and primary actions.
                 color: hidden ? _muted : AppColors.textPrimary,
                 onTap: onToggleHidden,
               ),

@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 /// "Darkroom" design tokens. The chrome stays near-black and neutral so the
-/// user's photos carry the color; coral is the single action accent and gold
-/// is reserved for premium/Pro signals — the two must never trade roles.
+/// user's photos carry the color; paper-white is the single action accent and
+/// gold is reserved for premium/Pro signals — the two must never trade roles.
 ///
 /// Content colors (text ink, panel backgrounds, kColorChoices) are NOT tokens:
 /// they ship inside the exported collage and live with the rendering code.
@@ -27,8 +27,9 @@ abstract final class AppColors {
   static const textSecondary = Color(0xFF9A9AA3);
 
   /// The one action accent: primary buttons, selection, active states.
-  static const coral = Color(0xFFFF6B57);
-  static const onCoral = Color(0xFF200D09);
+  /// Paper-white with near-black ink on top — neutral chrome, VSCO-style.
+  static const accent = Color(0xFFE9E9EF);
+  static const onAccent = Color(0xFF1B1B1F);
 
   /// Premium only — PRO badges, locks, paywall. Never used for actions.
   static const gold = Color(0xFFE9C46A);
@@ -54,11 +55,10 @@ TextStyle _display(TextStyle base) {
 
 ThemeData buildAppTheme() {
   const scheme = ColorScheme.dark(
-    primary: AppColors.coral,
-    onPrimary: AppColors.onCoral,
-    // The paywall's highlighted plan card reads from primaryContainer.
-    primaryContainer: Color(0xFF3D211B),
-    onPrimaryContainer: Color(0xFFFFDAD2),
+    primary: AppColors.accent,
+    onPrimary: AppColors.onAccent,
+    primaryContainer: Color(0xFF2A2A31),
+    onPrimaryContainer: AppColors.accent,
     secondary: AppColors.gold,
     onSecondary: AppColors.onGold,
     tertiary: AppColors.gold,
@@ -120,7 +120,7 @@ ThemeData buildAppTheme() {
     tabBarTheme: base.tabBarTheme.copyWith(
       labelColor: AppColors.textPrimary,
       unselectedLabelColor: AppColors.textSecondary,
-      indicatorColor: AppColors.coral,
+      indicatorColor: AppColors.accent,
       dividerColor: Colors.transparent,
       labelStyle: textTheme.titleSmall!.copyWith(fontWeight: FontWeight.w600),
       unselectedLabelStyle: textTheme.titleSmall,
@@ -140,11 +140,11 @@ ThemeData buildAppTheme() {
       ),
     ),
     textButtonTheme: TextButtonThemeData(
-      style: TextButton.styleFrom(foregroundColor: AppColors.coral),
+      style: TextButton.styleFrom(foregroundColor: AppColors.accent),
     ),
     floatingActionButtonTheme: const FloatingActionButtonThemeData(
-      backgroundColor: AppColors.coral,
-      foregroundColor: AppColors.onCoral,
+      backgroundColor: AppColors.accent,
+      foregroundColor: AppColors.onAccent,
       elevation: 2,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.all(Radius.circular(16)),
@@ -164,7 +164,7 @@ ThemeData buildAppTheme() {
       behavior: SnackBarBehavior.floating,
       backgroundColor: AppColors.surfaceHigh,
       contentTextStyle: textTheme.bodyMedium,
-      actionTextColor: AppColors.coral,
+      actionTextColor: AppColors.accent,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
     ),
     dialogTheme: base.dialogTheme.copyWith(
@@ -173,13 +173,13 @@ ThemeData buildAppTheme() {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
     ),
     sliderTheme: base.sliderTheme.copyWith(
-      activeTrackColor: AppColors.coral,
-      thumbColor: AppColors.coral,
+      activeTrackColor: AppColors.accent,
+      thumbColor: AppColors.accent,
       inactiveTrackColor: AppColors.surfaceBright,
-      overlayColor: AppColors.coral.withValues(alpha: 0.12),
+      overlayColor: AppColors.accent.withValues(alpha: 0.12),
     ),
     progressIndicatorTheme: const ProgressIndicatorThemeData(
-      color: AppColors.coral,
+      color: AppColors.accent,
     ),
     dividerTheme: const DividerThemeData(color: AppColors.outline),
     listTileTheme: const ListTileThemeData(

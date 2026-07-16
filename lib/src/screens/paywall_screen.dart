@@ -423,8 +423,8 @@ class _PlanCard extends StatelessWidget {
                       vertical: 4,
                     ),
                     decoration: BoxDecoration(
-                      // Gold, not coral: the savings badge is premium
-                      // signaling, not an action.
+                      // Gold, not the action accent: the savings badge is
+                      // premium signaling, not an action.
                       color: AppColors.gold,
                       borderRadius: BorderRadius.circular(999),
                     ),

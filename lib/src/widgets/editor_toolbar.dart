@@ -4,7 +4,7 @@ import 'package:material_symbols_icons/symbols.dart';
 import '../theme.dart';
 
 const Color _surface = AppColors.surface;
-const Color _accent = AppColors.coral;
+const Color _accent = AppColors.accent;
 
 /// The persistent bottom toolbar — the editor's home state, shown whenever
 /// nothing is selected. Every primary creative action lives here as a big

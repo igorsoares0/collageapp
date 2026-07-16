@@ -1742,7 +1742,7 @@ class _TemplateScreenState extends State<TemplateScreen>
                                       height: 8,
                                       decoration: BoxDecoration(
                                         color: panel.id == focusedPanel.id
-                                            ? AppColors.coral
+                                            ? AppColors.accent
                                             : Colors.white38,
                                         borderRadius: BorderRadius.circular(4),
                                       ),
