@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 
+import '../theme.dart';
 import 'editor_toolbar.dart' show ContextBarShell;
 
 /// Contextual bar shown while a grid cell is selected: adjust the whole
@@ -42,13 +44,13 @@ class GridStyleBar extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           _LabeledSlider(
-            icon: Icons.space_bar,
+            icon: Symbols.space_bar_rounded,
             value: gutter.clamp(0, maxGutter),
             max: maxGutter,
             onChanged: onGutter,
           ),
           _LabeledSlider(
-            icon: Icons.rounded_corner,
+            icon: Symbols.rounded_corner_rounded,
             value: cornerRadius.clamp(0, maxCorner),
             max: maxCorner,
             onChanged: onCorner,
@@ -78,12 +80,12 @@ class _LabeledSlider extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 12),
       child: Row(
         children: [
-          Icon(icon, size: 22, color: Colors.white70),
+          Icon(icon, size: 22, color: AppColors.textSecondary),
           Expanded(
             child: Slider(
               value: value,
               max: max <= 0 ? 1 : max,
-              activeColor: const Color(0xFF3B82F6),
+              activeColor: AppColors.coral,
               onChanged: max <= 0 ? null : onChanged,
             ),
           ),

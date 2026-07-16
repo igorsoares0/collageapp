@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show HapticFeedback;
 import 'package:image_picker/image_picker.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../api/project_store.dart';
@@ -15,6 +16,7 @@ import '../model/template.dart';
 import '../rendering/export.dart';
 import '../rendering/snap.dart';
 import '../rendering/template_canvas.dart';
+import '../theme.dart';
 import '../widgets/editor_toolbar.dart';
 import '../widgets/grid_style_bar.dart';
 import '../widgets/insert_sheets.dart';
@@ -100,6 +102,9 @@ class _TemplateScreenState extends State<TemplateScreen>
   // user can hop between panels while recoloring.
   bool _backgroundMode = false;
   bool _exporting = false;
+
+  // Bumped after each successful export; keys the button's one-shot ✓ flash.
+  int _exportCount = 0;
   // Screen-space selection overlay (CanvasSelectionOverlay): the leader link
   // the selected element's chrome box publishes inside its PanelCanvas, and
   // that box's measured size keyed by the gesture target id — the size lands
@@ -1078,6 +1083,8 @@ class _TemplateScreenState extends State<TemplateScreen>
     ).any((l) => l is TextLayer && l.slotId == slotId);
     final wasSelected = _selectedSlot == slotId;
     if (!wasSelected) {
+      // Same tick the snap/rotation locks use — selection is a physical event.
+      HapticFeedback.selectionClick();
       setState(() {
         _selectedSlot = slotId;
         _editingSlot = null;
@@ -1171,7 +1178,6 @@ class _TemplateScreenState extends State<TemplateScreen>
     final templatePanel = _focusedPanel(template);
     showModalBottomSheet<void>(
       context: context,
-      backgroundColor: const Color(0xFF27272A),
       builder: (sheetContext) {
         // A StatefulBuilder so reorder/hide/remove repaint the sheet rows; the
         // screen keeps the canonical state (_content) and rebuilds the canvas.
@@ -1263,6 +1269,10 @@ class _TemplateScreenState extends State<TemplateScreen>
       // one cache folder by basename — every panel after the first would
       // overwrite it and the sheet would share the same PNG N times.
       await Share.shareXFiles(files, fileNameOverrides: names);
+      HapticFeedback.mediumImpact();
+      // Drives the Export button's brief ✓ (see the AppBar's
+      // TweenAnimationBuilder) — a new key per export restarts it.
+      if (mounted) setState(() => _exportCount++);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -1318,7 +1328,22 @@ class _TemplateScreenState extends State<TemplateScreen>
                               height: 18,
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
-                          : const Text('Export'),
+                          // A one-shot ✓ right after a successful export,
+                          // then back to the label. Animation-driven (no
+                          // Timer), so tests can settle it deterministically.
+                          : TweenAnimationBuilder<double>(
+                              key: ValueKey(_exportCount),
+                              tween: Tween(
+                                begin: _exportCount == 0 ? 1.0 : 0.0,
+                                end: 1.0,
+                              ),
+                              duration: MediaQuery.disableAnimationsOf(context)
+                                  ? Duration.zero
+                                  : const Duration(milliseconds: 1200),
+                              builder: (context, t, _) => t < 0.8
+                                  ? const Icon(Symbols.check_rounded, size: 18)
+                                  : const Text('Export'),
+                            ),
                     ),
                   ),
                 ),
@@ -1454,7 +1479,7 @@ class _TemplateScreenState extends State<TemplateScreen>
         children: [
           Expanded(
             child: ColoredBox(
-              color: const Color(0xFF18181B),
+              color: AppColors.ink,
               child: LayoutBuilder(
                 builder: (context, constraints) {
                   // resizeToAvoidBottomInset shrinks this viewport by exactly the
@@ -1717,7 +1742,7 @@ class _TemplateScreenState extends State<TemplateScreen>
                                       height: 8,
                                       decoration: BoxDecoration(
                                         color: panel.id == focusedPanel.id
-                                            ? const Color(0xFF3B82F6)
+                                            ? AppColors.coral
                                             : Colors.white38,
                                         borderRadius: BorderRadius.circular(4),
                                       ),
@@ -1739,11 +1764,35 @@ class _TemplateScreenState extends State<TemplateScreen>
           // bottom-aligned, sitting just above the keyboard when it's open
           // (resizeToAvoidBottomInset pushes it up).
           ColoredBox(
-            color: const Color(0xFF18181B),
+            color: AppColors.ink,
             child: SizedBox(
               height: barArea,
               width: double.infinity,
-              child: Align(alignment: Alignment.bottomCenter, child: bottomBar),
+              // Keyed per bar (see _buildBottomBar), so swapping selection
+              // cross-fades bars while slider drags inside one bar never
+              // re-animate. The strip's fixed height keeps the canvas still.
+              child: AnimatedSwitcher(
+                duration: MediaQuery.disableAnimationsOf(context)
+                    ? Duration.zero
+                    : const Duration(milliseconds: 200),
+                switchInCurve: Curves.easeOutCubic,
+                switchOutCurve: Curves.easeInCubic,
+                transitionBuilder: (child, animation) => FadeTransition(
+                  opacity: animation,
+                  child: SlideTransition(
+                    position: Tween(
+                      begin: const Offset(0, 0.06),
+                      end: Offset.zero,
+                    ).animate(animation),
+                    child: child,
+                  ),
+                ),
+                layoutBuilder: (current, previous) => Stack(
+                  alignment: Alignment.bottomCenter,
+                  children: [...previous, if (current != null) current],
+                ),
+                child: bottomBar,
+              ),
             ),
           ),
         ],
@@ -1762,6 +1811,7 @@ class _TemplateScreenState extends State<TemplateScreen>
       final weight =
           _content.weightFor(textLayer.slotId) ?? textLayer.fontWeight;
       return TextStyleBar(
+        key: ValueKey('bar-text-${textLayer.slotId}'),
         currentFont: _content.fontFor(textLayer.slotId) ?? textLayer.fontFamily,
         currentColor: _content.colorFor(textLayer.slotId) ?? textLayer.color,
         currentAlignment:
@@ -1789,6 +1839,7 @@ class _TemplateScreenState extends State<TemplateScreen>
       final g = gridLayer;
       final minSide = g.width < g.height ? g.width : g.height;
       return GridStyleBar(
+        key: ValueKey('bar-grid-${g.id}'),
         gutter: _content.gridGutter(g.id, g.gutter),
         cornerRadius: _content.gridCornerRadius(g.id, g.cornerRadius),
         // Caps relative to the grid's own size so the sliders stay sensible.
@@ -1808,6 +1859,7 @@ class _TemplateScreenState extends State<TemplateScreen>
     final imageLayer = _selectedImageLayer(template);
     if (imageLayer != null) {
       return ContextBarShell(
+        key: ValueKey('bar-photo-${imageLayer.slotId}'),
         title: 'Photo',
         onDuplicate: () => _duplicateSelected(template, imageLayer.slotId),
         onDelete: () => _deleteSelected(template, imageLayer.slotId),
@@ -1817,7 +1869,7 @@ class _TemplateScreenState extends State<TemplateScreen>
           child: Padding(
             padding: const EdgeInsets.only(left: 8),
             child: ToolButton(
-              icon: Icons.photo_library_outlined,
+              icon: Symbols.photo_library_rounded,
               label: 'Replace',
               onTap: () => _pickImage(imageLayer.slotId),
             ),
@@ -1828,6 +1880,7 @@ class _TemplateScreenState extends State<TemplateScreen>
     final stickerLayer = _selectedStickerLayer(template);
     if (stickerLayer != null) {
       return ContextBarShell(
+        key: ValueKey('bar-sticker-${stickerLayer.id}'),
         title: 'Sticker',
         onDuplicate: () => _duplicateSelected(template, stickerLayer.id),
         onDelete: () => _deleteSelected(template, stickerLayer.id),
@@ -1838,7 +1891,7 @@ class _TemplateScreenState extends State<TemplateScreen>
             alignment: Alignment.centerLeft,
             child: Text(
               'Drag to move · pinch to resize · twist to rotate',
-              style: TextStyle(color: Colors.white38, fontSize: 12),
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
             ),
           ),
         ),
@@ -1847,6 +1900,7 @@ class _TemplateScreenState extends State<TemplateScreen>
     if (_backgroundMode) {
       final focusedPanel = _focusedPanel(template);
       return BackgroundColorBar(
+        key: const ValueKey('bar-background'),
         currentColor:
             _content.backgroundFor(focusedPanel.id) ??
             focusedPanel.backgroundColor,
@@ -1856,6 +1910,7 @@ class _TemplateScreenState extends State<TemplateScreen>
       );
     }
     return EditorToolbar(
+      key: const ValueKey('bar-toolbar'),
       onLayout: () => _insertGrid(template),
       onText: () => _addTextLayer(template),
       onPhoto: () => _insertPhotos(template),

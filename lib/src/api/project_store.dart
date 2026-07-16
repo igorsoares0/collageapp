@@ -178,7 +178,19 @@ class ProjectStore {
   /// Removes the whole project — document and photos.
   Future<void> delete(String id) => _enqueue(() async {
     final dir = await _projectDir(id);
-    if (await dir.exists()) await dir.delete(recursive: true);
+    for (var attempt = 0; ; attempt++) {
+      try {
+        if (await dir.exists()) await dir.delete(recursive: true);
+        return;
+      } on FileSystemException {
+        // Windows (dev machine only) can hold a transient lock on a file a
+        // read just released (the projects list renders live thumbnails from
+        // project.json) or one an AV scan is touching; every shipping
+        // platform deletes open files without complaint.
+        if (attempt >= 4) rethrow;
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      }
+    }
   });
 
   /// Deletes photo files no longer referenced by the saved document (undone

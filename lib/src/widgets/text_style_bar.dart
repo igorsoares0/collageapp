@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 
 import '../rendering/template_canvas.dart' show googleFontsResolver;
+import '../theme.dart';
 import 'editor_toolbar.dart' show ContextBarShell;
 
 /// Typefaces offered for text slots. Mirrors the editor's EDITOR_FONTS so a
@@ -48,7 +50,7 @@ const List<Color> kColorChoices = [
   Color(0xFFEC4899),
 ];
 
-const Color _accent = Color(0xFF3B82F6);
+const Color _accent = AppColors.coral;
 
 /// Contextual bar shown while a text slot is selected: alignment/bold, a
 /// size slider (driving the slot's scale override — same thing the pinch
@@ -94,7 +96,7 @@ class TextStyleBar extends StatelessWidget {
     // Keep the active font selectable even if it's outside the curated list.
     final fonts = {currentFont, ...kFontChoices}.toList();
     return Material(
-      color: const Color(0xFF27272A),
+      color: AppColors.surface,
       child: SafeArea(
         top: false,
         child: Column(
@@ -104,31 +106,31 @@ class TextStyleBar extends StatelessWidget {
               children: [
                 const SizedBox(width: 8),
                 _IconToggle(
-                  icon: Icons.format_align_left,
+                  icon: Symbols.format_align_left_rounded,
                   selected: currentAlignment == 'left',
                   onTap: () => onAlignment('left'),
                 ),
                 _IconToggle(
-                  icon: Icons.format_align_center,
+                  icon: Symbols.format_align_center_rounded,
                   selected: currentAlignment == 'center',
                   onTap: () => onAlignment('center'),
                 ),
                 _IconToggle(
-                  icon: Icons.format_align_right,
+                  icon: Symbols.format_align_right_rounded,
                   selected: currentAlignment == 'right',
                   onTap: () => onAlignment('right'),
                 ),
                 _IconToggle(
-                  icon: Icons.format_bold,
+                  icon: Symbols.format_bold_rounded,
                   selected: isBold,
                   onTap: onBoldToggle,
                 ),
                 const Spacer(),
                 IconButton(
                   icon: const Icon(
-                    Icons.content_copy,
+                    Symbols.content_copy_rounded,
                     size: 18,
-                    color: Colors.white70,
+                    color: AppColors.textSecondary,
                   ),
                   tooltip: 'Duplicate',
                   onPressed: onDuplicate,
@@ -137,7 +139,7 @@ class TextStyleBar extends StatelessWidget {
                   icon: const Icon(
                     Icons.delete_outline,
                     size: 20,
-                    color: Colors.white70,
+                    color: AppColors.textSecondary,
                   ),
                   tooltip: 'Delete',
                   onPressed: onDelete,
@@ -158,9 +160,9 @@ class TextStyleBar extends StatelessWidget {
                 children: [
                   const SizedBox(width: 16),
                   const Icon(
-                    Icons.format_size,
+                    Symbols.format_size_rounded,
                     size: 20,
-                    color: Colors.white70,
+                    color: AppColors.textSecondary,
                   ),
                   Expanded(
                     child: Slider(
@@ -237,11 +239,11 @@ class _IconToggle extends StatelessWidget {
             borderRadius: BorderRadius.circular(8),
             color: selected ? _accent.withValues(alpha: 0.2) : null,
             border: Border.all(
-              color: selected ? _accent : const Color(0xFF3F3F46),
+              color: selected ? _accent : AppColors.outline,
               width: selected ? 2 : 1,
             ),
           ),
-          child: Icon(icon, size: 22, color: Colors.white),
+          child: Icon(icon, size: 22, color: AppColors.textPrimary),
         ),
       ),
     );
@@ -319,7 +321,7 @@ class _FontChip extends StatelessWidget {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(8),
             border: Border.all(
-              color: selected ? _accent : const Color(0xFF3F3F46),
+              color: selected ? _accent : AppColors.outline,
               width: selected ? 2 : 1,
             ),
           ),
@@ -354,7 +356,7 @@ class _ColorDot extends StatelessWidget {
             color: color,
             shape: BoxShape.circle,
             border: Border.all(
-              color: selected ? _accent : const Color(0xFF52525B),
+              color: selected ? _accent : AppColors.surfaceBright,
               width: selected ? 3 : 1,
             ),
           ),

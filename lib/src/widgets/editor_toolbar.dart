@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 
-const Color _surface = Color(0xFF27272A);
-const Color _accent = Color(0xFF3B82F6);
+import '../theme.dart';
+
+const Color _surface = AppColors.surface;
+const Color _accent = AppColors.coral;
 
 /// The persistent bottom toolbar — the editor's home state, shown whenever
 /// nothing is selected. Every primary creative action lives here as a big
@@ -43,33 +46,37 @@ class EditorToolbar extends StatelessWidget {
               child: Row(
                 children: [
                   ToolButton(
-                    icon: Icons.grid_view,
+                    icon: Symbols.grid_view_rounded,
                     label: 'Layout',
                     onTap: onLayout,
                   ),
-                  ToolButton(icon: Icons.title, label: 'Text', onTap: onText),
                   ToolButton(
-                    icon: Icons.image_outlined,
+                    icon: Symbols.text_fields_rounded,
+                    label: 'Text',
+                    onTap: onText,
+                  ),
+                  ToolButton(
+                    icon: Symbols.image_rounded,
                     label: 'Photo',
                     onTap: onPhoto,
                   ),
                   ToolButton(
-                    icon: Icons.star_outline,
+                    icon: Symbols.sticker_rounded,
                     label: 'Sticker',
                     onTap: onSticker,
                   ),
                   ToolButton(
-                    icon: Icons.format_color_fill,
+                    icon: Symbols.format_color_fill_rounded,
                     label: 'Background',
                     onTap: onBackground,
                   ),
                   ToolButton(
-                    icon: Icons.splitscreen_outlined,
+                    icon: Symbols.auto_awesome_mosaic_rounded,
                     label: 'Panel',
                     onTap: onPanel,
                   ),
                   ToolButton(
-                    icon: Icons.layers_outlined,
+                    icon: Symbols.layers_rounded,
                     label: 'Layers',
                     onTap: onLayers,
                   ),
@@ -109,11 +116,14 @@ class ToolButton extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(icon, size: 24, color: Colors.white),
+              Icon(icon, size: 24, color: AppColors.textPrimary),
               const SizedBox(height: 4),
               Text(
                 label,
-                style: const TextStyle(color: Colors.white70, fontSize: 11),
+                style: const TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 11,
+                ),
               ),
             ],
           ),
@@ -159,7 +169,7 @@ class ContextBarShell extends StatelessWidget {
                   Text(
                     title,
                     style: const TextStyle(
-                      color: Colors.white70,
+                      color: AppColors.textSecondary,
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
                       letterSpacing: 0.4,
@@ -169,9 +179,9 @@ class ContextBarShell extends StatelessWidget {
                   if (onDuplicate != null)
                     IconButton(
                       icon: const Icon(
-                        Icons.content_copy,
+                        Symbols.content_copy_rounded,
                         size: 18,
-                        color: Colors.white70,
+                        color: AppColors.textSecondary,
                       ),
                       tooltip: 'Duplicate',
                       onPressed: onDuplicate,
@@ -181,14 +191,14 @@ class ContextBarShell extends StatelessWidget {
                       icon: const Icon(
                         Icons.delete_outline,
                         size: 20,
-                        color: Colors.white70,
+                        color: AppColors.textSecondary,
                       ),
                       tooltip: 'Delete',
                       onPressed: onDelete,
                     ),
                   TextButton.icon(
                     onPressed: onDone,
-                    icon: const Icon(Icons.check, size: 18),
+                    icon: const Icon(Symbols.check_rounded, size: 18),
                     label: const Text('Done'),
                     style: TextButton.styleFrom(foregroundColor: _accent),
                   ),

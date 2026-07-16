@@ -169,7 +169,10 @@ void main() {
       expect(find.textContaining(r'$4.99'), findsOneWidget);
       expect(find.byType(TemplateScreen), findsNothing);
 
+      // Plans are selectable cards; the single Continue button is what buys.
       await tester.tap(find.text('Annual'));
+      await tester.pump();
+      await tester.tap(find.text('Continue'));
       // Both conditions: mid-transition the popped paywall route is still in
       // the tree while the editor route animates in.
       await pumpUntil(

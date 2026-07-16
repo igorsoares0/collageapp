@@ -1,13 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 
 import '../model/asset_record.dart';
 import '../model/slot_content.dart';
 import '../model/template.dart';
+import '../theme.dart';
 
-const Color _accent = Color(0xFF3B82F6);
-const Color _surface = Color(0xFF27272A);
-const Color _muted = Color(0xFF71717A);
-const Color _thumbFill = Color(0xFF3F3F46);
+const Color _surface = AppColors.surface;
+const Color _muted = AppColors.textSecondary;
+const Color _thumbFill = AppColors.surfaceBright;
 
 /// Bottom sheet listing one panel's layers so the user can manage the stack
 /// without leaving the canvas: tap a fillable layer to select it (handy when
@@ -62,11 +63,11 @@ class LayersSheet extends StatelessWidget {
   };
 
   static (IconData, String) _describe(Layer layer) => switch (layer) {
-    ImageLayer l => (Icons.image_outlined, l.slotId),
-    TextLayer l => (Icons.title, l.slotId),
-    ShapeLayer _ => (Icons.crop_square, 'Shape'),
-    StickerLayer l => (Icons.star_outline, l.assetId),
-    GridLayer l => (Icons.grid_view, '${l.cols}×${l.rows} grid'),
+    ImageLayer l => (Symbols.image_rounded, l.slotId),
+    TextLayer l => (Symbols.title_rounded, l.slotId),
+    ShapeLayer _ => (Symbols.crop_square_rounded, 'Shape'),
+    StickerLayer l => (Symbols.sticker_rounded, l.assetId),
+    GridLayer l => (Symbols.grid_view_rounded, '${l.cols}×${l.rows} grid'),
   };
 
   @override
@@ -96,7 +97,7 @@ class LayersSheet extends StatelessWidget {
                   Text(
                     'Layers',
                     style: TextStyle(
-                      color: Colors.white,
+                      color: AppColors.textPrimary,
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
                     ),
@@ -104,7 +105,10 @@ class LayersSheet extends StatelessWidget {
                   Spacer(),
                   Text(
                     'Drag to reorder · top is front',
-                    style: TextStyle(color: Colors.white38, fontSize: 11),
+                    style: TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 11,
+                    ),
                   ),
                 ],
               ),
@@ -202,7 +206,7 @@ class _LayerRow extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      color: Colors.white,
+                      color: AppColors.textPrimary,
                       fontSize: 15,
                       // Hint that decorative layers aren't tappable to select.
                       fontStyle: selectable
@@ -213,16 +217,20 @@ class _LayerRow extends StatelessWidget {
                 ),
               ),
               _RowButton(
-                icon: hidden ? Icons.visibility_off_outlined : Icons.visibility,
+                icon: hidden
+                    ? Symbols.visibility_off_rounded
+                    : Symbols.visibility_rounded,
                 tooltip: hidden ? 'Show' : 'Hide',
-                color: hidden ? _muted : _accent,
+                // Neutral, not accent: visibility is state, not an action —
+                // coral stays reserved for selection and primary actions.
+                color: hidden ? _muted : AppColors.textPrimary,
                 onTap: onToggleHidden,
               ),
               if (onRemove != null)
                 _RowButton(
                   icon: Icons.delete_outline,
                   tooltip: 'Delete',
-                  color: const Color(0xFFEF4444),
+                  color: AppColors.danger,
                   onTap: onRemove!,
                 ),
               ReorderableDragStartListener(
@@ -261,7 +269,11 @@ class _LayerThumb extends StatelessWidget {
         final image = content.imageFor(l.slotId);
         inner = image != null
             ? Image(image: image, fit: BoxFit.cover)
-            : const Icon(Icons.image_outlined, size: 20, color: Colors.white70);
+            : const Icon(
+                Symbols.image_rounded,
+                size: 20,
+                color: AppColors.textSecondary,
+              );
       case StickerLayer l:
         ImageProvider? art;
         for (final a in assetCatalog) {
@@ -275,7 +287,11 @@ class _LayerThumb extends StatelessWidget {
                 padding: const EdgeInsets.all(3),
                 child: Image(image: art, fit: BoxFit.contain),
               )
-            : const Icon(Icons.star_outline, size: 20, color: Colors.white70);
+            : const Icon(
+                Symbols.sticker_rounded,
+                size: 20,
+                color: AppColors.textSecondary,
+              );
       case TextLayer l:
         final color = content.colorFor(l.slotId) ?? l.color;
         inner = Center(
@@ -289,9 +305,17 @@ class _LayerThumb extends StatelessWidget {
           ),
         );
       case GridLayer _:
-        inner = const Icon(Icons.grid_view, size: 20, color: Colors.white70);
+        inner = const Icon(
+          Symbols.grid_view_rounded,
+          size: 20,
+          color: AppColors.textSecondary,
+        );
       default:
-        inner = const Icon(Icons.crop_square, size: 20, color: Colors.white70);
+        inner = const Icon(
+          Symbols.crop_square_rounded,
+          size: 20,
+          color: AppColors.textSecondary,
+        );
     }
     return ClipRRect(
       borderRadius: BorderRadius.circular(6),
@@ -323,7 +347,7 @@ class _RowButton extends StatelessWidget {
       icon: Icon(icon, size: 22),
       tooltip: tooltip,
       visualDensity: VisualDensity.compact,
-      color: color ?? Colors.white,
+      color: color ?? AppColors.textPrimary,
       onPressed: onTap,
     );
   }

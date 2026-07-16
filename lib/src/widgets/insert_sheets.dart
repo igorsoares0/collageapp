@@ -5,9 +5,9 @@ import 'package:flutter/material.dart';
 import '../model/asset_record.dart';
 import '../model/template.dart';
 import '../rendering/frame_assets.dart';
+import '../theme.dart';
 
-const Color _surface = Color(0xFF27272A);
-const Color _cellFill = Color(0xFF52525B);
+const Color _cellFill = AppColors.surfaceBright;
 
 /// A grid layout the user can insert from scratch. Mirrors the classic preset
 /// catalog of the web editor (lib/template/factory.ts): fraction tracks start
@@ -106,7 +106,6 @@ List<GridPreset> layoutPresetsFor(int count) {
 Future<GridPreset?> showGridPresetSheet(BuildContext context) {
   return showModalBottomSheet<GridPreset>(
     context: context,
-    backgroundColor: _surface,
     builder: (sheetContext) => SafeArea(
       top: false,
       child: Padding(
@@ -118,7 +117,7 @@ Future<GridPreset?> showGridPresetSheet(BuildContext context) {
             const Text(
               'Grid layout',
               style: TextStyle(
-                color: Colors.white,
+                color: AppColors.textPrimary,
                 fontSize: 16,
                 fontWeight: FontWeight.w600,
               ),
@@ -143,7 +142,7 @@ Future<GridPreset?> showGridPresetSheet(BuildContext context) {
                         Text(
                           preset.label,
                           style: const TextStyle(
-                            color: Colors.white,
+                            color: AppColors.textPrimary,
                             fontSize: 12,
                           ),
                         ),
@@ -171,7 +170,6 @@ Future<GridPreset?> showLayoutPickerSheet(
   final presets = layoutPresetsFor(photos.length);
   return showModalBottomSheet<GridPreset>(
     context: context,
-    backgroundColor: _surface,
     builder: (sheetContext) => SafeArea(
       top: false,
       child: Padding(
@@ -183,7 +181,7 @@ Future<GridPreset?> showLayoutPickerSheet(
             const Text(
               'Choose a layout',
               style: TextStyle(
-                color: Colors.white,
+                color: AppColors.textPrimary,
                 fontSize: 16,
                 fontWeight: FontWeight.w600,
               ),
@@ -191,7 +189,10 @@ Future<GridPreset?> showLayoutPickerSheet(
             const SizedBox(height: 2),
             Text(
               '${photos.length} photos',
-              style: const TextStyle(color: Colors.white54, fontSize: 12),
+              style: const TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 12,
+              ),
             ),
             const SizedBox(height: 12),
             SizedBox(
@@ -228,7 +229,7 @@ Future<GridPreset?> showLayoutPickerSheet(
                             Text(
                               preset.label,
                               style: const TextStyle(
-                                color: Colors.white,
+                                color: AppColors.textPrimary,
                                 fontSize: 12,
                               ),
                             ),
@@ -410,7 +411,6 @@ Future<AssetChoice?> showAssetPickerSheet(
   ];
   return showModalBottomSheet<AssetChoice>(
     context: context,
-    backgroundColor: _surface,
     builder: (sheetContext) => SafeArea(
       top: false,
       child: Padding(
@@ -421,7 +421,7 @@ Future<AssetChoice?> showAssetPickerSheet(
                 child: Center(
                   child: Text(
                     'No assets available yet.',
-                    style: TextStyle(color: Colors.white70),
+                    style: TextStyle(color: AppColors.textSecondary),
                   ),
                 ),
               )
@@ -469,7 +469,7 @@ class _AssetSection extends StatelessWidget {
         Text(
           title,
           style: const TextStyle(
-            color: Colors.white,
+            color: AppColors.textPrimary,
             fontSize: 16,
             fontWeight: FontWeight.w600,
           ),
@@ -500,7 +500,7 @@ class _AssetSection extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                         textAlign: TextAlign.center,
                         style: const TextStyle(
-                          color: Colors.white70,
+                          color: AppColors.textSecondary,
                           fontSize: 11,
                         ),
                       ),

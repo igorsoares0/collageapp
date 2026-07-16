@@ -477,7 +477,10 @@ class _GuidePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = const Color(0xFFFF2D87)
+      // AppColors.coral — the app's one action accent; guides are feedback
+      // for an action in progress. (Literal, not the token: rendering code
+      // stays free of UI-theme imports.)
+      ..color = const Color(0xFFFF6B57)
       ..strokeWidth = 3;
     for (final x in guideXs) {
       canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);

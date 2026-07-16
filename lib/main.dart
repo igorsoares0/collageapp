@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import 'src/api/entitlements.dart';
 import 'src/screens/gallery_screen.dart';
+import 'src/theme.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -23,12 +24,7 @@ class CollageApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Collage Studio',
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF6366F1),
-          brightness: Brightness.dark,
-        ),
-      ),
+      theme: buildAppTheme(),
       home: GalleryScreen(entitlements: entitlements),
     );
   }

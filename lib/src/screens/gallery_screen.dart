@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 
 import '../api/entitlements.dart';
 import '../api/project_store.dart';
@@ -8,6 +9,7 @@ import '../api/template_api.dart';
 import '../api/template_store.dart';
 import '../model/template.dart';
 import '../rendering/template_canvas.dart';
+import '../theme.dart';
 import 'projects_screen.dart';
 import 'template_preview_screen.dart';
 import 'template_screen.dart';
@@ -39,6 +41,11 @@ class _GalleryScreenState extends State<GalleryScreen> {
   final _projects = ProjectStore();
   late Future<IndexResult> _index;
 
+  // Category filter chip selection; null = All. Cleared implicitly when the
+  // selected category disappears from a refreshed index (see the guard in
+  // _buildTemplatesTab).
+  String? _category;
+
   @override
   void initState() {
     super.initState();
@@ -56,6 +63,15 @@ class _GalleryScreenState extends State<GalleryScreen> {
   }
 
   Future<void> _openTemplate(TemplateSummary summary) async {
+    // The loaded index rides along for the paywall's template mosaic; a card
+    // is only tappable once _index resolved, so this await is immediate.
+    var catalog = const <TemplateSummary>[];
+    try {
+      catalog = (await _index).templates;
+    } catch (_) {
+      // No index, no mosaic — the paywall falls back to its gradient.
+    }
+    if (!mounted) return;
     // Always lands on the read-only preview — looking is free for everyone;
     // the premium gate sits on the preview's "Use this template" button.
     await Navigator.of(context).push(
@@ -66,6 +82,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
           entitlements: _entitlements,
           projects: _projects,
           fontResolver: widget.fontResolver,
+          catalog: catalog,
         ),
       ),
     );
@@ -77,7 +94,6 @@ class _GalleryScreenState extends State<GalleryScreen> {
   Future<void> _createFromScratch() async {
     final canvas = await showModalBottomSheet<(String, double, double)>(
       context: context,
-      backgroundColor: const Color(0xFF27272A),
       builder: (sheetContext) => SafeArea(
         top: false,
         child: Column(
@@ -99,7 +115,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
               ('Square', '1:1', 1080.0, 1080.0),
             ])
               ListTile(
-                leading: const Icon(Icons.crop_free),
+                leading: const Icon(Symbols.crop_free_rounded),
                 title: Text(label),
                 subtitle: Text('$aspect · ${w.toInt()}×${h.toInt()}'),
                 onTap: () => Navigator.pop(sheetContext, (aspect, w, h)),
@@ -132,25 +148,65 @@ class _GalleryScreenState extends State<GalleryScreen> {
     return DefaultTabController(
       length: 2,
       child: Scaffold(
-        appBar: AppBar(
-          title: const Text('Collage Studio'),
-          bottom: const TabBar(
-            tabs: [
-              Tab(text: 'Templates'),
-              Tab(text: 'My projects'),
-            ],
-          ),
-        ),
         floatingActionButton: FloatingActionButton.extended(
           onPressed: _createFromScratch,
-          icon: const Icon(Icons.add),
+          icon: const Icon(Symbols.add_rounded),
           label: const Text('Create'),
         ),
-        body: TabBarView(
-          children: [
-            _buildTemplatesTab(),
-            ProjectsList(store: _projects),
-          ],
+        body: SafeArea(
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 14),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Collage Studio',
+                    style: Theme.of(context).textTheme.headlineMedium,
+                  ),
+                ),
+              ),
+              // Segmented pill switch instead of the stock underline TabBar.
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: AppColors.surface,
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: AppColors.outline),
+                  ),
+                  child: TabBar(
+                    indicator: BoxDecoration(
+                      color: AppColors.surfaceBright,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    indicatorSize: TabBarIndicatorSize.tab,
+                    dividerColor: Colors.transparent,
+                    labelColor: AppColors.textPrimary,
+                    unselectedLabelColor: AppColors.textSecondary,
+                    splashBorderRadius: BorderRadius.circular(999),
+                    tabs: const [
+                      Tab(height: 36, text: 'Templates'),
+                      Tab(height: 36, text: 'My projects'),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 6),
+              Expanded(
+                child: TabBarView(
+                  children: [
+                    _buildTemplatesTab(),
+                    ProjectsList(
+                      store: _projects,
+                      fontResolver: widget.fontResolver,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -161,7 +217,9 @@ class _GalleryScreenState extends State<GalleryScreen> {
       future: _index,
       builder: (context, snapshot) {
         if (snapshot.connectionState != ConnectionState.done) {
-          return const Center(child: CircularProgressIndicator());
+          // Ghost cards where the real ones will land — the layout doesn't
+          // jump when the index arrives.
+          return const _SkeletonGrid();
         }
         if (snapshot.hasError) {
           return Center(
@@ -183,25 +241,84 @@ class _GalleryScreenState extends State<GalleryScreen> {
         }
         final result = snapshot.data!;
         final templates = result.templates;
+        final categories = <String>{
+          for (final t in templates)
+            if (t.category != null) t.category!,
+        }.toList()..sort();
+        // A stale selection (category gone after a refresh) reads as All.
+        final active = categories.contains(_category) ? _category : null;
+        final visible = active == null
+            ? templates
+            : [
+                for (final t in templates)
+                  if (t.category == active) t,
+              ];
         return Column(
           children: [
             if (result.fromCache)
-              Container(
-                width: double.infinity,
-                color: const Color(0xFF78350F),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 6,
+              // A quiet status pill, not an alarm strip: offline is a state,
+              // not an error.
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Center(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.surfaceHigh,
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(color: AppColors.outline),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Symbols.cloud_off_rounded,
+                          size: 14,
+                          color: AppColors.textSecondary,
+                        ),
+                        SizedBox(width: 6),
+                        Text(
+                          'Offline — showing downloaded templates',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
-                child: const Text(
-                  'Offline — showing downloaded templates',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 12),
+              ),
+            if (categories.isNotEmpty)
+              SizedBox(
+                height: 44,
+                child: ListView(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
+                  children: [
+                    _FilterChip(
+                      label: 'All',
+                      selected: active == null,
+                      onTap: () => setState(() => _category = null),
+                    ),
+                    for (final category in categories)
+                      _FilterChip(
+                        label: category,
+                        selected: active == category,
+                        onTap: () => setState(() => _category = category),
+                      ),
+                  ],
                 ),
               ),
             Expanded(
               child: templates.isEmpty
-                  ? const Center(child: Text('No templates published yet.'))
+                  ? const _EmptyTab(
+                      icon: Symbols.grid_view_rounded,
+                      message: 'No templates published yet.',
+                    )
                   : RefreshIndicator(
                       onRefresh: _refresh,
                       // Rebuilds when a purchase lands so the locks vanish.
@@ -209,18 +326,18 @@ class _GalleryScreenState extends State<GalleryScreen> {
                         valueListenable: _entitlements.isPro,
                         builder: (context, isPro, _) => GridView.builder(
                           padding: const EdgeInsets.all(12),
-                          gridDelegate:
-                              const SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: 2,
-                                childAspectRatio: 0.62,
-                                crossAxisSpacing: 12,
-                                mainAxisSpacing: 12,
-                              ),
-                          itemCount: templates.length,
-                          itemBuilder: (context, i) => _TemplateCard(
-                            summary: templates[i],
-                            locked: templates[i].premium && !isPro,
-                            onTap: () => _openTemplate(templates[i]),
+                          gridDelegate: _kGridDelegate,
+                          itemCount: visible.length,
+                          itemBuilder: (context, i) => _AppearFromBelow(
+                            // Re-keyed per template so switching category
+                            // filters replays the entrance on the new set.
+                            key: ValueKey(visible[i].id),
+                            order: i,
+                            child: _TemplateCard(
+                              summary: visible[i],
+                              locked: visible[i].premium && !isPro,
+                              onTap: () => _openTemplate(visible[i]),
+                            ),
                           ),
                         ),
                       ),
@@ -229,6 +346,237 @@ class _GalleryScreenState extends State<GalleryScreen> {
           ],
         );
       },
+    );
+  }
+}
+
+/// Shared by the real grid and its skeleton so the loading layout is exact.
+const SliverGridDelegate _kGridDelegate =
+    SliverGridDelegateWithFixedCrossAxisCount(
+      crossAxisCount: 2,
+      childAspectRatio: 0.62,
+      crossAxisSpacing: 12,
+      mainAxisSpacing: 12,
+    );
+
+/// Pulsing ghost cards shown while the template index loads.
+class _SkeletonGrid extends StatefulWidget {
+  const _SkeletonGrid();
+
+  @override
+  State<_SkeletonGrid> createState() => _SkeletonGridState();
+}
+
+class _SkeletonGridState extends State<_SkeletonGrid>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _pulse = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 900),
+  );
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Repeat only under an active ticker; a static ghost respects the
+    // system's reduced-motion setting.
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _pulse.stop();
+      _pulse.value = 1;
+    } else if (!_pulse.isAnimating) {
+      _pulse.repeat(reverse: true);
+    }
+  }
+
+  @override
+  void dispose() {
+    _pulse.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      opacity: Tween(begin: 0.45, end: 1.0).animate(
+        CurvedAnimation(parent: _pulse, curve: Curves.easeInOut),
+      ),
+      child: GridView.builder(
+        physics: const NeverScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(12),
+        gridDelegate: _kGridDelegate,
+        itemCount: 6,
+        itemBuilder: (context, i) => Card(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Expanded(child: ColoredBox(color: AppColors.surfaceHigh)),
+              Padding(
+                padding: const EdgeInsets.all(10),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _bar(widthFactor: 0.6, height: 12),
+                    const SizedBox(height: 6),
+                    _bar(widthFactor: 0.4, height: 10),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  static Widget _bar({required double widthFactor, required double height}) {
+    return FractionallySizedBox(
+      alignment: Alignment.centerLeft,
+      widthFactor: widthFactor,
+      child: Container(
+        height: height,
+        decoration: BoxDecoration(
+          color: AppColors.surfaceBright,
+          borderRadius: BorderRadius.circular(4),
+        ),
+      ),
+    );
+  }
+}
+
+/// One-shot entrance for grid items: fade in while sliding up 12px, staggered
+/// by [order] (capped so deep items don't wait). Runs once per element — a
+/// rebuild (e.g. the unlock flip) never replays it.
+class _AppearFromBelow extends StatefulWidget {
+  final int order;
+  final Widget child;
+
+  const _AppearFromBelow({super.key, required this.order, required this.child});
+
+  @override
+  State<_AppearFromBelow> createState() => _AppearFromBelowState();
+}
+
+class _AppearFromBelowState extends State<_AppearFromBelow>
+    with SingleTickerProviderStateMixin {
+  // The stagger is an Interval inside one controller run — no timers, so
+  // widget tests never end with one pending.
+  static const int _kStepMs = 40;
+  static const int _kFadeMs = 240;
+
+  late final int _delayMs = _kStepMs * widget.order.clamp(0, 8);
+  late final AnimationController _in = AnimationController(
+    vsync: this,
+    duration: Duration(milliseconds: _delayMs + _kFadeMs),
+  );
+  bool _started = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_started) return;
+    _started = true;
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _in.value = 1;
+    } else {
+      _in.forward();
+    }
+  }
+
+  @override
+  void dispose() {
+    _in.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final curve = CurvedAnimation(
+      parent: _in,
+      curve: Interval(
+        _delayMs / (_delayMs + _kFadeMs),
+        1,
+        curve: Curves.easeOutCubic,
+      ),
+    );
+    return FadeTransition(
+      opacity: curve,
+      child: SlideTransition(
+        position: Tween(
+          begin: const Offset(0, 0.04),
+          end: Offset.zero,
+        ).animate(curve),
+        child: widget.child,
+      ),
+    );
+  }
+}
+
+/// A category pill: coral when active (selection is an action), quiet
+/// otherwise.
+class _FilterChip extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _FilterChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(999),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: selected ? AppColors.coral : AppColors.surfaceHigh,
+            borderRadius: BorderRadius.circular(999),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: selected ? AppColors.onCoral : AppColors.textSecondary,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Empty state: an icon above the message, quiet and centered.
+class _EmptyTab extends StatelessWidget {
+  final IconData icon;
+  final String message;
+
+  const _EmptyTab({required this.icon, required this.message});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 40, color: AppColors.textSecondary),
+            const SizedBox(height: 12),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: AppColors.textSecondary),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -258,28 +606,55 @@ class _TemplateCard extends StatelessWidget {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  thumb != null && thumb.contains(',')
-                      ? Image.memory(
-                          base64Decode(thumb.split(',').last),
-                          fit: BoxFit.contain,
-                        )
-                      : const ColoredBox(
-                          color: Color(0xFF27272A),
-                          child: Center(child: Icon(Icons.image_outlined)),
-                        ),
-                  if (locked)
-                    Positioned(
-                      top: 8,
-                      right: 8,
-                      child: Container(
-                        padding: const EdgeInsets.all(6),
-                        decoration: const BoxDecoration(
-                          color: Colors.black54,
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(Icons.lock, size: 16),
+                  // Shared with the preview screen's canvas: the thumbnail
+                  // flies into place instead of vanishing and reappearing.
+                  Hero(
+                    tag: 'template-${summary.id}',
+                    child: thumb != null && thumb.contains(',')
+                        ? Image.memory(
+                            base64Decode(thumb.split(',').last),
+                            fit: BoxFit.contain,
+                          )
+                        : const ColoredBox(
+                            color: AppColors.surfaceHigh,
+                            child: Center(
+                              child: Icon(
+                                Symbols.image_rounded,
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                          ),
+                  ),
+                  // Always mounted so the badge can animate out the moment a
+                  // purchase lands (isPro rebuilds flip [locked] live).
+                  Positioned(
+                    top: 8,
+                    right: 8,
+                    child: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 200),
+                      switchInCurve: Curves.easeOutBack,
+                      switchOutCurve: Curves.easeIn,
+                      transitionBuilder: (child, animation) => ScaleTransition(
+                        scale: animation,
+                        child: FadeTransition(opacity: animation, child: child),
                       ),
+                      child: locked
+                          ? Container(
+                              key: const ValueKey('locked'),
+                              padding: const EdgeInsets.all(6),
+                              decoration: const BoxDecoration(
+                                color: Colors.black54,
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(
+                                Icons.lock,
+                                size: 16,
+                                color: AppColors.gold,
+                              ),
+                            )
+                          : const SizedBox.shrink(key: ValueKey('unlocked')),
                     ),
+                  ),
                 ],
               ),
             ),
@@ -295,12 +670,15 @@ class _TemplateCard extends StatelessWidget {
                     style: Theme.of(context).textTheme.titleSmall,
                   ),
                   Text(
+                    // The gold badge already says premium; repeating it in
+                    // text would be noise.
                     [
                       summary.aspectRatio,
                       if (summary.category != null) summary.category!,
-                      if (summary.premium) 'premium',
                     ].join(' · '),
-                    style: Theme.of(context).textTheme.bodySmall,
+                    style: Theme.of(context).textTheme.bodySmall!.copyWith(
+                      color: AppColors.textSecondary,
+                    ),
                   ),
                 ],
               ),
