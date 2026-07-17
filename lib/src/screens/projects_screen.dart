@@ -25,11 +25,14 @@ class ProjectsScreen extends StatelessWidget {
 
 /// The user's saved editing sessions, newest first — everything auto-saved by
 /// the editor (templates they edited and collages created from scratch).
+/// A grid of live thumbnails only: the collage speaks for itself, so the rows
+/// carry no name or timestamp — just the artwork and a delete affordance.
 class ProjectsList extends StatefulWidget {
   /// Injectable for tests; the app uses the default documents-dir store.
   final ProjectStore? store;
 
-  /// Used by the row thumbnails' live render; tests inject a synchronous fake.
+  /// Used by the card thumbnails' live render; tests inject a synchronous
+  /// fake.
   final FontResolver fontResolver;
 
   const ProjectsList({
@@ -107,14 +110,6 @@ class _ProjectsListState extends State<ProjectsList> {
     _reload();
   }
 
-  static String _ago(DateTime time) {
-    final d = DateTime.now().difference(time);
-    if (d.inMinutes < 1) return 'just now';
-    if (d.inHours < 1) return '${d.inMinutes} min ago';
-    if (d.inDays < 1) return '${d.inHours} h ago';
-    return '${d.inDays} d ago';
-  }
-
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<List<ProjectSummary>>(
@@ -148,50 +143,27 @@ class _ProjectsListState extends State<ProjectsList> {
             ),
           );
         }
-        return ListView.builder(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
+        return GridView.builder(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 2,
+            childAspectRatio: 0.72,
+            crossAxisSpacing: 12,
+            mainAxisSpacing: 12,
+          ),
           itemCount: projects.length,
           itemBuilder: (context, i) {
             final summary = projects[i];
-            return Padding(
-              // Keyed by project id: after a delete the rows shift position,
-              // and a positional key would hand row N the thumbnail state
-              // (and its cached future) of the row that used to sit there.
-              key: ObjectKey(summary.id),
-              padding: const EdgeInsets.only(bottom: 10),
-              child: Card(
-                margin: EdgeInsets.zero,
-                clipBehavior: Clip.antiAlias,
-                child: ListTile(
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 6,
-                  ),
-                  leading: _ProjectThumb(
-                    store: _store,
-                    id: summary.id,
-                    fontResolver: widget.fontResolver,
-                  ),
-                  title: Text(
-                    summary.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  subtitle: Text(
-                    'Edited ${_ago(summary.updatedAt)}',
-                    style: const TextStyle(
-                      color: AppColors.textSecondary,
-                      fontSize: 12,
-                    ),
-                  ),
-                  trailing: IconButton(
-                    icon: const Icon(Icons.delete_outline),
-                    tooltip: 'Delete project',
-                    onPressed: () => _delete(summary),
-                  ),
-                  onTap: () => _open(summary),
-                ),
-              ),
+            return _ProjectCard(
+              // Keyed by project id: after a delete the cards shift position,
+              // and a positional key would hand slot N the thumbnail state
+              // (and its cached future) of the card that used to sit there.
+              key: ValueKey('project-${summary.id}'),
+              store: _store,
+              summary: summary,
+              fontResolver: widget.fontResolver,
+              onOpen: () => _open(summary),
+              onDelete: () => _delete(summary),
             );
           },
         );
@@ -202,67 +174,105 @@ class _ProjectsListState extends State<ProjectsList> {
 
 /// A live miniature of the project's first panel: the saved document rendered
 /// by the same inert canvas the preview uses — no stale thumbnail files to
-/// keep in sync with edits.
-class _ProjectThumb extends StatefulWidget {
+/// keep in sync with edits. The whole card opens the project; the corner
+/// button deletes it.
+class _ProjectCard extends StatefulWidget {
   final ProjectStore store;
-  final String id;
+  final ProjectSummary summary;
   final FontResolver fontResolver;
+  final VoidCallback onOpen;
+  final VoidCallback onDelete;
 
-  const _ProjectThumb({
+  const _ProjectCard({
+    super.key,
     required this.store,
-    required this.id,
+    required this.summary,
     required this.fontResolver,
+    required this.onOpen,
+    required this.onDelete,
   });
 
   @override
-  State<_ProjectThumb> createState() => _ProjectThumbState();
+  State<_ProjectCard> createState() => _ProjectCardState();
 }
 
-class _ProjectThumbState extends State<_ProjectThumb> {
+class _ProjectCardState extends State<_ProjectCard> {
   // Cached across rebuilds so scrolls/reloads don't re-read the file; the
-  // row's ObjectKey retires this state when the id changes.
-  late final Future<Project?> _project = widget.store.load(widget.id);
+  // card's ValueKey retires this state when the id changes.
+  late final Future<Project?> _project = widget.store.load(widget.summary.id);
 
   @override
   Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(8),
-      child: SizedBox(
-        width: 48,
-        height: 56,
-        child: ColoredBox(
-          color: AppColors.surfaceHigh,
-          child: FutureBuilder<Project?>(
-            future: _project,
-            builder: (context, snapshot) {
-              final project = snapshot.data;
-              if (project == null || project.template.panels.isEmpty) {
-                // Loading, corrupt or empty — the neutral glyph covers all
-                // three; a broken project still opens the "couldn't open"
-                // path from the row itself.
-                return const Icon(
-                  Symbols.edit_note_rounded,
-                  size: 20,
-                  color: AppColors.textSecondary,
-                );
-              }
-              final template = project.template;
-              return Center(
-                child: AspectRatio(
-                  aspectRatio: template.canvasWidth / template.canvasHeight,
-                  child: IgnorePointer(
-                    child: PanelCanvas(
-                      panel: template.panels.first,
-                      canvasWidth: template.canvasWidth,
-                      canvasHeight: template.canvasHeight,
-                      content: project.content,
-                      fontResolver: widget.fontResolver,
+    return Card(
+      margin: EdgeInsets.zero,
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: widget.onOpen,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(10),
+              child: FutureBuilder<Project?>(
+                future: _project,
+                builder: (context, snapshot) {
+                  final project = snapshot.data;
+                  if (project == null || project.template.panels.isEmpty) {
+                    // Loading, corrupt or empty — the neutral glyph covers
+                    // all three; a broken project still opens the "couldn't
+                    // open" path from the card itself.
+                    return const Center(
+                      child: Icon(
+                        Symbols.edit_note_rounded,
+                        size: 32,
+                        color: AppColors.textSecondary,
+                      ),
+                    );
+                  }
+                  final template = project.template;
+                  return Center(
+                    child: AspectRatio(
+                      aspectRatio: template.canvasWidth / template.canvasHeight,
+                      child: IgnorePointer(
+                        child: PanelCanvas(
+                          panel: template.panels.first,
+                          canvasWidth: template.canvasWidth,
+                          canvasHeight: template.canvasHeight,
+                          content: project.content,
+                          fontResolver: widget.fontResolver,
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+            // Same corner-badge treatment as the gallery's lock: a quiet dark
+            // circle that stays legible over any collage.
+            Positioned(
+              top: 8,
+              right: 8,
+              child: Tooltip(
+                message: 'Delete project',
+                child: Material(
+                  color: Colors.black54,
+                  shape: const CircleBorder(),
+                  child: InkWell(
+                    customBorder: const CircleBorder(),
+                    onTap: widget.onDelete,
+                    child: const Padding(
+                      padding: EdgeInsets.all(7),
+                      child: Icon(
+                        Icons.delete_outline,
+                        size: 18,
+                        color: Colors.white,
+                      ),
                     ),
                   ),
                 ),
-              );
-            },
-          ),
+              ),
+            ),
+          ],
         ),
       ),
     );

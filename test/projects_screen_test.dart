@@ -86,27 +86,32 @@ void main() {
       await seedProject('p_2', 'Birthday');
       await pumpScreen(tester);
 
-      expect(find.text('Beach trip'), findsOneWidget);
-      expect(find.text('Birthday'), findsOneWidget);
+      // Thumbnail-only cards: no names in the list, so target them by key.
+      expect(find.byKey(const ValueKey('project-p_1')), findsOneWidget);
+      expect(find.byKey(const ValueKey('project-p_2')), findsOneWidget);
+      expect(find.text('Beach trip'), findsNothing);
 
-      // Delete 'Beach trip': its trailing bin, then the dialog's confirm.
+      // Delete 'Beach trip': its corner bin, then the dialog's confirm.
       await tester.tap(
         find.descendant(
-          of: find.widgetWithText(ListTile, 'Beach trip'),
+          of: find.byKey(const ValueKey('project-p_1')),
           matching: find.byIcon(Icons.delete_outline),
         ),
       );
       await tester.pumpAndSettle();
       expect(find.text('Delete project?'), findsOneWidget);
+      // The confirmation still names the project even though the card
+      // doesn't.
+      expect(find.textContaining('Beach trip'), findsOneWidget);
       await tester.tap(find.text('Delete'));
       await pumpUntil(
         tester,
-        () => !tester.any(find.text('Beach trip')),
+        () => !tester.any(find.byKey(const ValueKey('project-p_1'))),
         reason: 'the deleted project never left the list',
       );
 
-      expect(find.text('Beach trip'), findsNothing);
-      expect(find.text('Birthday'), findsOneWidget);
+      expect(find.byKey(const ValueKey('project-p_1')), findsNothing);
+      expect(find.byKey(const ValueKey('project-p_2')), findsOneWidget);
       expect(await store.list(), hasLength(1));
     });
   });
@@ -125,7 +130,7 @@ void main() {
         reason: 'the dialog never closed',
       );
 
-      expect(find.text('Beach trip'), findsOneWidget);
+      expect(find.byKey(const ValueKey('project-p_1')), findsOneWidget);
       expect(await store.list(), hasLength(1));
     });
   });
