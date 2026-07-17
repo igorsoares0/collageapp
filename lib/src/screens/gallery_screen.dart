@@ -11,6 +11,7 @@ import '../model/template.dart';
 import '../rendering/template_canvas.dart';
 import '../theme.dart';
 import 'projects_screen.dart';
+import 'settings_screen.dart';
 import 'template_preview_screen.dart';
 import 'template_screen.dart';
 
@@ -45,6 +46,10 @@ class _GalleryScreenState extends State<GalleryScreen> {
   // selected category disappears from a refreshed index (see the guard in
   // _buildTemplatesTab).
   String? _category;
+
+  // Bottom-bar destination: 0 templates, 1 projects, 2 settings. The create
+  // button in the bar is an action, not a destination — it never lands here.
+  int _tab = 0;
 
   @override
   void initState() {
@@ -142,71 +147,54 @@ class _GalleryScreenState extends State<GalleryScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Two tabs: published templates and the user's own saved projects — the
-    // projects are a first-class destination, not an icon in a corner. The
-    // projects tab rebuilds when switched to, so it always lists fresh saves.
-    return DefaultTabController(
-      length: 2,
-      child: Scaffold(
-        floatingActionButton: FloatingActionButton.extended(
-          onPressed: _createFromScratch,
-          icon: const Icon(Symbols.add_rounded),
-          label: const Text('Create'),
-        ),
-        body: SafeArea(
-          child: Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 16, 20, 14),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    'Collage Studio',
-                    style: Theme.of(context).textTheme.headlineMedium,
-                  ),
-                ),
-              ),
-              // Segmented pill switch instead of the stock underline TabBar.
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: Container(
-                  padding: const EdgeInsets.all(4),
-                  decoration: BoxDecoration(
-                    color: AppColors.surface,
-                    borderRadius: BorderRadius.circular(999),
-                    border: Border.all(color: AppColors.outline),
-                  ),
-                  child: TabBar(
-                    indicator: BoxDecoration(
-                      color: AppColors.surfaceBright,
-                      borderRadius: BorderRadius.circular(999),
+    // Two bottom-bar destinations around the center create button; settings
+    // lives behind the gear in the header. The switch rebuilds the destination
+    // on every visit, so the projects tab always lists fresh saves.
+    final (title, body) = switch (_tab) {
+      1 => (
+        'My projects',
+        ProjectsList(store: _projects, fontResolver: widget.fontResolver)
+            as Widget,
+      ),
+      _ => ('Collage Studio', _buildTemplatesTab()),
+    };
+    return Scaffold(
+      bottomNavigationBar: _HomeBottomBar(
+        current: _tab,
+        onSelect: (i) => setState(() => _tab = i),
+        onCreate: _createFromScratch,
+      ),
+      body: SafeArea(
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 12, 14),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: Theme.of(context).textTheme.headlineMedium,
                     ),
-                    indicatorSize: TabBarIndicatorSize.tab,
-                    dividerColor: Colors.transparent,
-                    labelColor: AppColors.textPrimary,
-                    unselectedLabelColor: AppColors.textSecondary,
-                    splashBorderRadius: BorderRadius.circular(999),
-                    tabs: const [
-                      Tab(height: 36, text: 'Templates'),
-                      Tab(height: 36, text: 'My projects'),
-                    ],
                   ),
-                ),
-              ),
-              const SizedBox(height: 6),
-              Expanded(
-                child: TabBarView(
-                  children: [
-                    _buildTemplatesTab(),
-                    ProjectsList(
-                      store: _projects,
-                      fontResolver: widget.fontResolver,
+                  IconButton(
+                    icon: const Icon(
+                      Symbols.settings_rounded,
+                      color: AppColors.textSecondary,
                     ),
-                  ],
-                ),
+                    tooltip: 'Settings',
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) =>
+                            SettingsScreen(entitlements: _entitlements),
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ],
-          ),
+            ),
+            Expanded(child: body),
+          ],
         ),
       ),
     );
@@ -346,6 +334,129 @@ class _GalleryScreenState extends State<GalleryScreen> {
           ],
         );
       },
+    );
+  }
+}
+
+/// The home's bottom bar: templates and projects flanking the create button,
+/// which sits dead-center, accent-filled because creating is THE action of
+/// the app — the destinations stay quiet.
+class _HomeBottomBar extends StatelessWidget {
+  final int current;
+  final ValueChanged<int> onSelect;
+  final VoidCallback onCreate;
+
+  const _HomeBottomBar({
+    required this.current,
+    required this.onSelect,
+    required this.onCreate,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        color: AppColors.surface,
+        border: Border(top: BorderSide(color: AppColors.outline)),
+      ),
+      child: SafeArea(
+        top: false,
+        child: SizedBox(
+          height: 64,
+          child: Row(
+            children: [
+              Expanded(
+                child: _NavItem(
+                  icon: Symbols.grid_view_rounded,
+                  label: 'Templates',
+                  selected: current == 0,
+                  onTap: () => onSelect(0),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: _CreateButton(onTap: onCreate),
+              ),
+              Expanded(
+                child: _NavItem(
+                  icon: Symbols.space_dashboard_rounded,
+                  label: 'Projects',
+                  selected: current == 1,
+                  onTap: () => onSelect(1),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _NavItem extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _NavItem({
+    required this.icon,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final color = selected ? AppColors.textPrimary : AppColors.textSecondary;
+    return InkResponse(
+      onTap: onTap,
+      radius: 40,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, size: 24, fill: selected ? 1 : 0, color: color),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Create-from-scratch: an action styled like the FAB it replaces.
+class _CreateButton extends StatelessWidget {
+  final VoidCallback onTap;
+
+  const _CreateButton({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppColors.accent,
+      borderRadius: BorderRadius.circular(16),
+      elevation: 2,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: const SizedBox(
+          width: 52,
+          height: 44,
+          child: Icon(
+            Symbols.add_rounded,
+            size: 26,
+            color: AppColors.onAccent,
+            semanticLabel: 'Create from scratch',
+          ),
+        ),
+      ),
     );
   }
 }
