@@ -174,6 +174,19 @@ class SlotContent {
     for (final layers in addedLayers.values) ...layers,
   ];
 
+  /// [panel] with the user's added layers stacked on top — what every render
+  /// of a saved document (editor canvas, project thumbnails, export) must
+  /// use; the raw template panel is missing anything added while editing.
+  Panel effectivePanel(Panel panel) {
+    final added = addedLayersFor(panel.id);
+    if (added.isEmpty) return panel;
+    return Panel(
+      id: panel.id,
+      backgroundColor: panel.backgroundColor,
+      layers: [...panel.layers, ...added],
+    );
+  }
+
   /// The panel's layer ids in effective stack order (index 0 = bottom),
   /// applying the user's reorder override over [naturalOrder]. Any layer the
   /// override doesn't mention (e.g. one added after the override was made)

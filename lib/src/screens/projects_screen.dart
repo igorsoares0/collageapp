@@ -235,7 +235,13 @@ class _ProjectCardState extends State<_ProjectCard> {
                       aspectRatio: template.canvasWidth / template.canvasHeight,
                       child: IgnorePointer(
                         child: PanelCanvas(
-                          panel: template.panels.first,
+                          // Effective panel, not the raw template one: layers
+                          // the user ADDED while editing (text, photos on a
+                          // scratch canvas) live in the content overrides and
+                          // would otherwise vanish from the thumbnail.
+                          panel: project.content.effectivePanel(
+                            template.panels.first,
+                          ),
                           canvasWidth: template.canvasWidth,
                           canvasHeight: template.canvasHeight,
                           content: project.content,

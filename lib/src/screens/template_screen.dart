@@ -429,15 +429,7 @@ class _TemplateScreenState extends State<TemplateScreen>
   /// The panel with the user's added layers stacked on top — what the canvas,
   /// the layer sheet and the export all render. The template itself is never
   /// touched; added layers live in [_content].
-  Panel _effectivePanel(Panel panel) {
-    final added = _content.addedLayersFor(panel.id);
-    if (added.isEmpty) return panel;
-    return Panel(
-      id: panel.id,
-      backgroundColor: panel.backgroundColor,
-      layers: [...panel.layers, ...added],
-    );
-  }
+  Panel _effectivePanel(Panel panel) => _content.effectivePanel(panel);
 
   /// All layers visible to lookups: the template's plus everything the user
   /// added (slot ids are globally unique, so a flat list is fine).

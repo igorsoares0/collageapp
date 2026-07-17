@@ -7,6 +7,10 @@ import 'package:collageapp/src/screens/projects_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+/// Keeps the requested family out of the thumbnail render — tests have no
+/// network for google_fonts.
+TextStyle testFontResolver(String family, TextStyle base) => base;
+
 void main() {
   late Directory dir;
   late ProjectStore store;
@@ -113,6 +117,57 @@ void main() {
       expect(find.byKey(const ValueKey('project-p_1')), findsNothing);
       expect(find.byKey(const ValueKey('project-p_2')), findsOneWidget);
       expect(await store.list(), hasLength(1));
+    });
+  });
+
+  testWidgets('thumbnail renders layers the user added while editing', (
+    tester,
+  ) async {
+    await tester.runAsync(() async {
+      // A from-scratch project: the blank template's panel has no layers of
+      // its own — everything lives in the content's addedLayers, which the
+      // thumbnail must merge in (regression: it used to render the raw
+      // template panel, dropping added text/photos).
+      await store.save(
+        Project(
+          id: 'p_1',
+          name: 'Scratch',
+          updatedAt: DateTime.now(),
+          template: Template.blank(),
+          content: const SlotContent(
+            texts: {'slot_t1': 'Hello'},
+            addedLayers: {
+              'panel_1': [
+                TextLayer(
+                  id: 'layer_t1',
+                  hidden: false,
+                  slotId: 'slot_t1',
+                  x: 100,
+                  y: 100,
+                  width: 500,
+                  fontFamily: 'Inter',
+                  fontSize: 64,
+                  fontWeight: 700,
+                  color: Color(0xFF111111),
+                  alignment: 'left',
+                ),
+              ],
+            },
+          ),
+        ),
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ProjectsList(store: store, fontResolver: testFontResolver),
+          ),
+        ),
+      );
+      await pumpUntil(
+        tester,
+        () => tester.any(find.text('Hello')),
+        reason: 'the added text layer never appeared in the thumbnail',
+      );
     });
   });
 
