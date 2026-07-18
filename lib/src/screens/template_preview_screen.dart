@@ -73,7 +73,11 @@ class _MetaChip extends StatelessWidget {
 class _TemplatePreviewScreenState extends State<TemplatePreviewScreen> {
   late Future<TemplateResult> _template;
   List<AssetRecord> _catalog = const [];
-  int _page = 0;
+
+  /// Current page as a notifier: a page change repaints only the dots row.
+  /// A whole-screen setState here would rebuild every mounted canvas (three
+  /// pages × their bleeds) right in the middle of the swipe and hitch it.
+  final _page = ValueNotifier<int>(0);
 
   /// Owned so the page dots can jump to a panel, not just reflect it.
   /// Recreated whenever the slide width changes: viewportFraction is final
@@ -92,6 +96,7 @@ class _TemplatePreviewScreenState extends State<TemplatePreviewScreen> {
   @override
   void dispose() {
     _pageController.dispose();
+    _page.dispose();
     super.dispose();
   }
 
@@ -106,7 +111,7 @@ class _TemplatePreviewScreenState extends State<TemplatePreviewScreen> {
     _viewportFraction = fraction;
     _pageController = PageController(
       viewportFraction: fraction,
-      initialPage: _page,
+      initialPage: _page.value,
     );
     return _pageController;
   }
@@ -219,7 +224,7 @@ class _TemplatePreviewScreenState extends State<TemplatePreviewScreen> {
                 return PageView.builder(
                   controller: _controllerFor(fraction),
                   itemCount: panels.length,
-                  onPageChanged: (i) => setState(() => _page = i),
+                  onPageChanged: (i) => _page.value = i,
                   itemBuilder: (context, i) {
                     Widget canvas = AspectRatio(
                       aspectRatio: template.canvasWidth / template.canvasHeight,
@@ -275,33 +280,36 @@ class _TemplatePreviewScreenState extends State<TemplatePreviewScreen> {
                 if (panels.length > 1) ...[
                   // Same dot language as the editor's panel carousel; tapping
                   // one slides that panel into view.
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      for (var i = 0; i < panels.length; i++)
-                        GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onTap: () => _pageController.animateToPage(
-                            i,
-                            duration: const Duration(milliseconds: 250),
-                            curve: Curves.easeOutCubic,
-                          ),
-                          child: Padding(
-                            padding: const EdgeInsets.all(6),
-                            child: AnimatedContainer(
-                              duration: const Duration(milliseconds: 150),
-                              width: i == _page ? 18 : 8,
-                              height: 8,
-                              decoration: BoxDecoration(
-                                color: i == _page
-                                    ? AppColors.accent
-                                    : AppColors.surfaceBright,
-                                borderRadius: BorderRadius.circular(4),
+                  ValueListenableBuilder<int>(
+                    valueListenable: _page,
+                    builder: (context, page, _) => Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        for (var i = 0; i < panels.length; i++)
+                          GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: () => _pageController.animateToPage(
+                              i,
+                              duration: const Duration(milliseconds: 250),
+                              curve: Curves.easeOutCubic,
+                            ),
+                            child: Padding(
+                              padding: const EdgeInsets.all(6),
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 150),
+                                width: i == page ? 18 : 8,
+                                height: 8,
+                                decoration: BoxDecoration(
+                                  color: i == page
+                                      ? AppColors.accent
+                                      : AppColors.surfaceBright,
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                    ],
+                      ],
+                    ),
                   ),
                   const SizedBox(height: 8),
                 ],
