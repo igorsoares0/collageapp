@@ -44,6 +44,15 @@ class TemplateSummary {
       );
 }
 
+/// A template plus the assets embedded in its response — today the designer's
+/// sample photos, referenced by imageAssetId and shown only in the preview.
+class TemplateRecord {
+  final Template template;
+  final List<AssetRecord> assets;
+
+  const TemplateRecord(this.template, this.assets);
+}
+
 class TemplateApi {
   final String baseUrl;
   final http.Client _client;
@@ -57,7 +66,7 @@ class TemplateApi {
       parseIndex(await fetchIndexBody());
 
   Future<Template> fetchTemplate(String id) async =>
-      parseTemplateRecord(await fetchTemplateBody(id));
+      parseTemplateRecord(await fetchTemplateBody(id)).template;
 
   /// Raw response bodies are exposed so TemplateStore can cache the exact
   /// JSON the server sent (the models have no toJson round-trip).
@@ -75,10 +84,14 @@ class TemplateApi {
     return res.body;
   }
 
-  /// The uploadable asset catalog (frames/stickers). Frames referenced by a
-  /// template's frameAssetId are resolved against this (plus bundled seeds).
+  /// The uploadable asset catalog. Only frames/stickers — designer photos are
+  /// template content and arrive embedded in each template's own response
+  /// (see [parseTemplateRecord]), so the app never downloads the photos of
+  /// templates the user doesn't open.
   Future<String> fetchAssetsBody() async {
-    final res = await _client.get(Uri.parse('$baseUrl/api/assets'));
+    final res = await _client.get(
+      Uri.parse('$baseUrl/api/assets?types=frame,sticker'),
+    );
     _ensureOk(res);
     return res.body;
   }
@@ -91,9 +104,15 @@ class TemplateApi {
         .toList();
   }
 
-  static Template parseTemplateRecord(String body) {
+  static TemplateRecord parseTemplateRecord(String body) {
     final record = jsonDecode(body) as Map<String, dynamic>;
-    return Template.fromJson(record['template'] as Map<String, dynamic>);
+    final assets = record['assets'] as List<dynamic>? ?? const [];
+    return TemplateRecord(
+      Template.fromJson(record['template'] as Map<String, dynamic>),
+      assets
+          .map((e) => AssetRecord.fromJson(e as Map<String, dynamic>))
+          .toList(),
+    );
   }
 
   static List<AssetRecord> parseAssets(String body) {

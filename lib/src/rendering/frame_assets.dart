@@ -91,6 +91,17 @@ class ResolvedFrame {
 /// Resolves [id] against the bundled seeds first (so older templates and the
 /// offline path keep working), then the remote [catalog]. Null when unset or
 /// unknown — the slot then draws a bare photo (the field is additive).
+/// Resolves a designer-placed sample photo (a "photo" asset delivered with the
+/// template) into its image. Null when unset or not in [catalog] — the slot
+/// then falls back to the placeholder, so a missing asset degrades quietly.
+ImageProvider? resolvePhoto(String? id, List<AssetRecord> catalog) {
+  if (id == null) return null;
+  for (final a in catalog) {
+    if (a.id == id && a.type == 'photo') return a.image;
+  }
+  return null;
+}
+
 ResolvedFrame? resolveFrame(String? id, List<AssetRecord> catalog) {
   if (id == null) return null;
   final seed = _byId[id];

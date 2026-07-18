@@ -98,4 +98,36 @@ void main() {
     expect(template.layers, hasLength(6));
     expect(template.slotIds, ['hero_image', 'title', 'subtitle']);
   });
+
+  test('imageAssetId (designer sample photo) round-trips on image layers '
+      'and grid cells', () {
+    final image =
+        Layer.fromJson({
+              'type': 'image',
+              'id': 'l1',
+              'slotId': 's1',
+              'x': 0,
+              'y': 0,
+              'width': 100,
+              'height': 100,
+              'imageAssetId': 'photo_1',
+            })!
+            as ImageLayer;
+    expect(image.imageAssetId, 'photo_1');
+    expect(image.toJson()['imageAssetId'], 'photo_1');
+
+    final cell = GridCell.fromJson({
+      'slotId': 'cell_1',
+      'col': 0,
+      'row': 0,
+      'imageAssetId': 'photo_2',
+    });
+    expect(cell.imageAssetId, 'photo_2');
+    expect(cell.toJson()['imageAssetId'], 'photo_2');
+
+    // Absent stays absent (older templates), including in toJson.
+    final bare = GridCell.fromJson({'slotId': 'cell_2', 'col': 1, 'row': 0});
+    expect(bare.imageAssetId, isNull);
+    expect(bare.toJson().containsKey('imageAssetId'), isFalse);
+  });
 }

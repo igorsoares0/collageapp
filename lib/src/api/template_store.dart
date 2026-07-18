@@ -17,9 +17,18 @@ class IndexResult {
 
 class TemplateResult {
   final Template template;
+
+  /// Assets embedded in the template's response (the designer's sample
+  /// photos); cached with the raw body, so they survive offline too.
+  final List<AssetRecord> assets;
+
   final bool fromCache;
 
-  const TemplateResult(this.template, {required this.fromCache});
+  const TemplateResult(
+    this.template, {
+    this.assets = const [],
+    required this.fromCache,
+  });
 }
 
 class AssetsResult {
@@ -68,14 +77,18 @@ class TemplateStore {
     } catch (_) {
       final cached = await _readCache(name);
       if (cached == null) rethrow;
+      final record = TemplateApi.parseTemplateRecord(cached);
       return TemplateResult(
-        TemplateApi.parseTemplateRecord(cached),
+        record.template,
+        assets: record.assets,
         fromCache: true,
       );
     }
     await _writeCache(name, body);
+    final record = TemplateApi.parseTemplateRecord(body);
     return TemplateResult(
-      TemplateApi.parseTemplateRecord(body),
+      record.template,
+      assets: record.assets,
       fromCache: false,
     );
   }

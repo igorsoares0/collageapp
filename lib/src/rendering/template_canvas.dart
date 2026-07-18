@@ -291,8 +291,15 @@ class PanelCanvas extends StatelessWidget {
   final void Function(String slotId)? onSlotDelete;
 
   /// Remote asset catalog (frames/stickers). A slot's frameAssetId resolves
-  /// against this plus the bundled seeds; empty = seeds only.
+  /// against this plus the bundled seeds; empty = seeds only. Preview usages
+  /// also merge in the photo assets embedded in the template's response.
   final List<AssetRecord> assetCatalog;
+
+  /// When true, empty image slots and grid cells show the designer's sample
+  /// photo (imageAssetId, resolved against [assetCatalog]) instead of the
+  /// placeholder. The PREVIEW opts in — the editor never does, so the user
+  /// starts from placeholders and exports only their own photos.
+  final bool showTemplatePhotos;
 
   /// A finished grid-divider drag reports the grid layer's id, whether the
   /// COLUMN tracks changed (else rows), and the new full fraction list. Store
@@ -334,6 +341,17 @@ class PanelCanvas extends StatelessWidget {
   final List<double> guideXs;
   final List<double> guideYs;
 
+  /// Neighbouring panels, for the carousel bleed: panels are contiguous in
+  /// the design (the on-screen gap is cosmetic), so whatever a neighbour's
+  /// layer spills past the shared edge continues here, offset by exactly one
+  /// canvas width. Ghosts are inert (IgnorePointer), clipped to the canvas,
+  /// and render INSIDE the export boundary so the exported slide carries the
+  /// bleed. Left neighbour paints under this panel's layers, right one above
+  /// — z grows with panel index, consistently across the strip (same rule as
+  /// the web editor).
+  final Panel? panelBefore;
+  final Panel? panelAfter;
+
   const PanelCanvas({
     super.key,
     required this.panel,
@@ -354,27 +372,65 @@ class PanelCanvas extends StatelessWidget {
     this.onSlotDelete,
     this.editingFieldKey,
     this.assetCatalog = const [],
+    this.showTemplatePhotos = false,
     this.onGridFractions,
     this.selectionLink,
     this.onSelectionSize,
     this.exportKey,
     this.guideXs = const [],
     this.guideYs = const [],
+    this.panelBefore,
+    this.panelAfter,
   });
 
-  @override
-  Widget build(BuildContext context) {
-    // Stack order and visibility honour the user's per-layer overrides
-    // (SlotContent), falling back to the template's own order/hidden flags.
-    final byId = {for (final l in panel.layers) l.id: l};
-    final orderedIds = content.orderedLayerIds(panel.id, [
-      for (final l in panel.layers) l.id,
+  /// Stack order and visibility honour the user's per-layer overrides
+  /// (SlotContent), falling back to the template's own order/hidden flags.
+  List<Layer> _visibleLayers(Panel p) {
+    final byId = {for (final l in p.layers) l.id: l};
+    final orderedIds = content.orderedLayerIds(p.id, [
+      for (final l in p.layers) l.id,
     ]);
-    final visibleLayers = [
+    return [
       for (final id in orderedIds)
         if (byId[id] case final layer?)
           if (!content.layerHidden(layer.id, layer.hidden)) layer,
     ];
+  }
+
+  /// A neighbour's layers painted as this panel's carousel bleed: shifted by
+  /// one canvas width, inert, and clipped to the canvas box. Rendered with no
+  /// callbacks and no selection, so no chrome ever repeats here — editing
+  /// happens on the owner panel.
+  Widget _bleed(Panel neighbour, double dx) {
+    return Positioned.fill(
+      child: IgnorePointer(
+        child: ClipRect(
+          child: Transform.translate(
+            offset: Offset(dx, 0),
+            child: Stack(
+              // The neighbour's layers overflow the shifted box by design;
+              // the ClipRect above is the only clip that should apply.
+              clipBehavior: Clip.none,
+              children: [
+                for (final layer in _visibleLayers(neighbour))
+                  _LayerWidget(
+                    layer: layer,
+                    content: content,
+                    fontResolver: fontResolver,
+                    assetCatalog: assetCatalog,
+                    showTemplatePhotos: showTemplatePhotos,
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final visibleLayers = _visibleLayers(panel);
     return FittedBox(
       child: SizedBox(
         width: canvasWidth,
@@ -408,6 +464,7 @@ class PanelCanvas extends StatelessWidget {
                               panel.backgroundColor,
                         ),
                       ),
+                      if (panelBefore case final p?) _bleed(p, -canvasWidth),
                       for (final layer in visibleLayers)
                         _LayerWidget(
                           layer: layer,
@@ -422,6 +479,7 @@ class PanelCanvas extends StatelessWidget {
                           onSlotDelete: onSlotDelete,
                           onTextChanged: onTextChanged,
                           assetCatalog: assetCatalog,
+                          showTemplatePhotos: showTemplatePhotos,
                           selectedSlotId: selectedSlotId,
                           onGridFractions: onGridFractions,
                           selectionLink: selectionLink,
@@ -442,6 +500,7 @@ class PanelCanvas extends StatelessWidget {
                               ? editingFieldKey
                               : null,
                         ),
+                      if (panelAfter case final p?) _bleed(p, canvasWidth),
                     ],
                   ),
                 ),
@@ -547,6 +606,8 @@ class TemplateCanvas extends StatelessWidget {
   Widget build(BuildContext context) {
     return PanelCanvas(
       panel: template.panels.first,
+      // Carousel bleed from the second panel, matching the web thumbnail.
+      panelAfter: template.panels.length > 1 ? template.panels[1] : null,
       canvasWidth: template.canvasWidth,
       canvasHeight: template.canvasHeight,
       content: content,
@@ -597,6 +658,9 @@ class _LayerWidget extends StatelessWidget {
   final bool editing;
   final GlobalKey? fieldKey;
 
+  /// See [PanelCanvas.showTemplatePhotos].
+  final bool showTemplatePhotos;
+
   /// See [PanelCanvas.selectionLink] / [PanelCanvas.onSelectionSize].
   final LayerLink? selectionLink;
   final ValueChanged<Size>? onSelectionSize;
@@ -614,6 +678,7 @@ class _LayerWidget extends StatelessWidget {
     this.onSlotDelete,
     this.onTextChanged,
     this.assetCatalog = const [],
+    this.showTemplatePhotos = false,
     this.selectedSlotId,
     this.onGridFractions,
     this.selectionLink,
@@ -642,6 +707,7 @@ class _LayerWidget extends StatelessWidget {
             layer: l,
             content: content,
             assetCatalog: assetCatalog,
+            showTemplatePhotos: showTemplatePhotos,
             interactive: onSlotTap != null,
             selected: selected,
             onPick: onPickImage,
@@ -676,12 +742,11 @@ class _LayerWidget extends StatelessWidget {
         // keeps the model box as the layout/transform anchor and re-aligns
         // the hugged paragraph inside it per the text alignment.
         frameWidth: l.width * content.stretchXFor(l.slotId),
-        frameAlignment:
-            switch (content.alignmentFor(l.slotId) ?? l.alignment) {
-              'center' => Alignment.topCenter,
-              'right' => Alignment.topRight,
-              _ => Alignment.topLeft,
-            },
+        frameAlignment: switch (content.alignmentFor(l.slotId) ?? l.alignment) {
+          'center' => Alignment.topCenter,
+          'right' => Alignment.topRight,
+          _ => Alignment.topLeft,
+        },
         // Text height is automatic: only the wrap width stretches, so the
         // top/bottom pills (and their zones) don't exist.
         baseSize: Size(l.width, 0),
@@ -733,6 +798,7 @@ class _LayerWidget extends StatelessWidget {
       grid: l,
       content: content,
       assetCatalog: assetCatalog,
+      showTemplatePhotos: showTemplatePhotos,
       interactive: onSlotTap != null,
       selectedSlotId: selectedSlotId,
       onSlotTap: onSlotTap,
@@ -801,7 +867,11 @@ class _LayerWidget extends StatelessWidget {
   /// exact same padded LAYOUT — so _SlotGestures' zone math and the -pad
   /// shift in _slot are untouched — but no visuals, plus the leader the
   /// overlay's follower snaps to and the size report it needs.
-  Widget _leaderChromed(double scale, Widget child, {bool verticalPills = true}) {
+  Widget _leaderChromed(
+    double scale,
+    Widget child, {
+    bool verticalPills = true,
+  }) {
     if (selectionLink == null) {
       return _SelectionChrome(
         scale: scale,
@@ -1267,9 +1337,7 @@ class _SlotGesturesState extends State<_SlotGestures> {
   /// that too. (Derivation: painted(p) = pos + C + S·Ru·(Rt·p − C).)
   Offset _edgeCompensation(double dLayout, SlotEdge edge) {
     final horizontal = edge == SlotEdge.left || edge == SlotEdge.right;
-    final e = horizontal
-        ? Offset(dLayout / 2, 0)
-        : Offset(0, dLayout / 2);
+    final e = horizontal ? Offset(dLayout / 2, 0) : Offset(0, dLayout / 2);
     final s = widget.currentScale;
     final ru = widget.currentRotation * math.pi / 180;
     final rt = widget.templateRotation * math.pi / 180;
@@ -1630,10 +1698,14 @@ class _ImageSlot extends StatelessWidget {
   final double? width;
   final double? height;
 
+  /// See [PanelCanvas.showTemplatePhotos].
+  final bool showTemplatePhotos;
+
   const _ImageSlot({
     required this.layer,
     required this.content,
     this.assetCatalog = const [],
+    this.showTemplatePhotos = false,
     this.interactive = false,
     this.selected = false,
     this.onPick,
@@ -1689,9 +1761,14 @@ class _ImageSlot extends StatelessWidget {
   }
 
   /// The photo (or empty placeholder) sized to a [w]×[h] box — the whole slot
-  /// when unframed, or the frame's window when framed.
+  /// when unframed, or the frame's window when framed. The user's photo always
+  /// wins; the designer's sample photo fills in only where the canvas opted in.
   Widget _photo(double w, double h, VoidCallback? pick) {
-    final image = content.imageFor(layer.slotId);
+    final image =
+        content.imageFor(layer.slotId) ??
+        (showTemplatePhotos
+            ? resolvePhoto(layer.imageAssetId, assetCatalog)
+            : null);
     if (image != null) {
       return Stack(
         children: [
@@ -1749,10 +1826,14 @@ class _GridSlot extends StatefulWidget {
   final double? width;
   final double? height;
 
+  /// See [PanelCanvas.showTemplatePhotos].
+  final bool showTemplatePhotos;
+
   const _GridSlot({
     required this.grid,
     required this.content,
     this.assetCatalog = const [],
+    this.showTemplatePhotos = false,
     this.interactive = false,
     this.selectedSlotId,
     this.onSlotTap,
@@ -1784,8 +1865,10 @@ class _GridSlotState extends State<_GridSlot> {
     // Effective (user-overridden) grid values; falling back to the template's.
     final gutter = content.gridGutter(grid.id, grid.gutter);
     final corner = content.gridCornerRadius(grid.id, grid.cornerRadius);
-    final colF = _dragColF ?? content.gridColFractions(grid.id, grid.colFractions);
-    final rowF = _dragRowF ?? content.gridRowFractions(grid.id, grid.rowFractions);
+    final colF =
+        _dragColF ?? content.gridColFractions(grid.id, grid.colFractions);
+    final rowF =
+        _dragRowF ?? content.gridRowFractions(grid.id, grid.rowFractions);
 
     // Dividers appear once one of this grid's cells is selected (so the user is
     // "in" the grid), and only when a fraction handler is wired.
@@ -1828,7 +1911,16 @@ class _GridSlotState extends State<_GridSlot> {
                   child: _GridCell(
                     slotId: cell.slotId,
                     radius: cell.borderRadius ?? corner,
-                    image: content.imageFor(cell.slotId),
+                    // The user's photo wins; the designer's sample only fills
+                    // in where the canvas opted in (the preview).
+                    image:
+                        content.imageFor(cell.slotId) ??
+                        (widget.showTemplatePhotos
+                            ? resolvePhoto(
+                                cell.imageAssetId,
+                                widget.assetCatalog,
+                              )
+                            : null),
                     selected: cell.slotId == widget.selectedSlotId,
                     interactive: widget.interactive,
                     onTap: widget.onSlotTap,
@@ -2583,8 +2675,7 @@ class _RenderRingHitRegion extends RenderProxyBox {
     // canvas beneath.
     if (inner.contains(position) &&
         !_nearCornerZone(position, size, scale) &&
-        _nearEdgeZone(position, size, scale, vertical: verticalEdges) ==
-            null) {
+        _nearEdgeZone(position, size, scale, vertical: verticalEdges) == null) {
       return false; // Interior: the canvas beneath owns it.
     }
     return super.hitTest(result, position: position);

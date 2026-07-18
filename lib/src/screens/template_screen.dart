@@ -1504,6 +1504,12 @@ class _TemplateScreenState extends State<TemplateScreen>
                   final target = _editingSlot == null
                       ? _selectionTarget(template)
                       : null;
+                  // Effective (user-override-applied) panels, indexed: each
+                  // canvas also needs its NEIGHBOURS for the carousel bleed,
+                  // and the ghosts must reflect the same overrides.
+                  final effectivePanels = [
+                    for (final p in panels) _effectivePanel(p),
+                  ];
                   final strip = SizedBox(
                     height: canvasHeight,
                     child: Padding(
@@ -1514,7 +1520,7 @@ class _TemplateScreenState extends State<TemplateScreen>
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          for (final panel in panels.map(_effectivePanel))
+                          for (final (i, panel) in effectivePanels.indexed)
                             Padding(
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 6,
@@ -1529,6 +1535,12 @@ class _TemplateScreenState extends State<TemplateScreen>
                                 child: PanelCanvas(
                                   exportKey: _panelKey(panel.id),
                                   panel: panel,
+                                  panelBefore: i > 0
+                                      ? effectivePanels[i - 1]
+                                      : null,
+                                  panelAfter: i + 1 < effectivePanels.length
+                                      ? effectivePanels[i + 1]
+                                      : null,
                                   canvasWidth: template.canvasWidth,
                                   canvasHeight: template.canvasHeight,
                                   fontResolver: widget.fontResolver,

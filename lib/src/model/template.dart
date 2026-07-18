@@ -187,6 +187,7 @@ sealed class Layer {
           opacity: (json['opacity'] as num?)?.toDouble() ?? 1,
           borderRadius: (json['borderRadius'] as num?)?.toDouble() ?? 0,
           frameAssetId: json['frameAssetId'] as String?,
+          imageAssetId: json['imageAssetId'] as String?,
         );
       case 'text':
         return TextLayer(
@@ -259,6 +260,11 @@ class ImageLayer extends Layer {
   /// null = bare photo. Resolved against the frame catalog at render time.
   final String? frameAssetId;
 
+  /// Optional designer-placed sample photo (a "photo" asset delivered with the
+  /// template). Shown only where the canvas opts in (the preview) — the editor
+  /// keeps the placeholder so the user's own photo is the content.
+  final String? imageAssetId;
+
   const ImageLayer({
     required super.id,
     required super.hidden,
@@ -271,6 +277,7 @@ class ImageLayer extends Layer {
     required this.opacity,
     required this.borderRadius,
     this.frameAssetId,
+    this.imageAssetId,
   });
 
   @override
@@ -287,6 +294,7 @@ class ImageLayer extends Layer {
     'opacity': opacity,
     'borderRadius': borderRadius,
     if (frameAssetId != null) 'frameAssetId': frameAssetId,
+    if (imageAssetId != null) 'imageAssetId': imageAssetId,
   };
 }
 
@@ -393,6 +401,9 @@ class GridCell {
   /// Per-cell corner radius override; null = use the grid's cornerRadius.
   final double? borderRadius;
 
+  /// Optional designer-placed sample photo (see ImageLayer.imageAssetId).
+  final String? imageAssetId;
+
   const GridCell({
     required this.slotId,
     required this.col,
@@ -400,6 +411,7 @@ class GridCell {
     this.colSpan = 1,
     this.rowSpan = 1,
     this.borderRadius,
+    this.imageAssetId,
   });
 
   factory GridCell.fromJson(Map<String, dynamic> json) => GridCell(
@@ -409,6 +421,7 @@ class GridCell {
     colSpan: (json['colSpan'] as num?)?.toInt() ?? 1,
     rowSpan: (json['rowSpan'] as num?)?.toInt() ?? 1,
     borderRadius: (json['borderRadius'] as num?)?.toDouble(),
+    imageAssetId: json['imageAssetId'] as String?,
   );
 
   Map<String, dynamic> toJson() => {
@@ -418,6 +431,7 @@ class GridCell {
     'colSpan': colSpan,
     'rowSpan': rowSpan,
     if (borderRadius != null) 'borderRadius': borderRadius,
+    if (imageAssetId != null) 'imageAssetId': imageAssetId,
   };
 }
 

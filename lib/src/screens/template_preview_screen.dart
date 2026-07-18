@@ -69,7 +69,7 @@ class _MetaChip extends StatelessWidget {
 }
 
 class _TemplatePreviewScreenState extends State<TemplatePreviewScreen> {
-  late Future<Template> _template;
+  late Future<TemplateResult> _template;
   List<AssetRecord> _catalog = const [];
   int _page = 0;
 
@@ -90,9 +90,9 @@ class _TemplatePreviewScreenState extends State<TemplatePreviewScreen> {
   }
 
   void _load() {
-    _template = widget.store
-        .loadTemplate(widget.summary.id)
-        .then((r) => r.template);
+    // The whole result: the template AND the sample photos embedded in its
+    // response, which the preview (and only the preview) renders.
+    _template = widget.store.loadTemplate(widget.summary.id);
   }
 
   /// Best-effort, like the editor: offline the bundled seeds still resolve.
@@ -132,7 +132,7 @@ class _TemplatePreviewScreenState extends State<TemplatePreviewScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: Text(widget.summary.name)),
-      body: FutureBuilder<Template>(
+      body: FutureBuilder<TemplateResult>(
         future: _template,
         builder: (context, snapshot) {
           if (snapshot.connectionState != ConnectionState.done) {
@@ -159,7 +159,7 @@ class _TemplatePreviewScreenState extends State<TemplatePreviewScreen> {
               ),
             );
           }
-          return _buildPreview(snapshot.data!);
+          return _buildPreview(snapshot.data!.template, snapshot.data!.assets);
         },
       ),
     );
@@ -171,8 +171,10 @@ class _TemplatePreviewScreenState extends State<TemplatePreviewScreen> {
     color: AppColors.textSecondary,
   );
 
-  Widget _buildPreview(Template template) {
+  Widget _buildPreview(Template template, List<AssetRecord> embedded) {
     final panels = template.panels;
+    // Frames/stickers from the global catalog + this template's own photos.
+    final catalog = [..._catalog, ...embedded];
     return Column(
       children: [
         Expanded(
@@ -191,10 +193,16 @@ class _TemplatePreviewScreenState extends State<TemplatePreviewScreen> {
                   child: IgnorePointer(
                     child: PanelCanvas(
                       panel: panels[i],
+                      // Carousel bleed from the neighbouring slides.
+                      panelBefore: i > 0 ? panels[i - 1] : null,
+                      panelAfter: i + 1 < panels.length ? panels[i + 1] : null,
                       canvasWidth: template.canvasWidth,
                       canvasHeight: template.canvasHeight,
                       fontResolver: widget.fontResolver,
-                      assetCatalog: _catalog,
+                      assetCatalog: catalog,
+                      // The preview is the "with sample photos" look; the
+                      // editor starts from placeholders.
+                      showTemplatePhotos: true,
                     ),
                   ),
                 );
@@ -275,9 +283,7 @@ class _TemplatePreviewScreenState extends State<TemplatePreviewScreen> {
                         minimumSize: const Size.fromHeight(52),
                       ),
                       onPressed: _useTemplate,
-                      icon: Icon(
-                        locked ? Icons.lock : Symbols.edit_rounded,
-                      ),
+                      icon: Icon(locked ? Icons.lock : Symbols.edit_rounded),
                       label: Text(
                         locked ? 'Unlock with Pro' : 'Use this template',
                       ),

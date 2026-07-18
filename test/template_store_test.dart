@@ -73,4 +73,29 @@ void main() {
       throwsA(isA<SocketException>()),
     );
   });
+
+  test('assets embedded in the template response ride into TemplateResult, '
+      'online and from cache', () async {
+    const photo =
+        '{"id":"photo_1","type":"photo","name":"Sample",'
+        '"dataUrl":"data:image/jpeg;base64,AAAA","aspect":1.5,'
+        '"window":null,"createdAt":"2026-01-01T00:00:00Z"}';
+    final withAssets = MockClient(
+      (req) async => req.url.path == '/api/templates'
+          ? http.Response(indexBody, 200)
+          : http.Response('{"template": $fixture, "assets": [$photo]}', 200),
+    );
+
+    final online = storeWith(withAssets);
+    final result = await online.loadTemplate('tpl_1');
+    expect(result.assets, hasLength(1));
+    expect(result.assets.single.type, 'photo');
+    expect(result.assets.single.id, 'photo_1');
+
+    // The raw body was cached, so the photos survive offline too.
+    final offline = storeWith(offlineClient());
+    final cached = await offline.loadTemplate('tpl_1');
+    expect(cached.fromCache, isTrue);
+    expect(cached.assets.single.id, 'photo_1');
+  });
 }
