@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../model/asset_record.dart';
@@ -47,8 +46,8 @@ class TemplateStore {
   final Directory? cacheDirOverride;
   Directory? _dir;
 
-  /// Handle to the last opportunistic prefetch, so tests can await it.
-  @visibleForTesting
+  /// Handle to the last opportunistic prefetch, so tests and cache-first
+  /// readers ([loadTemplateCached]) can await it.
   Future<void>? pendingPrefetch;
 
   TemplateStore({TemplateApi? api, this.cacheDirOverride})
@@ -90,6 +89,27 @@ class TemplateStore {
       record.template,
       assets: record.assets,
       fromCache: false,
+    );
+  }
+
+  /// Cache-first variant for lightweight consumers — the home cards flip
+  /// through every panel of every visible template, and a network round-trip
+  /// per card would hammer the API on each visit. Serves the copy [_prefetch]
+  /// wrote (waiting for a still-running prefetch first); only a template the
+  /// cache never saw goes online.
+  Future<TemplateResult> loadTemplateCached(String id) async {
+    final name = _templateFile(id);
+    var cached = await _readCache(name);
+    if (cached == null) {
+      await pendingPrefetch;
+      cached = await _readCache(name);
+    }
+    if (cached == null) return loadTemplate(id);
+    final record = TemplateApi.parseTemplateRecord(cached);
+    return TemplateResult(
+      record.template,
+      assets: record.assets,
+      fromCache: true,
     );
   }
 

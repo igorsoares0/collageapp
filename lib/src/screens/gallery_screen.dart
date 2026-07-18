@@ -7,6 +7,7 @@ import '../api/entitlements.dart';
 import '../api/project_store.dart';
 import '../api/template_api.dart';
 import '../api/template_store.dart';
+import '../model/asset_record.dart';
 import '../model/template.dart';
 import '../rendering/template_canvas.dart';
 import '../theme.dart';
@@ -42,6 +43,10 @@ class _GalleryScreenState extends State<GalleryScreen> {
   final _projects = ProjectStore();
   late Future<IndexResult> _index;
 
+  // Frames/stickers for the cards' live panel renders (multi-panel templates
+  // swipe through real canvases, not the static thumbnail).
+  List<AssetRecord> _assets = const [];
+
   // Category filter chip selection; null = All. Cleared implicitly when the
   // selected category disappears from a refreshed index (see the guard in
   // _buildTemplatesTab).
@@ -55,6 +60,18 @@ class _GalleryScreenState extends State<GalleryScreen> {
   void initState() {
     super.initState();
     _index = _store.loadIndex();
+    _loadAssets();
+  }
+
+  /// Best-effort, like the preview screen: offline (or on error) the cards
+  /// simply render without catalog frames/stickers.
+  Future<void> _loadAssets() async {
+    try {
+      final result = await _store.loadAssets();
+      if (mounted) setState(() => _assets = result.assets);
+    } catch (_) {
+      // Seeds only.
+    }
   }
 
   Future<void> _refresh() async {
@@ -324,6 +341,9 @@ class _GalleryScreenState extends State<GalleryScreen> {
                             child: _TemplateCard(
                               summary: visible[i],
                               locked: visible[i].premium && !isPro,
+                              store: _store,
+                              fontResolver: widget.fontResolver,
+                              catalog: _assets,
                               onTap: () => _openTemplate(visible[i]),
                             ),
                           ),
@@ -507,9 +527,10 @@ class _SkeletonGridState extends State<_SkeletonGrid>
   @override
   Widget build(BuildContext context) {
     return FadeTransition(
-      opacity: Tween(begin: 0.45, end: 1.0).animate(
-        CurvedAnimation(parent: _pulse, curve: Curves.easeInOut),
-      ),
+      opacity: Tween(
+        begin: 0.45,
+        end: 1.0,
+      ).animate(CurvedAnimation(parent: _pulse, curve: Curves.easeInOut)),
       child: GridView.builder(
         physics: const NeverScrollableScrollPhysics(),
         padding: const EdgeInsets.all(12),
@@ -695,17 +716,22 @@ class _EmptyTab extends StatelessWidget {
 class _TemplateCard extends StatelessWidget {
   final TemplateSummary summary;
   final bool locked;
+  final TemplateStore store;
+  final FontResolver fontResolver;
+  final List<AssetRecord> catalog;
   final VoidCallback onTap;
 
   const _TemplateCard({
     required this.summary,
     required this.locked,
+    required this.store,
+    required this.fontResolver,
+    required this.catalog,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    final thumb = summary.thumbnailDataUrl;
     return Card(
       clipBehavior: Clip.antiAlias,
       child: InkWell(
@@ -721,20 +747,12 @@ class _TemplateCard extends StatelessWidget {
                   // flies into place instead of vanishing and reappearing.
                   Hero(
                     tag: 'template-${summary.id}',
-                    child: thumb != null && thumb.contains(',')
-                        ? Image.memory(
-                            base64Decode(thumb.split(',').last),
-                            fit: BoxFit.contain,
-                          )
-                        : const ColoredBox(
-                            color: AppColors.surfaceHigh,
-                            child: Center(
-                              child: Icon(
-                                Symbols.image_rounded,
-                                color: AppColors.textSecondary,
-                              ),
-                            ),
-                          ),
+                    child: _CardCarousel(
+                      summary: summary,
+                      store: store,
+                      fontResolver: fontResolver,
+                      catalog: catalog,
+                    ),
                   ),
                   // Always mounted so the badge can animate out the moment a
                   // purchase lands (isPro rebuilds flip [locked] live).
@@ -798,5 +816,136 @@ class _TemplateCard extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+/// The card's thumbnail area. Single-panel templates keep the static index
+/// thumbnail; multi-panel ones become a mini carousel of live panel renders,
+/// so every slide of a carousel template can be seen right from the home.
+/// The template comes from the prefetch cache ([TemplateStore
+/// .loadTemplateCached]) — the grid itself never hits the network per card.
+class _CardCarousel extends StatefulWidget {
+  final TemplateSummary summary;
+  final TemplateStore store;
+  final FontResolver fontResolver;
+  final List<AssetRecord> catalog;
+
+  const _CardCarousel({
+    required this.summary,
+    required this.store,
+    required this.fontResolver,
+    required this.catalog,
+  });
+
+  @override
+  State<_CardCarousel> createState() => _CardCarouselState();
+}
+
+class _CardCarouselState extends State<_CardCarousel> {
+  late final Future<TemplateResult> _template = widget.store.loadTemplateCached(
+    widget.summary.id,
+  );
+
+  /// Dots only — same trick as the preview screen: a page change repaints
+  /// the dots row, never the mounted canvases.
+  final _page = ValueNotifier<int>(0);
+
+  @override
+  void dispose() {
+    _page.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<TemplateResult>(
+      future: _template,
+      builder: (context, snapshot) {
+        final template = snapshot.data?.template;
+        // Loading, failed, or nothing to swipe: the static thumbnail is
+        // exactly what this card always showed.
+        if (template == null || template.panels.length < 2) {
+          return _staticThumb();
+        }
+        final panels = template.panels;
+        final catalog = [...widget.catalog, ...snapshot.data!.assets];
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            PageView.builder(
+              itemCount: panels.length,
+              onPageChanged: (i) => _page.value = i,
+              itemBuilder: (context, i) => Center(
+                child: AspectRatio(
+                  aspectRatio: template.canvasWidth / template.canvasHeight,
+                  // Inert, like the preview: the card's InkWell keeps the
+                  // tap, the PageView keeps the horizontal drag.
+                  child: IgnorePointer(
+                    child: PanelCanvas(
+                      panel: panels[i],
+                      // Carousel bleed from the neighbouring slides.
+                      panelBefore: i > 0 ? panels[i - 1] : null,
+                      panelAfter: i + 1 < panels.length ? panels[i + 1] : null,
+                      canvasWidth: template.canvasWidth,
+                      canvasHeight: template.canvasHeight,
+                      fontResolver: widget.fontResolver,
+                      assetCatalog: catalog,
+                      // Cards show the "with sample photos" look, matching
+                      // the static thumbnail they replace.
+                      showTemplatePhotos: true,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            // Tiny page dots so the swipe is discoverable; inert so they
+            // never steal the card's tap.
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 6,
+              child: IgnorePointer(
+                child: ValueListenableBuilder<int>(
+                  valueListenable: _page,
+                  builder: (context, page, _) => Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      for (var i = 0; i < panels.length; i++)
+                        AnimatedContainer(
+                          duration: const Duration(milliseconds: 150),
+                          width: i == page ? 12 : 5,
+                          height: 5,
+                          margin: const EdgeInsets.symmetric(horizontal: 2),
+                          decoration: BoxDecoration(
+                            color: i == page
+                                ? AppColors.accent
+                                : Colors.black26,
+                            borderRadius: BorderRadius.circular(3),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _staticThumb() {
+    final thumb = widget.summary.thumbnailDataUrl;
+    return thumb != null && thumb.contains(',')
+        ? Image.memory(base64Decode(thumb.split(',').last), fit: BoxFit.contain)
+        : const ColoredBox(
+            color: AppColors.surfaceHigh,
+            child: Center(
+              child: Icon(
+                Symbols.image_rounded,
+                color: AppColors.textSecondary,
+              ),
+            ),
+          );
   }
 }
