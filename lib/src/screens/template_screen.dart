@@ -1519,11 +1519,22 @@ class _TemplateScreenState extends State<TemplateScreen>
                   final effectivePanels = [
                     for (final p in panels) _effectivePanel(p),
                   ];
+                  // The surface is top-left aligned (constrained:false), so the
+                  // strip only looks centered when it happens to be viewport-
+                  // wide. A single height-limited panel (a tall Story canvas) is
+                  // narrower than that and would pin to the left, so pad the
+                  // leftover evenly. Multi-panel strips overflow the viewport, so
+                  // this collapses back to the base 16px there (no shift).
+                  final innerWidth = panels.length * (panelWidth + 4);
+                  final sidePad = math.max(
+                    16.0,
+                    (constraints.maxWidth - innerWidth) / 2,
+                  );
                   final strip = SizedBox(
                     height: canvasHeight,
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
+                      padding: EdgeInsets.symmetric(
+                        horizontal: sidePad,
                         vertical: 16,
                       ),
                       child: Row(
