@@ -105,12 +105,16 @@ void main() {
     expect(done(), isTrue, reason: reason);
   }
 
+  // Cards carry no visible name — locate them by their per-template key
+  // (see _TemplateCard in gallery_screen.dart).
+  Finder cardOf(String id) => find.byKey(ValueKey('template-card-$id'));
+
   Future<FakeEntitlements> pumpGallery(
     WidgetTester tester, {
     bool pro = false,
   }) async {
     // The 2-column grid's cards (aspect 0.62) overflow the default 800x600
-    // test surface, putting the name labels off-screen and untappable.
+    // test surface, pushing the lower card off-screen and untappable.
     tester.view.physicalSize = const Size(800, 1400);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
@@ -126,21 +130,21 @@ void main() {
     );
     await pumpUntil(
       tester,
-      () => tester.any(find.text('Basic')),
+      () => tester.any(cardOf('tpl_free')),
       reason: 'the template grid never loaded',
     );
     return entitlements;
   }
 
-  /// Taps a gallery card and waits for its read-only preview.
-  Future<void> openPreview(WidgetTester tester, String name) async {
-    await tester.tap(find.text(name));
+  /// Taps a gallery card (by template id) and waits for its read-only preview.
+  Future<void> openPreview(WidgetTester tester, String id) async {
+    await tester.tap(cardOf(id));
     await pumpUntil(
       tester,
       () =>
           tester.any(find.byType(TemplatePreviewScreen)) &&
           !tester.any(find.byType(CircularProgressIndicator)),
-      reason: 'the preview of $name never rendered',
+      reason: 'the preview of $id never rendered',
     );
   }
 
@@ -153,7 +157,7 @@ void main() {
       // Only the premium card carries the lock badge.
       expect(find.byIcon(Icons.lock), findsOneWidget);
 
-      await openPreview(tester, 'Fancy');
+      await openPreview(tester, 'tpl_pro');
       // Looking is free: the template's real render, no paywall yet, and the
       // button announces the gate.
       expect(find.byType(PaywallScreen), findsNothing);
@@ -192,7 +196,7 @@ void main() {
       await pumpGallery(tester, pro: true);
       expect(find.byIcon(Icons.lock), findsNothing);
 
-      await openPreview(tester, 'Fancy');
+      await openPreview(tester, 'tpl_pro');
       expect(find.text('Use this template'), findsOneWidget);
 
       await tester.tap(find.text('Use this template'));
@@ -209,7 +213,7 @@ void main() {
       'hits the paywall', (tester) async {
     await tester.runAsync(() async {
       await pumpGallery(tester);
-      await openPreview(tester, 'Basic');
+      await openPreview(tester, 'tpl_free');
       expect(find.text('Use this template'), findsOneWidget);
 
       await tester.tap(find.text('Use this template'));
@@ -227,7 +231,7 @@ void main() {
   ) async {
     await tester.runAsync(() async {
       final entitlements = await pumpGallery(tester);
-      await openPreview(tester, 'Fancy');
+      await openPreview(tester, 'tpl_pro');
       await tester.tap(find.text('Unlock with Pro'));
       await pumpUntil(
         tester,
@@ -258,7 +262,7 @@ void main() {
       'no editor gestures', (tester) async {
     await tester.runAsync(() async {
       await pumpGallery(tester);
-      await openPreview(tester, 'Fancy');
+      await openPreview(tester, 'tpl_pro');
 
       // Fixture content actually rendered (not the gallery thumbnail).
       expect(

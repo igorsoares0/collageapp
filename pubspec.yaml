@@ -22,6 +22,7 @@ dependencies:
   share_plus: ^10.1.0
   purchases_flutter: ^10.4.1
   material_symbols_icons: ^4.2951.0
+  gal: ^2.3.2
 
 dev_dependencies:
   flutter_test:

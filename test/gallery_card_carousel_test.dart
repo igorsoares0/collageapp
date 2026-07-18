@@ -89,8 +89,9 @@ void main() {
     expect(done(), isTrue, reason: reason);
   }
 
-  Finder cardOf(String name) =>
-      find.ancestor(of: find.text(name), matching: find.byType(Card));
+  // Cards carry no visible name anymore — locate them by their per-template
+  // key (see _TemplateCard in gallery_screen.dart).
+  Finder cardOf(String id) => find.byKey(ValueKey('template-card-$id'));
 
   Future<void> pumpGallery(WidgetTester tester) async {
     tester.view.physicalSize = const Size(800, 1400);
@@ -107,7 +108,7 @@ void main() {
     );
     await pumpUntil(
       tester,
-      () => tester.any(find.text('Multi')),
+      () => tester.any(cardOf('tpl_multi')),
       reason: 'the template grid never loaded',
     );
   }
@@ -118,7 +119,7 @@ void main() {
 
       // The carousel appears once the cached template resolves.
       final pageView = find.descendant(
-        of: cardOf('Multi'),
+        of: cardOf('tpl_multi'),
         matching: find.byType(PageView),
       );
       await pumpUntil(
@@ -128,7 +129,7 @@ void main() {
       );
 
       final scrollable = find.descendant(
-        of: cardOf('Multi'),
+        of: cardOf('tpl_multi'),
         matching: find.byType(Scrollable),
       );
       ScrollPosition position() =>
@@ -153,7 +154,7 @@ void main() {
       // Give the cached-template future time to resolve, then confirm no
       // carousel ever grew: nothing to swipe on one panel.
       final multiPageView = find.descendant(
-        of: cardOf('Multi'),
+        of: cardOf('tpl_multi'),
         matching: find.byType(PageView),
       );
       await pumpUntil(
@@ -162,7 +163,7 @@ void main() {
         reason: 'the multi-panel card never grew its carousel',
       );
       expect(
-        find.descendant(of: cardOf('Single'), matching: find.byType(PageView)),
+        find.descendant(of: cardOf('tpl_single'), matching: find.byType(PageView)),
         findsNothing,
       );
     });
@@ -176,7 +177,7 @@ void main() {
       await pumpUntil(
         tester,
         () => tester.any(
-          find.descendant(of: cardOf('Multi'), matching: find.byType(PageView)),
+          find.descendant(of: cardOf('tpl_multi'), matching: find.byType(PageView)),
         ),
         reason: 'the multi-panel card never grew its carousel',
       );
@@ -184,7 +185,7 @@ void main() {
       // The tap lands on the carousel area, not the label: the PageView must
       // not swallow it.
       await tester.tap(
-        find.descendant(of: cardOf('Multi'), matching: find.byType(PageView)),
+        find.descendant(of: cardOf('tpl_multi'), matching: find.byType(PageView)),
         warnIfMissed: false,
       );
       await pumpUntil(

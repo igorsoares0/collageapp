@@ -734,6 +734,9 @@ class _TemplateCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Card(
+      // Stable per-template handle (the visible name was removed): lets tests
+      // and Heroes target a specific card without a text label.
+      key: ValueKey('template-card-${summary.id}'),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,

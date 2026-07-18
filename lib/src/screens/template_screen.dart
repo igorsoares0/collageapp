@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show HapticFeedback;
+import 'package:gal/gal.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:share_plus/share_plus.dart';
@@ -103,6 +104,7 @@ class _TemplateScreenState extends State<TemplateScreen>
   // user can hop between panels while recoloring.
   bool _backgroundMode = false;
   bool _exporting = false;
+  bool _saving = false;
 
   // Bumped after each successful export; keys the button's one-shot ✓ flash.
   int _exportCount = 0;
@@ -1226,9 +1228,11 @@ class _TemplateScreenState extends State<TemplateScreen>
     );
   }
 
-  Future<void> _exportPng(Template template) async {
-    // Deselect first: the handles (and the inline editor's cursor) are
-    // widgets inside the RepaintBoundary and would end up in the PNG.
+  /// Renders every panel to a full-resolution PNG, in carousel order. Shared
+  /// by Export (share sheet) and Save (photo gallery). Deselects first: the
+  /// handles (and the inline editor's cursor) are widgets inside the
+  /// RepaintBoundary and would otherwise end up in the PNG.
+  Future<List<Uint8List>> _capturePanels(Template template) async {
     if (_selectedSlot != null || _editingSlot != null) {
       setState(() {
         _selectedSlot = null;
@@ -1236,22 +1240,26 @@ class _TemplateScreenState extends State<TemplateScreen>
       });
       await WidgetsBinding.instance.endOfFrame;
     }
+    final panels = _panels(template);
+    final shots = <Uint8List>[];
+    for (final panel in panels) {
+      shots.add(await capturePng(_panelKey(panel.id), template.canvasWidth));
+    }
+    return shots;
+  }
+
+  Future<void> _exportPng(Template template) async {
     setState(() => _exporting = true);
     try {
       // One PNG per panel (added panels included), in carousel order — ready
       // to post as a carousel.
-      final panels = _panels(template);
+      final shots = await _capturePanels(template);
       final files = <XFile>[];
       final names = <String>[];
-      for (var i = 0; i < panels.length; i++) {
-        final panel = panels[i];
-        final bytes = await capturePng(
-          _panelKey(panel.id),
-          template.canvasWidth,
-        );
-        files.add(XFile.fromData(bytes, mimeType: 'image/png'));
+      for (var i = 0; i < shots.length; i++) {
+        files.add(XFile.fromData(shots[i], mimeType: 'image/png'));
         names.add(
-          panels.length == 1
+          shots.length == 1
               ? '${template.id}.png'
               : '${template.id}_${i + 1}.png',
         );
@@ -1273,6 +1281,57 @@ class _TemplateScreenState extends State<TemplateScreen>
       ).showSnackBar(SnackBar(content: Text('Export failed: $e')));
     } finally {
       if (mounted) setState(() => _exporting = false);
+    }
+  }
+
+  /// Writes each panel straight into the device photo gallery (gal), in
+  /// carousel order — the quick path that skips the share sheet. On Android
+  /// 10+ this needs no runtime permission; older Androids and iOS get a
+  /// one-time prompt via [Gal.requestAccess].
+  Future<void> _saveToGallery(Template template) async {
+    setState(() => _saving = true);
+    try {
+      if (!await Gal.requestAccess()) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Allow gallery access to save your collage.'),
+          ),
+        );
+        return;
+      }
+      final shots = await _capturePanels(template);
+      for (var i = 0; i < shots.length; i++) {
+        await Gal.putImageBytes(
+          shots[i],
+          name: shots.length == 1
+              ? template.id
+              : '${template.id}_${i + 1}',
+        );
+      }
+      HapticFeedback.mediumImpact();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            shots.length == 1
+                ? 'Saved to gallery'
+                : '${shots.length} images saved to gallery',
+          ),
+        ),
+      );
+    } on GalException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Save failed: ${e.type.message}')));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Save failed: $e')));
+    } finally {
+      if (mounted) setState(() => _saving = false);
     }
   }
 
@@ -1307,13 +1366,30 @@ class _TemplateScreenState extends State<TemplateScreen>
                       ? null
                       : () => _redoEdit(template),
                 ),
+                // Quick path: write the panels straight to the photo gallery,
+                // no share sheet. Sits beside Export (the share finish line).
+                IconButton(
+                  icon: _saving
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Symbols.download_rounded),
+                  tooltip: 'Save to gallery',
+                  onPressed: (_saving || _exporting)
+                      ? null
+                      : () => _saveToGallery(template),
+                ),
                 // Export is the flow's finish line — a labeled button, not
                 // one more icon. Inserting/layers live in the bottom toolbar.
                 Center(
                   child: Padding(
                     padding: const EdgeInsets.only(left: 4, right: 12),
                     child: FilledButton(
-                      onPressed: _exporting ? null : () => _exportPng(template),
+                      onPressed: (_exporting || _saving)
+                          ? null
+                          : () => _exportPng(template),
                       child: _exporting
                           ? const SizedBox(
                               width: 18,
