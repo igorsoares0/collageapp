@@ -1301,7 +1301,16 @@ class _TemplateScreenState extends State<TemplateScreen>
         return;
       }
       final shots = await _capturePanels(template);
-      for (var i = 0; i < shots.length; i++) {
+      // Gallery apps order photos by capture time, NOT filename, and most
+      // default to newest-first (Google Photos, the Instagram picker). gal
+      // can't set a timestamp, so the OS stamps DATE_ADDED (whole seconds) at
+      // write time. Saving the panels in reverse, a beat apart, makes panel 1
+      // the newest — so the carousel reads 1→2→3 there, matching the editor.
+      // (The gap must clear a full second for the stamps to differ.)
+      for (var i = shots.length - 1; i >= 0; i--) {
+        if (i < shots.length - 1) {
+          await Future<void>.delayed(const Duration(milliseconds: 1100));
+        }
         await Gal.putImageBytes(
           shots[i],
           name: shots.length == 1
