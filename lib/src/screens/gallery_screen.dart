@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
@@ -850,10 +851,30 @@ class _CardCarouselState extends State<_CardCarousel> {
   /// the dots row, never the mounted canvases.
   final _page = ValueNotifier<int>(0);
 
+  /// Recreated when the slide width changes (viewportFraction is final): each
+  /// page is sized to the canvas' rendered width so adjacent panels sit flush
+  /// and the carousel bleed reads as one image — the preview screen's fix,
+  /// applied to the card. See _controllerFor.
+  PageController _pageController = PageController();
+  double? _viewportFraction;
+
   @override
   void dispose() {
+    _pageController.dispose();
     _page.dispose();
     super.dispose();
+  }
+
+  PageController _controllerFor(double fraction) {
+    if (_viewportFraction == fraction) return _pageController;
+    final old = _pageController;
+    WidgetsBinding.instance.addPostFrameCallback((_) => old.dispose());
+    _viewportFraction = fraction;
+    _pageController = PageController(
+      viewportFraction: fraction,
+      initialPage: _page.value,
+    );
+    return _pageController;
   }
 
   @override
@@ -872,31 +893,49 @@ class _CardCarouselState extends State<_CardCarousel> {
         return Stack(
           fit: StackFit.expand,
           children: [
-            PageView.builder(
-              itemCount: panels.length,
-              onPageChanged: (i) => _page.value = i,
-              itemBuilder: (context, i) => Center(
-                child: AspectRatio(
-                  aspectRatio: template.canvasWidth / template.canvasHeight,
-                  // Inert, like the preview: the card's InkWell keeps the
-                  // tap, the PageView keeps the horizontal drag.
-                  child: IgnorePointer(
-                    child: PanelCanvas(
-                      panel: panels[i],
-                      // Carousel bleed from the neighbouring slides.
-                      panelBefore: i > 0 ? panels[i - 1] : null,
-                      panelAfter: i + 1 < panels.length ? panels[i + 1] : null,
-                      canvasWidth: template.canvasWidth,
-                      canvasHeight: template.canvasHeight,
-                      fontResolver: widget.fontResolver,
-                      assetCatalog: catalog,
-                      // Cards show the "with sample photos" look, matching
-                      // the static thumbnail they replace.
-                      showTemplatePhotos: true,
+            LayoutBuilder(
+              builder: (context, constraints) {
+                // Each page is exactly the canvas' rendered width, so the
+                // slides touch instead of each floating letterboxed in a
+                // full-width page (which read as a gap between panels).
+                final aspect = template.canvasWidth / template.canvasHeight;
+                final slideWidth = math.min(
+                  constraints.maxWidth,
+                  constraints.maxHeight * aspect,
+                );
+                final fraction = (slideWidth / constraints.maxWidth)
+                    .clamp(0.05, 1.0)
+                    .toDouble();
+                return PageView.builder(
+                  controller: _controllerFor(fraction),
+                  itemCount: panels.length,
+                  onPageChanged: (i) => _page.value = i,
+                  itemBuilder: (context, i) => Center(
+                    child: AspectRatio(
+                      aspectRatio: template.canvasWidth / template.canvasHeight,
+                      // Inert, like the preview: the card's InkWell keeps the
+                      // tap, the PageView keeps the horizontal drag.
+                      child: IgnorePointer(
+                        child: PanelCanvas(
+                          panel: panels[i],
+                          // Carousel bleed from the neighbouring slides.
+                          panelBefore: i > 0 ? panels[i - 1] : null,
+                          panelAfter: i + 1 < panels.length
+                              ? panels[i + 1]
+                              : null,
+                          canvasWidth: template.canvasWidth,
+                          canvasHeight: template.canvasHeight,
+                          fontResolver: widget.fontResolver,
+                          assetCatalog: catalog,
+                          // Cards show the "with sample photos" look, matching
+                          // the static thumbnail they replace.
+                          showTemplatePhotos: true,
+                        ),
+                      ),
                     ),
                   ),
-                ),
-              ),
+                );
+              },
             ),
             // Tiny page dots so the swipe is discoverable; inert so they
             // never steal the card's tap.
