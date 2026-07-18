@@ -158,7 +158,7 @@ class _TemplatePreviewScreenState extends State<TemplatePreviewScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(widget.summary.name)),
+      appBar: AppBar(),
       body: FutureBuilder<TemplateResult>(
         future: _template,
         builder: (context, snapshot) {

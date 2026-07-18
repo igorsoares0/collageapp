@@ -1291,7 +1291,6 @@ class _TemplateScreenState extends State<TemplateScreen>
         final safeBottom = media.viewPadding.bottom;
         return Scaffold(
           appBar: AppBar(
-            title: Text(template?.name ?? '…'),
             actions: [
               if (template != null) ...[
                 IconButton(
