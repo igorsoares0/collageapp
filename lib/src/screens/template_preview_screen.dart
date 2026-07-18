@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
@@ -74,7 +76,11 @@ class _TemplatePreviewScreenState extends State<TemplatePreviewScreen> {
   int _page = 0;
 
   /// Owned so the page dots can jump to a panel, not just reflect it.
-  final _pageController = PageController();
+  /// Recreated whenever the slide width changes: viewportFraction is final
+  /// on PageController, and the slides must be exactly as wide as the
+  /// rendered canvas so neighbouring panels sit flush (see _controllerFor).
+  PageController _pageController = PageController();
+  double? _viewportFraction;
 
   @override
   void initState() {
@@ -87,6 +93,22 @@ class _TemplatePreviewScreenState extends State<TemplatePreviewScreen> {
   void dispose() {
     _pageController.dispose();
     super.dispose();
+  }
+
+  /// A controller whose viewportFraction makes each page exactly the canvas'
+  /// rendered width, so the slides touch and the carousel bleed reads as one
+  /// continuous image. The old controller is disposed after the frame — the
+  /// PageView is still attached to it during this build.
+  PageController _controllerFor(double fraction) {
+    if (_viewportFraction == fraction) return _pageController;
+    final old = _pageController;
+    WidgetsBinding.instance.addPostFrameCallback((_) => old.dispose());
+    _viewportFraction = fraction;
+    _pageController = PageController(
+      viewportFraction: fraction,
+      initialPage: _page,
+    );
+    return _pageController;
   }
 
   void _load() {
@@ -180,43 +202,64 @@ class _TemplatePreviewScreenState extends State<TemplatePreviewScreen> {
         Expanded(
           child: ColoredBox(
             color: AppColors.ink,
-            child: PageView.builder(
-              controller: _pageController,
-              itemCount: panels.length,
-              onPageChanged: (i) => setState(() => _page = i),
-              itemBuilder: (context, i) {
-                Widget canvas = AspectRatio(
-                  aspectRatio: template.canvasWidth / template.canvasHeight,
-                  // Inert render: no callbacks wired, and IgnorePointer on
-                  // top so nothing in the canvas can enter the gesture
-                  // arena — the PageView keeps every swipe.
-                  child: IgnorePointer(
-                    child: PanelCanvas(
-                      panel: panels[i],
-                      // Carousel bleed from the neighbouring slides.
-                      panelBefore: i > 0 ? panels[i - 1] : null,
-                      panelAfter: i + 1 < panels.length ? panels[i + 1] : null,
-                      canvasWidth: template.canvasWidth,
-                      canvasHeight: template.canvasHeight,
-                      fontResolver: widget.fontResolver,
-                      assetCatalog: catalog,
-                      // The preview is the "with sample photos" look; the
-                      // editor starts from placeholders.
-                      showTemplatePhotos: true,
-                    ),
-                  ),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                // Pages are sized to the canvas itself (16px of breathing
+                // room each side at most), so adjacent slides sit flush and
+                // — with the carousel bleed — read as contiguous, while the
+                // PageView keeps the swipe.
+                final aspect = template.canvasWidth / template.canvasHeight;
+                final slideWidth = math.min(
+                  constraints.maxWidth - 32,
+                  (constraints.maxHeight - 32) * aspect,
                 );
-                // Only the first panel pairs with the gallery thumbnail —
-                // one Hero per tag per route.
-                if (i == 0) {
-                  canvas = Hero(
-                    tag: 'template-${widget.summary.id}',
-                    child: canvas,
-                  );
-                }
-                return Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Center(child: canvas),
+                final fraction = (slideWidth / constraints.maxWidth)
+                    .clamp(0.05, 1.0)
+                    .toDouble();
+                return PageView.builder(
+                  controller: _controllerFor(fraction),
+                  itemCount: panels.length,
+                  onPageChanged: (i) => setState(() => _page = i),
+                  itemBuilder: (context, i) {
+                    Widget canvas = AspectRatio(
+                      aspectRatio: template.canvasWidth / template.canvasHeight,
+                      // Inert render: no callbacks wired, and IgnorePointer on
+                      // top so nothing in the canvas can enter the gesture
+                      // arena — the PageView keeps every swipe.
+                      child: IgnorePointer(
+                        child: PanelCanvas(
+                          panel: panels[i],
+                          // Carousel bleed from the neighbouring slides.
+                          panelBefore: i > 0 ? panels[i - 1] : null,
+                          panelAfter: i + 1 < panels.length
+                              ? panels[i + 1]
+                              : null,
+                          canvasWidth: template.canvasWidth,
+                          canvasHeight: template.canvasHeight,
+                          fontResolver: widget.fontResolver,
+                          assetCatalog: catalog,
+                          // The preview is the "with sample photos" look; the
+                          // editor starts from placeholders.
+                          showTemplatePhotos: true,
+                        ),
+                      ),
+                    );
+                    // Only the first panel pairs with the gallery thumbnail —
+                    // one Hero per tag per route.
+                    if (i == 0) {
+                      canvas = Hero(
+                        tag: 'template-${widget.summary.id}',
+                        child: canvas,
+                      );
+                    }
+                    return Padding(
+                      // Vertical only — horizontal spacing is the viewport
+                      // fraction's job, and any extra here would reopen the
+                      // seam between slides.
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      child: Center(child: canvas),
+                    );
+                  },
                 );
               },
             ),
