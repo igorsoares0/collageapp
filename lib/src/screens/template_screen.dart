@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' show listEquals;
@@ -1484,11 +1485,20 @@ class _TemplateScreenState extends State<TemplateScreen>
                   // Panels sit side by side; with more than one, each is a bit
                   // narrower than the viewport so the next one peeks in. A
                   // single panel instead fills the viewport minus the strip's
-                  // 16px + per-panel 6px paddings (44px total), so the strip
+                  // 16px + per-panel 2px paddings (36px total), so the strip
                   // is exactly viewport-wide and the panel sits centered.
-                  final panelWidth = panels.length == 1
-                      ? constraints.maxWidth - 44
-                      : constraints.maxWidth * 0.82;
+                  // Either way, never wider than the canvas actually paints at
+                  // the strip's height (32px vertical padding): a tall canvas
+                  // is height-limited, and reserving more width would only
+                  // letterbox the FittedBox — bands that read as a huge gap
+                  // between panels.
+                  final aspect = template.canvasWidth / template.canvasHeight;
+                  final panelWidth = math.min(
+                    panels.length == 1
+                        ? constraints.maxWidth - 36
+                        : constraints.maxWidth * 0.82,
+                    (canvasHeight - 32) * aspect,
+                  );
                   // With nothing selected the surface is an InteractiveViewer
                   // (pinch zoom + pan). With a slot selected it becomes a STATIC
                   // transform — same matrix and layout, but NO gesture detector:
@@ -1522,8 +1532,10 @@ class _TemplateScreenState extends State<TemplateScreen>
                         children: [
                           for (final (i, panel) in effectivePanels.indexed)
                             Padding(
+                              // Tight seam between panels — with the carousel
+                              // bleed the slides should read as contiguous.
                               padding: const EdgeInsets.symmetric(
-                                horizontal: 6,
+                                horizontal: 2,
                               ),
                               child: SizedBox(
                                 width: panelWidth,
