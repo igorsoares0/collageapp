@@ -1,0 +1,59 @@
+{
+  "_note": "Shared contract for the v4 continuous canvas (Modelo B). This file is byte-identical in collageweb (lib/template/continuous-parity.json) and collageapp (test/fixtures/continuous_parity.json). The TS implementation (lib/template/continuous.ts) and the Dart mirror (lib/src/model/slide_aware.dart) each verify themselves against it. Changing the semantics on one side breaks that side's check; changing the contract means editing this file, which makes the cross-repo impact explicit. Layers carry only id/x/width because that is all these derivations read.",
+  "canvases": {
+    "plain": { "slideWidth": 1000, "slideHeight": 1920, "slideCount": 3, "gutter": 0 },
+    "gutter50": { "slideWidth": 1000, "slideHeight": 1920, "slideCount": 3, "gutter": 50 },
+    "single": { "slideWidth": 1000, "slideHeight": 1920, "slideCount": 1, "gutter": 50 }
+  },
+  "contentWidth": [
+    { "name": "no gutter", "canvas": "plain", "expected": 3000 },
+    { "name": "gutters only between slides", "canvas": "gutter50", "expected": 3100 },
+    { "name": "single slide has no gutter", "canvas": "single", "expected": 1000 }
+  ],
+  "slideRect": [
+    { "name": "first", "canvas": "gutter50", "i": 0, "expected": { "x": 0, "y": 0, "width": 1000, "height": 1920 } },
+    { "name": "second walks the pitch", "canvas": "gutter50", "i": 1, "expected": { "x": 1050, "y": 0, "width": 1000, "height": 1920 } },
+    { "name": "third", "canvas": "gutter50", "i": 2, "expected": { "x": 2100, "y": 0, "width": 1000, "height": 1920 } }
+  ],
+  "slideIndexAtX": [
+    { "name": "clamps below zero", "canvas": "plain", "x": -500, "expected": 0 },
+    { "name": "origin", "canvas": "plain", "x": 0, "expected": 0 },
+    { "name": "last slide", "canvas": "plain", "x": 2500, "expected": 2 },
+    { "name": "clamps past the end", "canvas": "plain", "x": 99999, "expected": 2 }
+  ],
+  "slideOf": [
+    { "name": "inside first", "canvas": "plain", "layer": { "id": "a", "x": 0, "width": 100 }, "expected": 0 },
+    { "name": "inside second", "canvas": "plain", "layer": { "id": "b", "x": 1400, "width": 100 }, "expected": 1 },
+    { "name": "inside third", "canvas": "plain", "layer": { "id": "c", "x": 2500, "width": 100 }, "expected": 2 },
+    { "name": "straddles but centre decides", "canvas": "plain", "layer": { "id": "d", "x": 900, "width": 400 }, "expected": 1 }
+  ],
+  "spansSlides": [
+    { "name": "exact fill of slide 0 does NOT span", "canvas": "plain", "layer": { "id": "exact", "x": 0, "width": 1000 }, "expected": false },
+    { "name": "exact fill of slide 1 does NOT span", "canvas": "plain", "layer": { "id": "exact2", "x": 1000, "width": 1000 }, "expected": false },
+    { "name": "full panorama spans", "canvas": "plain", "layer": { "id": "pano", "x": 0, "width": 3000 }, "expected": true },
+    { "name": "straddling a cut spans", "canvas": "plain", "layer": { "id": "straddle", "x": 900, "width": 200 }, "expected": true },
+    { "name": "wholly inside does not span", "canvas": "plain", "layer": { "id": "inside", "x": 100, "width": 200 }, "expected": false }
+  ],
+  "layersInSlide": [
+    {
+      "name": "groups a slide as a movable unit",
+      "canvas": "plain",
+      "layers": [
+        { "id": "a", "x": 100, "width": 100 },
+        { "id": "b", "x": 1100, "width": 100 },
+        { "id": "c", "x": 1500, "width": 100 }
+      ],
+      "expected": { "0": ["a"], "1": ["b", "c"], "2": [] }
+    },
+    {
+      "name": "degenerate case: independent pages, nothing crossing",
+      "canvas": "plain",
+      "layers": [
+        { "id": "p0", "x": 0, "width": 1000 },
+        { "id": "p1", "x": 1000, "width": 1000 },
+        { "id": "p2", "x": 2000, "width": 1000 }
+      ],
+      "expected": { "0": ["p0"], "1": ["p1"], "2": ["p2"] }
+    }
+  ]
+}

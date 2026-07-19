@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'dart:ui';
 
-import 'package:collageapp/src/model/slide_aware.dart';
 import 'package:collageapp/src/model/template.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -116,58 +115,10 @@ void main() {
     });
   });
 
-  group('slide-aware derivations', () {
-    test('slideOf uses the layer centre', () {
-      final d = doc(slideWidth: 1000);
-      expect(d.slideOf(shape('a', 0, 100)), 0);
-      expect(d.slideOf(shape('b', 1400, 100)), 1);
-      expect(d.slideOf(shape('c', 2500, 100)), 2);
-      // Straddles the 0/1 cut but its centre is in slide 1 -> belongs to 1.
-      expect(d.slideOf(shape('d', 900, 400)), 1);
-    });
-
-    test('slideIndexAtX clamps to the document', () {
-      final d = doc(slideWidth: 1000);
-      expect(d.slideIndexAtX(-500), 0);
-      expect(d.slideIndexAtX(0), 0);
-      expect(d.slideIndexAtX(2500), 2);
-      expect(d.slideIndexAtX(99999), 2);
-    });
-
-    test('a layer exactly filling one slide does NOT span', () {
-      // The edge case the epsilon exists for: right edge == next slide origin.
-      final d = doc(slideWidth: 1000, gutter: 0);
-      expect(d.spansSlides(shape('exact', 0, 1000)), isFalse);
-      expect(d.spansSlides(shape('exact2', 1000, 1000)), isFalse);
-    });
-
-    test('spansSlides detects a real panorama', () {
-      final d = doc(slideWidth: 1000, gutter: 0);
-      expect(d.spansSlides(shape('pano', 0, 3000)), isTrue);
-      expect(d.spansSlides(shape('straddle', 900, 200)), isTrue);
-      expect(d.spansSlides(shape('inside', 100, 200)), isFalse);
-    });
-
-    test('layersInSlide groups a slide as a movable unit', () {
-      final a = shape('a', 100, 100); // slide 0
-      final b = shape('b', 1100, 100); // slide 1
-      final c = shape('c', 1500, 100); // slide 1
-      final d = doc(slideWidth: 1000, layers: [a, b, c]);
-      expect(d.layersInSlide(0).map((l) => l.id), ['a']);
-      expect(d.layersInSlide(1).map((l) => l.id), ['b', 'c']);
-      expect(d.layersInSlide(2), isEmpty);
-    });
-
-    test('degenerate case: independent slides, nothing crossing', () {
-      // Model B is a superset — this is the old panel model expressed in it.
-      final d = doc(
-        slideWidth: 1000,
-        layers: [shape('p0', 0, 1000), shape('p1', 1000, 1000), shape('p2', 2000, 1000)],
-      );
-      expect(d.layers.every((l) => !d.spansSlides(l)), isTrue);
-      expect([for (final l in d.layers) d.slideOf(l)], [0, 1, 2]);
-    });
-  });
+  // The slide-aware derivations (slideOf / spansSlides / layersInSlide / ...)
+  // are covered by continuous_parity_test.dart, which checks them against the
+  // contract shared byte-for-byte with the editor. Asserting them again here
+  // would fork the contract into a second, quieter source of truth.
 
   test('GATE: the app still refuses v4 — kSupportedSchemaVersion stays 3', () {
     // Phase 1 is model-only. Bumping this before the renderer can DRAW a
