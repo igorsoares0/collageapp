@@ -169,6 +169,113 @@ void main() {
     expect(find.byKey(const ValueKey('cut-guides')), findsNothing);
   });
 
+  group('editing on the continuous canvas', () {
+    TextLayer label(String id, double x) => TextLayer(
+      id: id,
+      hidden: false,
+      slotId: 'slot_$id',
+      x: x,
+      y: 150,
+      width: 200,
+      fontFamily: 'Inter',
+      fontSize: 24,
+      fontWeight: 400,
+      color: const Color(0xFF000000),
+      alignment: 'left',
+    );
+
+    // Two labels: one on slide 0, one on slide 2. Slides are 300 wide here, so
+    // slide 2 starts at x=600. The second label is the interesting one — in the
+    // panel model every panel restarted at x=0, so a gesture landing correctly
+    // at a continuous x=610 is what proves hit testing survived the move to one
+    // coordinate space.
+    Document twoLabels() => doc(layers: [label('a', 10), label('c', 610)]);
+    const texts = SlotContent(
+      texts: {'slot_a': 'FirstSlide', 'slot_c': 'ThirdSlide'},
+    );
+
+    /// The document is 900 units wide; the default 800px test surface would
+    /// push slide 2 off-screen where it cannot be tapped.
+    void sizeSurface(WidgetTester tester) {
+      tester.view.physicalSize = const Size(900, 400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+    }
+
+    testWidgets('tapping a slot on a LATER slide reports that slot', (
+      tester,
+    ) async {
+      sizeSurface(tester);
+      final tapped = <String>[];
+      await tester.pumpWidget(
+        host(
+          CanvasView(
+            document: twoLabels(),
+            content: texts,
+            fontResolver: testFontResolver,
+            onSlotTap: tapped.add,
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('ThirdSlide'));
+      await tester.pump();
+      expect(tapped, ['slot_c']);
+
+      await tester.tap(find.text('FirstSlide'));
+      await tester.pump();
+      expect(tapped, ['slot_c', 'slot_a']);
+    });
+
+    testWidgets('tapping the background deselects', (tester) async {
+      sizeSurface(tester);
+      var canvasTaps = 0;
+      await tester.pumpWidget(
+        host(
+          CanvasView(
+            document: twoLabels(),
+            content: texts,
+            fontResolver: testFontResolver,
+            onCanvasTap: () => canvasTaps++,
+          ),
+        ),
+      );
+
+      // A point well away from either label.
+      await tester.tapAt(tester.getCenter(find.byType(CanvasView)));
+      await tester.pump();
+      expect(canvasTaps, 1);
+    });
+
+    testWidgets('alignment guides render outside the export boundary', (
+      tester,
+    ) async {
+      sizeSurface(tester);
+      final exportKey = GlobalKey();
+      await tester.pumpWidget(
+        host(
+          CanvasView(
+            document: twoLabels(),
+            content: texts,
+            fontResolver: testFontResolver,
+            exportKey: exportKey,
+            // A guide in CONTINUOUS units, on slide 2.
+            guideXs: const [2000],
+          ),
+        ),
+      );
+
+      final guides = find.byKey(const ValueKey('alignment-guides'));
+      expect(guides, findsOneWidget);
+      expect(
+        find.descendant(of: find.byKey(exportKey), matching: guides),
+        findsNothing,
+        reason: 'a guide inside the boundary would land in the exported PNG',
+      );
+    });
+  });
+
   testWidgets('THE POINT: render continuous, slice per slide, panorama survives', (
     tester,
   ) async {

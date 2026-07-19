@@ -205,6 +205,86 @@ void main() {
     expect(loaded.document.spansSlides(pano), isTrue);
   });
 
+  group('saving the v4 layout', () {
+    test('round-trips a continuous document through disk', () async {
+      await saveCarousel();
+      final loaded = (await store.loadAsDocument('proj1'))!;
+
+      // Edit it the way the editor will: a panorama spanning both slides.
+      final edited = ContinuousProject(
+        id: loaded.id,
+        name: loaded.name,
+        updatedAt: loaded.updatedAt,
+        document: Document(
+          id: loaded.document.id,
+          schemaVersion: 4,
+          version: loaded.document.version,
+          name: loaded.document.name,
+          aspectRatio: loaded.document.aspectRatio,
+          slideWidth: loaded.document.slideWidth,
+          slideHeight: loaded.document.slideHeight,
+          slideCount: loaded.document.slideCount,
+          gutter: loaded.document.gutter,
+          slideBackgrounds: loaded.document.slideBackgrounds,
+          layers: [
+            ...loaded.document.layers,
+            const ShapeLayer(
+              id: 'pano',
+              hidden: false,
+              x: 0,
+              y: 0,
+              width: 2000,
+              height: 1920,
+              fill: Color(0xFFFF00FF),
+            ),
+          ],
+        ),
+        content: loaded.content,
+        migrated: false,
+      );
+
+      await store.saveDocument(edited);
+      await store.pendingWrites;
+
+      final reloaded = (await store.loadAsDocument('proj1'))!;
+      expect(reloaded.migrated, isFalse, reason: 'now natively v4');
+      expect(reloaded.document.slideCount, 2);
+      expect(reloaded.document.layers.length, 3);
+      final pano = reloaded.document.layers.firstWhere((l) => l.id == 'pano');
+      // The thing the panel model could not persist at all.
+      expect(reloaded.document.spansSlides(pano), isTrue);
+    });
+
+    test('announces the document layout so old builds refuse it', () async {
+      await saveCarousel();
+      final loaded = (await store.loadAsDocument('proj1'))!;
+      await store.saveDocument(loaded);
+      await store.pendingWrites;
+
+      final json =
+          jsonDecode(await projectFile().readAsString()) as Map<String, dynamic>;
+      expect(json['projectVersion'], kDocumentLayoutVersion);
+      expect(json.containsKey('document'), isTrue);
+      expect(
+        json.containsKey('template'),
+        isFalse,
+        reason: 'one source of truth — no lossy v3 projection alongside it',
+      );
+    });
+
+    test('classic saves keep announcing layout 1, still openable', () async {
+      await saveCarousel();
+      final json =
+          jsonDecode(await projectFile().readAsString()) as Map<String, dynamic>;
+      expect(
+        json['projectVersion'],
+        kClassicLayoutVersion,
+        reason: 'a panels-shaped file must stay readable by older builds',
+      );
+      expect(await store.load('proj1'), isNotNull);
+    });
+  });
+
   test('missing and corrupt projects return null, not a crash', () async {
     expect(await store.loadAsDocument('nope'), isNull);
 

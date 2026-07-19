@@ -594,6 +594,66 @@ class CanvasView extends StatelessWidget {
   /// out of this one raster.
   final GlobalKey? exportKey;
 
+  // --- Editing surface ------------------------------------------------------
+  // Same contracts as the matching PanelCanvas fields; the only difference is
+  // that coordinates are continuous, which the gesture layer never sees — it
+  // works in each layer's local frame either way.
+
+  /// See [PanelCanvas.onSlotTap].
+  final void Function(String slotId)? onSlotTap;
+
+  /// See [PanelCanvas.onCanvasTap].
+  final VoidCallback? onCanvasTap;
+
+  /// See [PanelCanvas.selectedSlotId].
+  final String? selectedSlotId;
+
+  /// See [PanelCanvas.editingSlotId].
+  final String? editingSlotId;
+
+  /// See [PanelCanvas.onTextChanged].
+  final void Function(String slotId, String value)? onTextChanged;
+
+  /// See [PanelCanvas.editingFieldKey].
+  final GlobalKey? editingFieldKey;
+
+  /// See [PanelCanvas.onSlotDrag].
+  final void Function(String slotId, Offset delta)? onSlotDrag;
+
+  /// See [PanelCanvas.onSlotScale].
+  final void Function(String slotId, double scale)? onSlotScale;
+
+  /// See [PanelCanvas.onSlotRotate].
+  final void Function(String slotId, double degrees)? onSlotRotate;
+
+  /// See [PanelCanvas.onSlotEdgeResize].
+  final void Function(
+    String slotId,
+    SlotEdge edge,
+    double factor,
+    Offset offsetDelta,
+  )?
+  onSlotEdgeResize;
+
+  /// See [PanelCanvas.onPickImage].
+  final void Function(String slotId)? onPickImage;
+
+  /// See [PanelCanvas.onSlotDelete].
+  final void Function(String slotId)? onSlotDelete;
+
+  /// See [PanelCanvas.onGridFractions].
+  final void Function(String gridId, bool columns, List<double> fractions)?
+  onGridFractions;
+
+  /// See [PanelCanvas.selectionLink] / [PanelCanvas.onSelectionSize].
+  final LayerLink? selectionLink;
+  final ValueChanged<Size>? onSelectionSize;
+
+  /// Alignment guides, in continuous template units. Painted outside the
+  /// export boundary, so a guide never reaches the PNG.
+  final List<double> guideXs;
+  final List<double> guideYs;
+
   const CanvasView({
     super.key,
     required this.document,
@@ -603,6 +663,23 @@ class CanvasView extends StatelessWidget {
     this.showTemplatePhotos = false,
     this.showCutGuides = false,
     this.exportKey,
+    this.onSlotTap,
+    this.onCanvasTap,
+    this.selectedSlotId,
+    this.editingSlotId,
+    this.onTextChanged,
+    this.editingFieldKey,
+    this.onSlotDrag,
+    this.onSlotScale,
+    this.onSlotRotate,
+    this.onSlotEdgeResize,
+    this.onPickImage,
+    this.onSlotDelete,
+    this.onGridFractions,
+    this.selectionLink,
+    this.onSelectionSize,
+    this.guideXs = const [],
+    this.guideYs = const [],
   });
 
   /// In the continuous model the list order IS the stack order, so there is no
@@ -625,33 +702,77 @@ class CanvasView extends StatelessWidget {
               child: SizedBox(
                 width: document.contentWidth,
                 height: document.slideHeight,
-                child: Stack(
-                  // Layers may extend past the document box by design; nothing
-                  // here should clip them but the export crop.
-                  clipBehavior: Clip.none,
-                  children: [
-                    // Backgrounds are the one naturally per-slide datum, so
-                    // they are painted per slide rect rather than as one fill.
-                    for (var i = 0; i < document.slideCount; i++)
-                      Positioned.fromRect(
-                        rect: document.slideRect(i),
-                        child: ColoredBox(
-                          key: ValueKey('slide-background-$i'),
-                          color: document.backgroundFor(i),
+                // Deselect detector under everything: slot detectors are
+                // deeper and win the arena, so this only fires for taps on the
+                // background and on non-slot design layers.
+                child: GestureDetector(
+                  onTap: onCanvasTap,
+                  child: Stack(
+                    // Layers may extend past the document box by design;
+                    // nothing here should clip them but the export crop.
+                    clipBehavior: Clip.none,
+                    children: [
+                      // Backgrounds are the one naturally per-slide datum, so
+                      // they are painted per slide rect rather than as one fill.
+                      for (var i = 0; i < document.slideCount; i++)
+                        Positioned.fromRect(
+                          rect: document.slideRect(i),
+                          child: ColoredBox(
+                            key: ValueKey('slide-background-$i'),
+                            color: document.backgroundFor(i),
+                          ),
                         ),
-                      ),
-                    for (final layer in _visibleLayers)
-                      _LayerWidget(
-                        layer: layer,
-                        content: content,
-                        fontResolver: fontResolver,
-                        assetCatalog: assetCatalog,
-                        showTemplatePhotos: showTemplatePhotos,
-                      ),
-                  ],
+                      for (final layer in _visibleLayers)
+                        _LayerWidget(
+                          layer: layer,
+                          content: content,
+                          fontResolver: fontResolver,
+                          assetCatalog: assetCatalog,
+                          showTemplatePhotos: showTemplatePhotos,
+                          onSlotTap: onSlotTap,
+                          onSlotDrag: onSlotDrag,
+                          onSlotScale: onSlotScale,
+                          onSlotRotate: onSlotRotate,
+                          onSlotEdgeResize: onSlotEdgeResize,
+                          onPickImage: onPickImage,
+                          onSlotDelete: onSlotDelete,
+                          onTextChanged: onTextChanged,
+                          selectedSlotId: selectedSlotId,
+                          onGridFractions: onGridFractions,
+                          selectionLink: selectionLink,
+                          onSelectionSize: onSelectionSize,
+                          selected:
+                              layer is ImageLayer &&
+                                  layer.slotId == selectedSlotId ||
+                              layer is TextLayer &&
+                                  layer.slotId == selectedSlotId ||
+                              layer is StickerLayer &&
+                                  layer.id == selectedSlotId,
+                          editing:
+                              layer is TextLayer &&
+                              layer.slotId == editingSlotId,
+                          fieldKey:
+                              layer is TextLayer &&
+                                  layer.slotId == editingSlotId
+                              ? editingFieldKey
+                              : null,
+                        ),
+                    ],
+                  ),
                 ),
               ),
             ),
+            // Alignment guides float above the artwork but outside the export
+            // boundary — visible while dragging, never in the PNG.
+            if (guideXs.isNotEmpty || guideYs.isNotEmpty)
+              Positioned.fill(
+                key: const ValueKey('alignment-guides'),
+                child: IgnorePointer(
+                  child: CustomPaint(
+                    painter: _GuidePainter(guideXs: guideXs, guideYs: guideYs),
+                  ),
+                ),
+              ),
             if (showCutGuides && document.slideCount > 1)
               Positioned.fill(
                 key: const ValueKey('cut-guides'),

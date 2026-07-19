@@ -10,11 +10,24 @@ import '../model/migrate_v4.dart';
 import '../model/slot_content.dart';
 import '../model/template.dart';
 
-/// Version of the project FILE format — independent of the template schema.
-/// Bump it when the JSON layout changes and migrate older files in
-/// [ProjectStore.load]; files written by a NEWER app are refused instead of
-/// being misread.
-const int kProjectVersion = 1;
+/// Highest project FILE layout this app understands — independent of the
+/// template schema. Files written by a NEWER app are refused instead of being
+/// misread.
+///
+/// Layout 1: `template` (panels) + `content`.
+/// Layout 2: `document` (v4 continuous canvas) + `content`.
+///
+/// Each save writes the layout it actually uses ([kClassicLayoutVersion] or
+/// [kDocumentLayoutVersion]), NOT this constant — a classic-shaped file stays
+/// openable by older builds, while a continuous one correctly announces that it
+/// needs a build that understands v4.
+const int kProjectVersion = 2;
+
+/// `template` + `content` — readable by every build.
+const int kClassicLayoutVersion = 1;
+
+/// `document` + `content` — the v4 continuous canvas (Modelo B).
+const int kDocumentLayoutVersion = 2;
 
 /// A saved editing session: the template snapshot it was built on (embedded,
 /// so the project stays openable even if the published template changes or
@@ -108,16 +121,38 @@ class ProjectStore {
   /// Saves [project] atomically: serialize, write to a temp file, rename over
   /// the previous version. A crash mid-write leaves the old file intact.
   Future<void> save(Project project) => _enqueue(() async {
-    final dir = await _projectDir(project.id);
-    await dir.create(recursive: true);
-    final body = jsonEncode({
-      'projectVersion': kProjectVersion,
+    await _writeProject(project.id, {
+      'projectVersion': kClassicLayoutVersion,
       'id': project.id,
       'name': project.name,
       'updatedAt': project.updatedAt.toUtc().toIso8601String(),
       'template': project.template.toJson(),
       'content': _encodeContent(project.content),
     });
+  });
+
+  /// Saves a project in the v4 continuous layout (Modelo B).
+  ///
+  /// This is the point where the app AUTHORS v4: a continuous document cannot
+  /// round-trip through the panel model (a panorama crossing slides has no
+  /// panel to belong to), so the file announces [kDocumentLayoutVersion] and an
+  /// older build refuses it cleanly instead of reading it wrong.
+  Future<void> saveDocument(ContinuousProject project) => _enqueue(() async {
+    await _writeProject(project.id, {
+      'projectVersion': kDocumentLayoutVersion,
+      'id': project.id,
+      'name': project.name,
+      'updatedAt': project.updatedAt.toUtc().toIso8601String(),
+      'document': project.document.toJson(),
+      'content': _encodeContent(project.content),
+    });
+  });
+
+  /// Atomic write of a project's JSON body.
+  Future<void> _writeProject(String id, Map<String, dynamic> json) async {
+    final dir = await _projectDir(id);
+    await dir.create(recursive: true);
+    final body = jsonEncode(json);
     final tmp = File('${dir.path}/project.json.tmp');
     await tmp.writeAsString(body, flush: true);
     final dest = File('${dir.path}/project.json');
@@ -130,7 +165,7 @@ class ProjectStore {
       if (await dest.exists()) await dest.delete();
       await tmp.rename(dest.path);
     }
-  });
+  }
 
   /// Raw project JSON, or null when it's missing, corrupt, or written by a
   /// newer app version. Shared by [load] and [loadAsDocument] so both inherit
