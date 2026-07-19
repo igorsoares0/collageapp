@@ -562,6 +562,154 @@ class _GuidePainter extends CustomPainter {
 /// Convenience wrapper that renders a template's FIRST panel — used by tests
 /// and any single-panel context. Multi-panel screens use [PanelCanvas] per
 /// panel directly.
+/// v4 continuous-canvas renderer (Modelo B). See docs/model-b-migration.md.
+///
+/// STATUS: read-only, and nothing mounts it yet. Gestures, selection chrome and
+/// inline editing stay on [PanelCanvas] until the editor itself moves to the
+/// continuous model — this widget exists to prove the render and to drive the
+/// thumbnail and the sliced export.
+///
+/// The whole document is painted ONCE, [Document.contentWidth] wide. There is
+/// no bleed here and there never will be: a layer whose x crosses a cut line
+/// simply spans it, because every layer already lives in one coordinate space.
+/// Killing [PanelCanvas._bleed] is the entire point of the migration.
+class CanvasView extends StatelessWidget {
+  final Document document;
+  final SlotContent content;
+  final FontResolver fontResolver;
+
+  /// See [PanelCanvas.assetCatalog].
+  final List<AssetRecord> assetCatalog;
+
+  /// See [PanelCanvas.showTemplatePhotos].
+  final bool showTemplatePhotos;
+
+  /// Dashed lines on the interior cut lines, so the designer sees where each
+  /// slide ends. Editor-only: drawn OUTSIDE the export boundary, so a guide can
+  /// never reach the exported PNG.
+  final bool showCutGuides;
+
+  /// Export boundary, in template units and inside the FittedBox — same
+  /// contract as [PanelCanvas.exportKey]. The sliced export crops slide rects
+  /// out of this one raster.
+  final GlobalKey? exportKey;
+
+  const CanvasView({
+    super.key,
+    required this.document,
+    required this.content,
+    required this.fontResolver,
+    this.assetCatalog = const [],
+    this.showTemplatePhotos = false,
+    this.showCutGuides = false,
+    this.exportKey,
+  });
+
+  /// In the continuous model the list order IS the stack order, so there is no
+  /// per-panel reorder override to apply — only the hidden filter survives.
+  List<Layer> get _visibleLayers => [
+    for (final layer in document.layers)
+      if (!content.layerHidden(layer.id, layer.hidden)) layer,
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return FittedBox(
+      child: SizedBox(
+        width: document.contentWidth,
+        height: document.slideHeight,
+        child: Stack(
+          children: [
+            RepaintBoundary(
+              key: exportKey,
+              child: SizedBox(
+                width: document.contentWidth,
+                height: document.slideHeight,
+                child: Stack(
+                  // Layers may extend past the document box by design; nothing
+                  // here should clip them but the export crop.
+                  clipBehavior: Clip.none,
+                  children: [
+                    // Backgrounds are the one naturally per-slide datum, so
+                    // they are painted per slide rect rather than as one fill.
+                    for (var i = 0; i < document.slideCount; i++)
+                      Positioned.fromRect(
+                        rect: document.slideRect(i),
+                        child: ColoredBox(
+                          key: ValueKey('slide-background-$i'),
+                          color: document.backgroundFor(i),
+                        ),
+                      ),
+                    for (final layer in _visibleLayers)
+                      _LayerWidget(
+                        layer: layer,
+                        content: content,
+                        fontResolver: fontResolver,
+                        assetCatalog: assetCatalog,
+                        showTemplatePhotos: showTemplatePhotos,
+                      ),
+                  ],
+                ),
+              ),
+            ),
+            if (showCutGuides && document.slideCount > 1)
+              Positioned.fill(
+                key: const ValueKey('cut-guides'),
+                child: IgnorePointer(
+                  child: CustomPaint(
+                    painter: _CutGuidePainter(
+                      xs: [
+                        for (var i = 1; i < document.slideCount; i++)
+                          document.slideRect(i).left,
+                      ],
+                      gutter: document.gutter,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Dashed verticals on the slide cut lines, in template units so the dash
+/// scales with the canvas like everything else.
+class _CutGuidePainter extends CustomPainter {
+  final List<double> xs;
+  final double gutter;
+
+  const _CutGuidePainter({required this.xs, required this.gutter});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = const Color(0x66000000)
+      ..strokeWidth = 2
+      ..style = PaintingStyle.stroke;
+    const dash = 24.0;
+    const gap = 16.0;
+    for (final x in xs) {
+      // With a gutter the cut is a band, so mark the slide's edge — the start
+      // of the next slide minus the gutter reads as where the previous ended.
+      for (final lineX in {x, x - gutter}) {
+        for (var y = 0.0; y < size.height; y += dash + gap) {
+          canvas.drawLine(
+            Offset(lineX, y),
+            Offset(lineX, math.min(y + dash, size.height)),
+            paint,
+          );
+        }
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(_CutGuidePainter old) =>
+      !identical(old.xs, xs) || old.gutter != gutter;
+}
+
 class TemplateCanvas extends StatelessWidget {
   final Template template;
   final SlotContent content;
