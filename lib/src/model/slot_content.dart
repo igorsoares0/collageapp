@@ -333,6 +333,30 @@ class SlotContent {
     return withLayerOrder(panelId, next);
   }
 
+  /// This overlay with every PANEL-scoped override dropped, keeping the
+  /// slot/layer-scoped ones. Used by the v3->v4 migration (migrate_v4.dart):
+  /// once panels fold into one continuous canvas, [panelBackgrounds],
+  /// [layerOrders], [addedLayers] and [addedPanels] are expressed by the
+  /// document itself, and carrying them forward would leave a stale second
+  /// source of truth keyed by panel ids that no longer exist.
+  SlotContent withoutPanelScopedOverrides() => SlotContent(
+    texts: texts,
+    images: images,
+    offsets: offsets,
+    scales: scales,
+    stretchX: stretchX,
+    stretchY: stretchY,
+    rotations: rotations,
+    colors: colors,
+    fonts: fonts,
+    alignments: alignments,
+    weights: weights,
+    hiddenLayers: hiddenLayers,
+    gridOverrides: gridOverrides,
+    // panelBackgrounds / layerOrders / addedLayers / addedPanels are
+    // intentionally NOT carried over — see above.
+  );
+
   SlotContent _copy({
     Map<String, String>? texts,
     Map<String, ImageProvider>? images,
