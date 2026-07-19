@@ -8,6 +8,8 @@ import '../api/project_store.dart';
 import '../api/template_api.dart';
 import '../api/template_store.dart';
 import '../model/asset_record.dart';
+import '../model/migrate_v4.dart';
+import '../model/slot_content.dart';
 import '../model/template.dart';
 import '../rendering/template_canvas.dart';
 import '../theme.dart';
@@ -199,7 +201,9 @@ class _TemplatePreviewScreenState extends State<TemplatePreviewScreen> {
   );
 
   Widget _buildPreview(Template template, List<AssetRecord> embedded) {
-    final panels = template.panels;
+    // The published template folded into the continuous model, so a
+    // panorama really spans slides instead of being echoed by a bleed.
+    final document = migrateToV4(template, const SlotContent()).document;
     // Frames/stickers from the global catalog + this template's own photos.
     final catalog = [..._catalog, ...embedded];
     return Column(
@@ -223,7 +227,7 @@ class _TemplatePreviewScreenState extends State<TemplatePreviewScreen> {
                     .toDouble();
                 return PageView.builder(
                   controller: _controllerFor(fraction),
-                  itemCount: panels.length,
+                  itemCount: document.slideCount,
                   onPageChanged: (i) => _page.value = i,
                   itemBuilder: (context, i) {
                     Widget canvas = AspectRatio(
@@ -232,15 +236,9 @@ class _TemplatePreviewScreenState extends State<TemplatePreviewScreen> {
                       // top so nothing in the canvas can enter the gesture
                       // arena — the PageView keeps every swipe.
                       child: IgnorePointer(
-                        child: PanelCanvas(
-                          panel: panels[i],
-                          // Carousel bleed from the neighbouring slides.
-                          panelBefore: i > 0 ? panels[i - 1] : null,
-                          panelAfter: i + 1 < panels.length
-                              ? panels[i + 1]
-                              : null,
-                          canvasWidth: template.canvasWidth,
-                          canvasHeight: template.canvasHeight,
+                        child: SlideView(
+                          document: document,
+                          slideIndex: i,
                           fontResolver: widget.fontResolver,
                           assetCatalog: catalog,
                           // The preview is the "with sample photos" look; the
@@ -277,7 +275,7 @@ class _TemplatePreviewScreenState extends State<TemplatePreviewScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                if (panels.length > 1) ...[
+                if (document.slideCount > 1) ...[
                   // Same dot language as the editor's panel carousel; tapping
                   // one slides that panel into view.
                   ValueListenableBuilder<int>(
@@ -285,7 +283,7 @@ class _TemplatePreviewScreenState extends State<TemplatePreviewScreen> {
                     builder: (context, page, _) => Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        for (var i = 0; i < panels.length; i++)
+                        for (var i = 0; i < document.slideCount; i++)
                           GestureDetector(
                             behavior: HitTestBehavior.opaque,
                             onTap: () => _pageController.animateToPage(

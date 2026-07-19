@@ -341,17 +341,6 @@ class PanelCanvas extends StatelessWidget {
   final List<double> guideXs;
   final List<double> guideYs;
 
-  /// Neighbouring panels, for the carousel bleed: panels are contiguous in
-  /// the design (the on-screen gap is cosmetic), so whatever a neighbour's
-  /// layer spills past the shared edge continues here, offset by exactly one
-  /// canvas width. Ghosts are inert (IgnorePointer), clipped to the canvas,
-  /// and render INSIDE the export boundary so the exported slide carries the
-  /// bleed. Both neighbour bleeds paint UNDER this panel's own layers: they're
-  /// cosmetic echoes for swipe continuity, so a local element the user adds
-  /// here (text, sticker…) always sits above an image that spills in from an
-  /// adjacent panel — it's still reorderable against the panel's real layers.
-  final Panel? panelBefore;
-  final Panel? panelAfter;
 
   const PanelCanvas({
     super.key,
@@ -380,8 +369,6 @@ class PanelCanvas extends StatelessWidget {
     this.exportKey,
     this.guideXs = const [],
     this.guideYs = const [],
-    this.panelBefore,
-    this.panelAfter,
   });
 
   /// Stack order and visibility honour the user's per-layer overrides
@@ -398,36 +385,6 @@ class PanelCanvas extends StatelessWidget {
     ];
   }
 
-  /// A neighbour's layers painted as this panel's carousel bleed: shifted by
-  /// one canvas width, inert, and clipped to the canvas box. Rendered with no
-  /// callbacks and no selection, so no chrome ever repeats here — editing
-  /// happens on the owner panel.
-  Widget _bleed(Panel neighbour, double dx) {
-    return Positioned.fill(
-      child: IgnorePointer(
-        child: ClipRect(
-          child: Transform.translate(
-            offset: Offset(dx, 0),
-            child: Stack(
-              // The neighbour's layers overflow the shifted box by design;
-              // the ClipRect above is the only clip that should apply.
-              clipBehavior: Clip.none,
-              children: [
-                for (final layer in _visibleLayers(neighbour))
-                  _LayerWidget(
-                    layer: layer,
-                    content: content,
-                    fontResolver: fontResolver,
-                    assetCatalog: assetCatalog,
-                    showTemplatePhotos: showTemplatePhotos,
-                  ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -465,11 +422,6 @@ class PanelCanvas extends StatelessWidget {
                               panel.backgroundColor,
                         ),
                       ),
-                      // Both bleeds sit UNDER this panel's own layers (see
-                      // panelBefore/panelAfter): a local element always wins
-                      // over an image spilling in from an adjacent panel.
-                      if (panelBefore case final p?) _bleed(p, -canvasWidth),
-                      if (panelAfter case final p?) _bleed(p, canvasWidth),
                       for (final layer in visibleLayers)
                         _LayerWidget(
                           layer: layer,
@@ -572,7 +524,7 @@ class _GuidePainter extends CustomPainter {
 /// The whole document is painted ONCE, [Document.contentWidth] wide. There is
 /// no bleed here and there never will be: a layer whose x crosses a cut line
 /// simply spans it, because every layer already lives in one coordinate space.
-/// Killing [PanelCanvas._bleed] is the entire point of the migration.
+/// Killing the carousel bleed was the entire point of the migration.
 class CanvasView extends StatelessWidget {
   final Document document;
   final SlotContent content;
@@ -795,6 +747,74 @@ class CanvasView extends StatelessWidget {
   }
 }
 
+/// A window onto ONE slide of a continuous document.
+///
+/// The continuous-model replacement for [PanelCanvas]: instead of rendering an
+/// independent panel and faking continuity with a bleed, this renders the whole
+/// document and shows the part of it that slide [slideIndex] occupies. An
+/// element crossing a cut is therefore visible from both sides — genuinely, not
+/// as an echo — and neighbouring slides need no ghosts.
+///
+/// Sized to one slide's aspect; used by the gallery cards and the template
+/// preview, where a PageView flips through slides one at a time.
+class SlideView extends StatelessWidget {
+  final Document document;
+  final int slideIndex;
+  final SlotContent content;
+  final FontResolver fontResolver;
+  final List<AssetRecord> assetCatalog;
+  final bool showTemplatePhotos;
+
+  const SlideView({
+    super.key,
+    required this.document,
+    required this.slideIndex,
+    required this.fontResolver,
+    this.content = const SlotContent(),
+    this.assetCatalog = const [],
+    this.showTemplatePhotos = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final rect = document.slideRect(slideIndex);
+    return AspectRatio(
+      aspectRatio: document.slideWidth / document.slideHeight,
+      child: ClipRect(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            // The document is laid out at the scale that makes ONE slide fill
+            // this box; the whole thing is then slid left so the requested
+            // slide lands in view.
+            final scale = constraints.maxWidth / document.slideWidth;
+            return OverflowBox(
+              alignment: Alignment.topLeft,
+              minWidth: 0,
+              minHeight: 0,
+              maxWidth: double.infinity,
+              maxHeight: double.infinity,
+              child: Transform.translate(
+                offset: Offset(-rect.left * scale, 0),
+                child: SizedBox(
+                  width: document.contentWidth * scale,
+                  height: document.slideHeight * scale,
+                  child: CanvasView(
+                    document: document,
+                    content: content,
+                    fontResolver: fontResolver,
+                    assetCatalog: assetCatalog,
+                    showTemplatePhotos: showTemplatePhotos,
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
 /// Dashed verticals on the slide cut lines, in template units so the dash
 /// scales with the canvas like everything else.
 class _CutGuidePainter extends CustomPainter {
@@ -879,8 +899,6 @@ class TemplateCanvas extends StatelessWidget {
   Widget build(BuildContext context) {
     return PanelCanvas(
       panel: template.panels.first,
-      // Carousel bleed from the second panel, matching the web thumbnail.
-      panelAfter: template.panels.length > 1 ? template.panels[1] : null,
       canvasWidth: template.canvasWidth,
       canvasHeight: template.canvasHeight,
       content: content,

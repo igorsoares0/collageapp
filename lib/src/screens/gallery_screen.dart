@@ -9,6 +9,8 @@ import '../api/project_store.dart';
 import '../api/template_api.dart';
 import '../api/template_store.dart';
 import '../model/asset_record.dart';
+import '../model/migrate_v4.dart';
+import '../model/slot_content.dart';
 import '../model/template.dart';
 import '../rendering/template_canvas.dart';
 import '../theme.dart';
@@ -885,7 +887,9 @@ class _CardCarouselState extends State<_CardCarousel> {
         if (template == null || template.panels.length < 2) {
           return _staticThumb();
         }
-        final panels = template.panels;
+        // The published template folded into the continuous model, so a
+        // panorama really spans slides instead of being echoed by a bleed.
+        final document = migrateToV4(template, const SlotContent()).document;
         final catalog = [...widget.catalog, ...snapshot.data!.assets];
         return Stack(
           fit: StackFit.expand,
@@ -905,7 +909,7 @@ class _CardCarouselState extends State<_CardCarousel> {
                     .toDouble();
                 return PageView.builder(
                   controller: _controllerFor(fraction),
-                  itemCount: panels.length,
+                  itemCount: document.slideCount,
                   onPageChanged: (i) => _page.value = i,
                   itemBuilder: (context, i) => Center(
                     child: AspectRatio(
@@ -913,15 +917,9 @@ class _CardCarouselState extends State<_CardCarousel> {
                       // Inert, like the preview: the card's InkWell keeps the
                       // tap, the PageView keeps the horizontal drag.
                       child: IgnorePointer(
-                        child: PanelCanvas(
-                          panel: panels[i],
-                          // Carousel bleed from the neighbouring slides.
-                          panelBefore: i > 0 ? panels[i - 1] : null,
-                          panelAfter: i + 1 < panels.length
-                              ? panels[i + 1]
-                              : null,
-                          canvasWidth: template.canvasWidth,
-                          canvasHeight: template.canvasHeight,
+                        child: SlideView(
+                          document: document,
+                          slideIndex: i,
                           fontResolver: widget.fontResolver,
                           assetCatalog: catalog,
                           // Cards show the "with sample photos" look, matching
@@ -946,7 +944,7 @@ class _CardCarouselState extends State<_CardCarousel> {
                   builder: (context, page, _) => Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      for (var i = 0; i < panels.length; i++)
+                      for (var i = 0; i < document.slideCount; i++)
                         AnimatedContainer(
                           duration: const Duration(milliseconds: 150),
                           width: i == page ? 12 : 5,
