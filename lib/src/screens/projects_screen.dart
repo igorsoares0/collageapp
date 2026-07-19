@@ -68,7 +68,9 @@ class _ProjectsListState extends State<ProjectsList> {
   }
 
   Future<void> _open(ProjectSummary summary) async {
-    final project = await _store.load(summary.id);
+    // The editor works on the continuous model; a v3 file is migrated on read
+    // (nothing is written back until the user actually edits).
+    final project = await _store.loadAsDocument(summary.id);
     if (!mounted) return;
     if (project == null) {
       ScaffoldMessenger.of(context).showSnackBar(

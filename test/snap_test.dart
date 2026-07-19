@@ -134,7 +134,7 @@ void main() {
     // the element) diagonally towards alignment in small steps, until the
     // magnetic snap lands the element center EXACTLY on the canvas center.
     final canvasRect = tester.getRect(
-      find.byKey(const ValueKey('canvas-background')),
+      find.byKey(const ValueKey('slide-background-0')),
     );
     final gesture = await tester.startGesture(
       canvasRect.topLeft + const Offset(60, 60),

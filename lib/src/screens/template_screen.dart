@@ -14,6 +14,9 @@ import '../api/gallery_saver.dart';
 import '../api/project_store.dart';
 import '../api/template_store.dart';
 import '../model/asset_record.dart';
+import '../model/migrate_v4.dart';
+import '../model/slide_aware.dart';
+import '../model/slide_ops.dart';
 import '../model/slot_content.dart';
 import '../model/template.dart';
 import '../rendering/export.dart';
@@ -44,7 +47,10 @@ import '../widgets/text_style_bar.dart';
 class TemplateScreen extends StatefulWidget {
   final String? id;
   final Template? draft;
-  final Project? project;
+
+  /// A saved project, already loaded into the v4 continuous model
+  /// (ProjectStore.loadAsDocument — a v3 file is migrated on read).
+  final ContinuousProject? project;
   final ProjectStore? projects;
 
   /// Injectable for tests (google_fonts needs network/assets); the app uses
@@ -76,13 +82,21 @@ class TemplateScreen extends StatefulWidget {
 /// size — never changes when a different bar shows or a slot is selected.
 const double _kBottomBarHeight = 196;
 
+/// One point in edit history. Both halves of the document travel together:
+/// the continuous [Document] (structure) and the [SlotContent] overlay
+/// (per-slot overrides). Snapshotting only the overlay would make structural
+/// edits — adding, deleting or reordering a slide — silently un-undoable.
+typedef _Snapshot = ({Document doc, SlotContent content});
+
 class _TemplateScreenState extends State<TemplateScreen>
     with WidgetsBindingObserver {
   final _store = TemplateStore();
   final _picker = ImagePicker();
-  // One RepaintBoundary key per panel, so each carousel slide exports to its
-  // own PNG. Reused across rebuilds (keyed by panel id).
-  final Map<String, GlobalKey> _panelKeys = {};
+  // ONE RepaintBoundary over the whole continuous canvas. The export rasters it
+  // once and slices per slide (capturePngSlices), so the seams line up by
+  // construction — this replaced a key per panel, where each slide was an
+  // independent raster aligned only by eye through the bleed.
+  final GlobalKey _canvasKey = GlobalKey();
   // Pan/zoom of the editing surface. Pinch zooms only when nothing is selected
   // (a selected slot's pinch resizes the slot instead); the zoom persists
   // across selection, and slot gestures keep working because hit testing maps
@@ -92,17 +106,29 @@ class _TemplateScreenState extends State<TemplateScreen>
   // panels without drifting up/down); when zoomed in, panning goes free so you
   // can reach every corner of the magnified panel.
   bool _isZoomed = false;
-  late Future<Template> _template;
+  /// Resolves the document to edit: a saved project arrives already continuous,
+  /// a template (draft or fetched) is migrated to v4 on the way in.
+  late Future<Document> _documentLoad;
+
+  /// The resolved document — the editor's source of truth for STRUCTURE
+  /// (layers in one coordinate space, slide count, per-slide backgrounds).
+  /// Per-slot overrides stay in [_content]. Null only before the load settles,
+  /// which is before any editing callback can exist.
+  Document? _document;
+  Document get _doc => _document!;
   // Remote frame/sticker catalog; empty until loaded (seeds still resolve).
   List<AssetRecord> _catalog = const [];
   SlotContent _content = const SlotContent();
   String? _selectedSlot;
   String? _editingSlot;
-  // Panel the styling bars act on (last one the user touched).
-  String? _focusedPanelId;
+  // Slide the styling bars and the add menu act on. Unlike the old
+  // _focusedPanelId this is not bookkeeping the callbacks have to maintain: on
+  // a continuous canvas the focused slide is DERIVED from the selection (see
+  // [_focusedSlide]), so there is no per-callback assignment to forget.
+  int _lastTouchedSlide = 0;
   // Background contextual bar open (entered via the toolbar's Background
   // button; selecting any element leaves it). Stays across canvas taps so the
-  // user can hop between panels while recoloring.
+  // user can hop between slides while recoloring.
   bool _backgroundMode = false;
   bool _exporting = false;
   bool _saving = false;
@@ -117,11 +143,15 @@ class _TemplateScreenState extends State<TemplateScreen>
   final LayerLink _selectionLink = LayerLink();
   (String, Size)? _selectionBox;
 
-  // Undo/redo: snapshots of [_content] — it is immutable copy-on-write, so a
-  // snapshot is a cheap shared reference and restoring one can't leak partial
-  // state. Selection/zoom are deliberately NOT part of history; only content.
-  final List<SlotContent> _undoStack = [];
-  final List<SlotContent> _redoStack = [];
+  // Undo/redo: snapshots of BOTH halves of the document — the continuous
+  // [Document] (structure: layers, slides, backgrounds) and [_content] (the
+  // user's per-slot overrides). Both are immutable copy-on-write, so a snapshot
+  // is a pair of cheap shared references and restoring one can't leak partial
+  // state. Snapshotting only the content would silently drop structure: adding
+  // or reordering a slide would become un-undoable.
+  // Selection/zoom are deliberately NOT part of history.
+  final List<_Snapshot> _undoStack = [];
+  final List<_Snapshot> _redoStack = [];
 
   /// Coalescing state: continuous interactions (drag, pinch, twist, sliders,
   /// typing) stream one edit per frame, and all edits sharing a key merge
@@ -140,7 +170,6 @@ class _TemplateScreenState extends State<TemplateScreen>
   // lazily on the first edit — browsing a template without touching it never
   // leaves a file behind. [_dirty] marks unsaved content; a debounce timer
   // covers keyboard-only edit streams (typing produces no canvas pointer-up).
-  Template? _resolvedTemplate;
   String? _projectId;
   bool _dirty = false;
   bool _saveErrorShown = false;
@@ -175,7 +204,7 @@ class _TemplateScreenState extends State<TemplateScreen>
         coalesce == _editRunKey &&
         now.difference(_editRunAt) <= _kEditRunWindow;
     if (!continuesRun) {
-      _undoStack.add(_content);
+      _undoStack.add((doc: _doc, content: _content));
       if (_undoStack.length > _kMaxHistory) _undoStack.removeAt(0);
     }
     _redoStack.clear();
@@ -200,18 +229,19 @@ class _TemplateScreenState extends State<TemplateScreen>
   /// is warned once per session.
   void _saveProject() {
     final store = widget.projects;
-    final template = _resolvedTemplate;
-    if (!_dirty || store == null || template == null) return;
+    final document = _document;
+    if (!_dirty || store == null || document == null) return;
     _saveTimer?.cancel();
     _dirty = false;
-    final project = Project(
+    final project = ContinuousProject(
       id: _projectId ??= _newProjectId(),
-      name: template.name,
+      name: document.name,
       updatedAt: DateTime.now(),
-      template: template,
+      document: document,
       content: _content,
+      migrated: false,
     );
-    store.save(project).catchError((_) {
+    store.saveDocument(project).catchError((_) {
       _dirty = true;
       if (mounted && !_saveErrorShown) {
         _saveErrorShown = true;
@@ -232,30 +262,39 @@ class _TemplateScreenState extends State<TemplateScreen>
     setState(() => _content = next);
   }
 
-  void _undoEdit(Template template) {
+  /// Applies a STRUCTURAL edit (layers, slides, backgrounds) with undo
+  /// recording. Structural changes are always discrete — there is no continuous
+  /// gesture that adds a slide — so they never coalesce.
+  void _editDoc(Document next) {
+    _record();
+    setState(() => _document = next);
+  }
+
+  void _undoEdit() {
     if (_undoStack.isEmpty) return;
-    _redoStack.add(_content);
-    _restore(template, _undoStack.removeLast());
+    _redoStack.add((doc: _doc, content: _content));
+    _restore(_undoStack.removeLast());
   }
 
-  void _redoEdit(Template template) {
+  void _redoEdit() {
     if (_redoStack.isEmpty) return;
-    _undoStack.add(_content);
-    _restore(template, _redoStack.removeLast());
+    _undoStack.add((doc: _doc, content: _content));
+    _restore(_redoStack.removeLast());
   }
 
-  void _restore(Template template, SlotContent snapshot) {
+  void _restore(_Snapshot snapshot) {
     _editRunKey = null;
     _dragRaw = null;
     _dragKey = null;
     setState(() {
-      _content = snapshot;
+      _document = snapshot.doc;
+      _content = snapshot.content;
       _guideXs = const [];
       _guideYs = const [];
       // Inline editing can't survive a content swap (the field's controller
       // would show stale text); selection stays unless its element is gone.
       _editingSlot = null;
-      if (_selectedSlot != null && _selectionTarget(template) == null) {
+      if (_selectedSlot != null && _selectionTarget() == null) {
         _selectedSlot = null;
       }
     });
@@ -282,25 +321,35 @@ class _TemplateScreenState extends State<TemplateScreen>
   /// offset snaps to canvas/element guides (see snap.dart). Falls back to a
   /// plain move when the element's painted box can't be derived (template-
   /// rotated elements, unmeasured text).
-  void _dragSelected(Template template, String slotId, Offset delta) {
+  void _dragSelected(String slotId, Offset delta) {
     final raw =
         ((_dragKey == slotId ? _dragRaw : null) ?? _content.offsetFor(slotId)) +
         delta;
     var snapped = raw;
     List<double> xs = const [], ys = const [];
-    final box = _dragTargetBox(template, slotId);
+    final box = _dragTargetBox(slotId);
     if (box != null) {
+      // Snapping is SLIDE-scoped: the element snaps to the edges and centre of
+      // the slide it is in, and to that slide's other elements — not to the
+      // whole document (which would put every canvas guide on slide 0) and not
+      // to elements two slides away. Snap in slide-local space, then shift the
+      // guides back into continuous coordinates for painting.
+      final slide = _doc.slideIndexAtX(box.center.dx);
+      final originX = _doc.slideRect(slide).left;
+      final toLocal = Offset(-originX, 0);
       final result = snapDrag(
-        box: box,
+        box: box.shift(toLocal),
         scale: _content.scaleFor(slotId),
         raw: raw,
-        canvas: Size(template.canvasWidth, template.canvasHeight),
-        others: _snapTargets(template, slotId),
-        threshold: _kSnapReachPx * _screenToTemplate(template),
+        canvas: Size(_doc.slideWidth, _doc.slideHeight),
+        others: [
+          for (final r in _snapTargets(slotId, slide)) r.shift(toLocal),
+        ],
+        threshold: _kSnapReachPx * _screenToTemplate(),
         snapEdges: _content.rotationFor(slotId) == 0,
       );
       snapped = result.offset;
-      xs = result.guideXs;
+      xs = [for (final x in result.guideXs) x + originX];
       ys = result.guideYs;
     }
     // A tick the moment the element locks onto a (new) guide — not on every
@@ -326,12 +375,12 @@ class _TemplateScreenState extends State<TemplateScreen>
   /// element. (A user rotation is fine — it pivots on the center, which is
   /// exactly what center guides track.) Text height isn't in the model; it
   /// comes from the measured selection box.
-  Rect? _dragTargetBox(Template template, String key) {
+  Rect? _dragTargetBox(String key) {
     // Edge stretch grows the LAYOUT box (top-left pinned), so the snapped
     // box is the model box with the stretched dimensions.
     final fx = _content.stretchXFor(key);
     final fy = _content.stretchYFor(key);
-    for (final layer in _allLayers(template)) {
+    for (final layer in _allLayers) {
       switch (layer) {
         case ImageLayer l when l.slotId == key:
           if (l.rotation != 0) return null;
@@ -367,10 +416,9 @@ class _TemplateScreenState extends State<TemplateScreen>
   /// targets. Rotated elements and text (unmeasurable height) are skipped;
   /// hidden ones too. Shapes are template decoration with no user overrides,
   /// so their model box IS their painted box.
-  List<Rect> _snapTargets(Template template, String movingKey) {
-    final panel = _effectivePanel(_focusedPanel(template));
+  List<Rect> _snapTargets(String movingKey, int slide) {
     final targets = <Rect>[];
-    for (final layer in panel.layers) {
+    for (final layer in _doc.layersInSlide(slide)) {
       if (_content.layerHidden(layer.id, layer.hidden)) continue;
       final (String? key, Rect? box) = switch (layer) {
         ImageLayer l when l.rotation == 0 => (
@@ -411,44 +459,44 @@ class _TemplateScreenState extends State<TemplateScreen>
     return targets;
   }
 
-  GlobalKey _panelKey(String panelId) =>
-      _panelKeys.putIfAbsent(panelId, () => GlobalKey());
-
-  /// Every panel on screen: the template's own plus the user's added ones
-  /// (empty panels appended at the end). All panel iteration/lookup goes
-  /// through here so added panels behave like template panels everywhere.
-  List<Panel> _panels(Template template) => [
-    ...template.panels,
-    ..._content.addedPanels,
-  ];
-
-  /// The panel the styling bars and the add menu act on: the last one the
-  /// user touched, falling back to the first.
-  Panel _focusedPanel(Template template) {
-    final panels = _panels(template);
-    final id = _focusedPanelId ?? panels.first.id;
-    return panels.firstWhere((p) => p.id == id, orElse: () => panels.first);
+  /// The slide the styling bars and the add menu act on.
+  ///
+  /// Derived, not tracked: whatever holds the selected element wins, falling
+  /// back to the last slide the user touched. In the panel model this was
+  /// _focusedPanelId, which every callback had to remember to assign — a class
+  /// of bug that simply doesn't exist once the answer comes from geometry.
+  int get _focusedSlide {
+    final layer = _selectionLayer();
+    if (layer != null) return _doc.slideOf(layer);
+    return _lastTouchedSlide.clamp(0, _doc.slideCount - 1);
   }
 
-  /// The panel with the user's added layers stacked on top — what the canvas,
-  /// the layer sheet and the export all render. The template itself is never
-  /// touched; added layers live in [_content].
-  Panel _effectivePanel(Panel panel) => _content.effectivePanel(panel);
+  /// The layer behind the current selection, if any.
+  Layer? _selectionLayer() {
+    final id = _selectedSlot;
+    if (id == null) return null;
+    for (final layer in _doc.layers) {
+      final match = switch (layer) {
+        ImageLayer l => l.slotId == id,
+        TextLayer l => l.slotId == id,
+        GridLayer l => l.id == id || l.cells.any((c) => c.slotId == id),
+        _ => layer.id == id,
+      };
+      if (match) return layer;
+    }
+    return null;
+  }
 
-  /// All layers visible to lookups: the template's plus everything the user
-  /// added (slot ids are globally unique, so a flat list is fine).
-  List<Layer> _allLayers(Template template) => [
-    ...template.layers,
-    ..._content.allAddedLayers,
-  ];
+  /// All layers visible to lookups. On a continuous canvas this is simply the
+  /// document's layer list — there is no template/overlay split to merge.
+  List<Layer> get _allLayers => _doc.layers;
 
-  /// A slot/layer/panel id not used by the template or anything the user
-  /// added, so a new element never collides with an existing slot's overrides.
-  String _uniqueToken(String base, Template template) {
+  /// A slot/layer id not already in the document, so a new element never
+  /// collides with an existing slot's overrides.
+  String _uniqueToken(String base) {
     final used = {
-      for (final l in _allLayers(template)) l.id,
-      ...template.slotIds,
-      for (final p in _panels(template)) p.id,
+      for (final l in _allLayers) l.id,
+      ..._doc.slotIds,
     };
     var n = 1;
     while (used.contains('${base}_$n')) {
@@ -459,21 +507,21 @@ class _TemplateScreenState extends State<TemplateScreen>
 
   /// Adds a fresh text element to the focused panel, centered, and drops the
   /// user straight into inline editing so they can type immediately.
-  void _addTextLayer(Template template) {
-    final panel = _focusedPanel(template);
-    final token = _uniqueToken('text', template);
-    final bg = _content.backgroundFor(panel.id) ?? panel.backgroundColor;
+  void _addTextLayer() {
+    final slide = _focusedSlide;
+    final token = _uniqueToken('text');
+    final bg = _doc.backgroundFor(slide);
     // Pick a default ink that reads against the current background.
     final color = bg.computeLuminance() > 0.5
         ? const Color(0xFF111111)
         : const Color(0xFFFAFAFA);
-    final width = template.canvasWidth * 0.8;
+    final width = _doc.slideWidth * 0.8;
     final layer = TextLayer(
       id: token,
       hidden: false,
       slotId: token,
-      x: (template.canvasWidth - width) / 2,
-      y: template.canvasHeight * 0.42,
+      x: (_doc.slideWidth - width) / 2,
+      y: _doc.slideHeight * 0.42,
       width: width,
       fontFamily: 'Inter',
       fontSize: 88,
@@ -483,8 +531,7 @@ class _TemplateScreenState extends State<TemplateScreen>
     );
     _record();
     setState(() {
-      _content = _content.withAddedLayer(panel.id, layer);
-      _focusedPanelId = panel.id;
+      _document = addLayerToSlide(_doc, slide, layer);
       _selectedSlot = token;
       _editingSlot = token;
       _backgroundMode = false;
@@ -496,22 +543,21 @@ class _TemplateScreenState extends State<TemplateScreen>
   /// right away (an empty image element is useless on its own).
   /// [frameAssetId]/[aspect] make it a framed photo slot (polaroid etc.) —
   /// the box follows the frame's aspect so the window isn't distorted.
-  void _addImageLayer(
-    Template template, {
+  void _addImageLayer({
     String? frameAssetId,
     double aspect = 1,
     ImageProvider? image,
   }) {
-    final panel = _focusedPanel(template);
-    final token = _uniqueToken('image', template);
-    final width = template.canvasWidth * 0.5;
+    final slide = _focusedSlide;
+    final token = _uniqueToken('image');
+    final width = _doc.slideWidth * 0.5;
     final height = width / (aspect <= 0 ? 1 : aspect);
     final layer = ImageLayer(
       id: token,
       hidden: false,
       slotId: token,
-      x: (template.canvasWidth - width) / 2,
-      y: (template.canvasHeight - height) / 2,
+      x: (_doc.slideWidth - width) / 2,
+      y: (_doc.slideHeight - height) / 2,
       width: width,
       height: height,
       rotation: 0,
@@ -521,10 +567,8 @@ class _TemplateScreenState extends State<TemplateScreen>
     );
     _record();
     setState(() {
-      var next = _content.withAddedLayer(panel.id, layer);
-      if (image != null) next = next.withImage(token, image);
-      _content = next;
-      _focusedPanelId = panel.id;
+      _document = addLayerToSlide(_doc, slide, layer);
+      if (image != null) _content = _content.withImage(token, image);
       _selectedSlot = token;
       _editingSlot = null;
       _backgroundMode = false;
@@ -534,11 +578,10 @@ class _TemplateScreenState extends State<TemplateScreen>
 
   /// A grid id and its cell slot ids unused by the template or anything the
   /// user added, checked as a set so none can collide with existing slots.
-  (String, List<String>) _uniqueGridIds(Template template, int cellCount) {
+  (String, List<String>) _uniqueGridIds(int cellCount) {
     final used = {
-      for (final l in _allLayers(template)) l.id,
-      ...template.slotIds,
-      for (final p in _panels(template)) p.id,
+      for (final l in _allLayers) l.id,
+      ..._doc.slotIds,
     };
     var n = 1;
     String gridId;
@@ -552,20 +595,18 @@ class _TemplateScreenState extends State<TemplateScreen>
   }
 
   /// A GridLayer in [preset]'s layout, inset from the canvas edges.
-  GridLayer _buildGridLayer(
-    Template template,
-    GridPreset preset,
+  GridLayer _buildGridLayer(GridPreset preset,
     String gridId,
     List<String> cellIds,
   ) {
-    final inset = template.canvasWidth * 0.08;
+    final inset = _doc.slideWidth * 0.08;
     return GridLayer(
       id: gridId,
       hidden: false,
       x: inset,
       y: inset,
-      width: template.canvasWidth - 2 * inset,
-      height: template.canvasHeight - 2 * inset,
+      width: _doc.slideWidth - 2 * inset,
+      height: _doc.slideHeight - 2 * inset,
       rotation: 0,
       cols: preset.cols,
       rows: preset.rows,
@@ -589,14 +630,13 @@ class _TemplateScreenState extends State<TemplateScreen>
 
   /// Adds an empty grid in the chosen layout and selects its first cell so
   /// the grid chrome and styling bar appear.
-  void _addGridLayer(Template template, GridPreset preset) {
-    final panel = _focusedPanel(template);
-    final (gridId, cellIds) = _uniqueGridIds(template, preset.cells.length);
-    final layer = _buildGridLayer(template, preset, gridId, cellIds);
+  void _addGridLayer(GridPreset preset) {
+    final slide = _focusedSlide;
+    final (gridId, cellIds) = _uniqueGridIds(preset.cells.length);
+    final layer = _buildGridLayer(preset, gridId, cellIds);
     _record();
     setState(() {
-      _content = _content.withAddedLayer(panel.id, layer);
-      _focusedPanelId = panel.id;
+      _document = addLayerToSlide(_doc, slide, layer);
       _selectedSlot = cellIds.first;
       _editingSlot = null;
       _backgroundMode = false;
@@ -606,22 +646,20 @@ class _TemplateScreenState extends State<TemplateScreen>
   /// Adds [preset] with [images] already in its cells (in pick order) as ONE
   /// undo step — the photos-first flow's landing point. Nothing ends up
   /// selected: the result is the collage itself, ready to fine-tune.
-  void _insertFilledGrid(
-    Template template,
-    GridPreset preset,
+  void _insertFilledGrid(GridPreset preset,
     List<ImageProvider> images,
   ) {
-    final panel = _focusedPanel(template);
-    final (gridId, cellIds) = _uniqueGridIds(template, preset.cells.length);
-    final layer = _buildGridLayer(template, preset, gridId, cellIds);
+    final slide = _focusedSlide;
+    final (gridId, cellIds) = _uniqueGridIds(preset.cells.length);
+    final layer = _buildGridLayer(preset, gridId, cellIds);
     _record();
     setState(() {
-      var next = _content.withAddedLayer(panel.id, layer);
+      _document = addLayerToSlide(_doc, slide, layer);
+      var next = _content;
       for (var i = 0; i < cellIds.length && i < images.length; i++) {
         next = next.withImage(cellIds[i], images[i]);
       }
       _content = next;
-      _focusedPanelId = panel.id;
       _selectedSlot = null;
       _editingSlot = null;
       _backgroundMode = false;
@@ -630,64 +668,56 @@ class _TemplateScreenState extends State<TemplateScreen>
 
   /// Adds a sticker sized to its own aspect, centered, and selects it (its
   /// layer id doubles as the gesture/selection key — stickers carry no slot).
-  void _addStickerLayer(Template template, AssetChoice asset) {
-    final panel = _focusedPanel(template);
-    final token = _uniqueToken('sticker', template);
-    final width = template.canvasWidth * 0.4;
+  void _addStickerLayer(AssetChoice asset) {
+    final slide = _focusedSlide;
+    final token = _uniqueToken('sticker');
+    final width = _doc.slideWidth * 0.4;
     final height = width / (asset.aspect <= 0 ? 1 : asset.aspect);
     final layer = StickerLayer(
       id: token,
       hidden: false,
       assetId: asset.id,
-      x: (template.canvasWidth - width) / 2,
-      y: (template.canvasHeight - height) / 2,
+      x: (_doc.slideWidth - width) / 2,
+      y: (_doc.slideHeight - height) / 2,
       width: width,
       height: height,
     );
     _record();
     setState(() {
-      _content = _content.withAddedLayer(panel.id, layer);
-      _focusedPanelId = panel.id;
+      _document = addLayerToSlide(_doc, slide, layer);
       _selectedSlot = token;
       _editingSlot = null;
       _backgroundMode = false;
     });
   }
 
-  /// Appends an empty panel (a new carousel slide) and focuses it. Its layers
-  /// and background ride in SlotContent like any template panel's.
-  void _addPanel(Template template) {
-    final id = _uniqueToken('panel', template);
+  /// Appends an empty slide and focuses it. On a continuous canvas this is
+  /// just a wider document — appending reflows nothing (see addSlide).
+  void _addPanel() {
     _record();
     setState(() {
-      _content = _content.withAddedPanel(
-        Panel(
-          id: id,
-          backgroundColor: const Color(0xFFFFFFFF),
-          layers: const [],
-        ),
-      );
-      _focusedPanelId = id;
+      _document = addSlide(_doc);
+      _lastTouchedSlide = _doc.slideCount - 1;
       _selectedSlot = null;
       _editingSlot = null;
     });
   }
 
-  Future<void> _insertGrid(Template template) async {
+  Future<void> _insertGrid() async {
     final preset = await showGridPresetSheet(context);
     if (preset == null || !mounted) return;
-    _addGridLayer(template, preset);
+    _addGridLayer(preset);
   }
 
-  Future<void> _insertAsset(Template template) async {
+  Future<void> _insertAsset() async {
     final asset = await showAssetPickerSheet(context, _catalog);
     if (asset == null || !mounted) return;
     if (asset.isFrame) {
       // A frame is not a layer of its own — it decorates a photo slot, so
       // inserting one creates a framed image slot and opens the gallery.
-      _addImageLayer(template, frameAssetId: asset.id, aspect: asset.aspect);
+      _addImageLayer(frameAssetId: asset.id, aspect: asset.aspect);
     } else {
-      _addStickerLayer(template, asset);
+      _addStickerLayer(asset);
     }
   }
 
@@ -705,10 +735,10 @@ class _TemplateScreenState extends State<TemplateScreen>
   /// Deletes a user-added layer (template layers can only be hidden, not
   /// removed). Clears the selection if it pointed at the removed element —
   /// including a grid's cells and a sticker's layer-id key.
-  void _removeAddedLayer(String panelId, Layer layer) {
+  void _removeLayer(Layer layer) {
     _record();
     setState(() {
-      _content = _content.withoutAddedLayer(panelId, layer.id);
+      _document = removeLayer(_doc, layer.id);
       if (_selectionKeys(layer).contains(_selectedSlot)) {
         _selectedSlot = null;
         _editingSlot = null;
@@ -722,9 +752,9 @@ class _TemplateScreenState extends State<TemplateScreen>
   /// leave the immutable template, so it gets a hidden override instead (it
   /// disappears from canvas and export, and the layers sheet can bring it
   /// back). Both paths are one undo step.
-  void _deleteSelected(Template template, String targetId) {
+  void _deleteSelected(String targetId) {
     Layer? target;
-    for (final layer in _allLayers(template)) {
+    for (final layer in _allLayers) {
       final hit = switch (layer) {
         ImageLayer l => l.slotId == targetId,
         TextLayer l => l.slotId == targetId,
@@ -738,21 +768,12 @@ class _TemplateScreenState extends State<TemplateScreen>
       }
     }
     if (target == null) return;
-    for (final entry in _content.addedLayers.entries) {
-      if (entry.value.any((l) => l.id == target!.id)) {
-        _removeAddedLayer(entry.key, target);
-        return;
-      }
-    }
-    final layer = target;
-    _record();
-    setState(() {
-      _content = _content.withLayerHidden(layer.id, true);
-      if (_selectionKeys(layer).contains(_selectedSlot)) {
-        _selectedSlot = null;
-        _editingSlot = null;
-      }
-    });
+    // Delete now REMOVES any element. The panel model had to distinguish
+    // "user-added" (removable) from "template" (hide-only) layers, because the
+    // template was immutable and lived outside the user's overlay. The document
+    // owns every layer, so that split is gone — and undo covers a mistake.
+    // Hiding is still available from the layers sheet.
+    _removeLayer(target);
   }
 
   /// Duplicates the selected element as a user-added layer on the focused
@@ -763,9 +784,9 @@ class _TemplateScreenState extends State<TemplateScreen>
   /// element. Template layers duplicate into added layers; the template
   /// itself is never touched. [targetId] is the gesture target id, like
   /// [_deleteSelected]'s.
-  void _duplicateSelected(Template template, String targetId) {
+  void _duplicateSelected(String targetId) {
     Layer? source;
-    for (final layer in _allLayers(template)) {
+    for (final layer in _allLayers) {
       final hit = switch (layer) {
         ImageLayer l => l.slotId == targetId,
         TextLayer l => l.slotId == targetId,
@@ -779,20 +800,23 @@ class _TemplateScreenState extends State<TemplateScreen>
       }
     }
     if (source == null) return;
-    final panel = _focusedPanel(template);
     final nudge = Offset(
-      template.canvasWidth * 0.04,
-      template.canvasWidth * 0.04,
+      _doc.slideWidth * 0.04,
+      _doc.slideWidth * 0.04,
     );
 
     final String selectKey;
+    // Snapshot BEFORE the switch: it already writes _document, so recording
+    // afterwards would capture the MUTATED document and undo would do nothing.
+    _record();
     SlotContent next;
     switch (source) {
       case TextLayer l:
-        final token = _uniqueToken('text', template);
+        final token = _uniqueToken('text');
         selectKey = token;
-        next = _content.withAddedLayer(
-          panel.id,
+        next = _content;
+        _document = appendLayer(
+          _doc,
           TextLayer(
             id: token,
             hidden: false,
@@ -811,10 +835,11 @@ class _TemplateScreenState extends State<TemplateScreen>
         if (text != null) next = next.withText(token, text);
         next = _copyTransforms(next, l.slotId, token, nudge);
       case ImageLayer l:
-        final token = _uniqueToken('image', template);
+        final token = _uniqueToken('image');
         selectKey = token;
-        next = _content.withAddedLayer(
-          panel.id,
+        next = _content;
+        _document = appendLayer(
+          _doc,
           ImageLayer(
             id: token,
             hidden: false,
@@ -835,10 +860,11 @@ class _TemplateScreenState extends State<TemplateScreen>
         if (image != null) next = next.withImage(token, image);
         next = _copyTransforms(next, l.slotId, token, nudge);
       case StickerLayer l:
-        final token = _uniqueToken('sticker', template);
+        final token = _uniqueToken('sticker');
         selectKey = token;
-        next = _content.withAddedLayer(
-          panel.id,
+        next = _content;
+        _document = appendLayer(
+          _doc,
           StickerLayer(
             id: token,
             hidden: false,
@@ -851,10 +877,11 @@ class _TemplateScreenState extends State<TemplateScreen>
         );
         next = _copyTransforms(next, l.id, token, nudge);
       case GridLayer l:
-        final (gridId, cellIds) = _uniqueGridIds(template, l.cells.length);
+        final (gridId, cellIds) = _uniqueGridIds(l.cells.length);
         selectKey = cellIds.first;
-        next = _content.withAddedLayer(
-          panel.id,
+        next = _content;
+        _document = appendLayer(
+          _doc,
           GridLayer(
             id: gridId,
             hidden: false,
@@ -891,10 +918,8 @@ class _TemplateScreenState extends State<TemplateScreen>
       default:
         return;
     }
-    _record();
     setState(() {
       _content = next;
-      _focusedPanelId = panel.id;
       _selectedSlot = selectKey;
       _editingSlot = null;
       _backgroundMode = false;
@@ -928,24 +953,31 @@ class _TemplateScreenState extends State<TemplateScreen>
     _zoom.addListener(_onZoomChange);
     final project = widget.project;
     if (project != null) {
-      // Resuming: the saved document carries both the template snapshot and
-      // the user's edits.
+      // Resuming: already continuous (migrated on read if the file was v3).
       _projectId = project.id;
       _content = project.content;
-      _template = Future.value(project.template);
+      _documentLoad = Future.value(project.document);
     } else if (widget.draft != null) {
-      _template = Future.value(widget.draft);
+      _documentLoad = Future.value(_documentFrom(widget.draft!));
     } else {
-      _template = _store.loadTemplate(widget.id!).then((r) => r.template);
+      _documentLoad = _store
+          .loadTemplate(widget.id!)
+          .then((r) => _documentFrom(r.template));
     }
-    // Saving needs the template outside the FutureBuilder; load errors are
+    // Saving needs the document outside the FutureBuilder; load errors are
     // already surfaced by build(). Block body: an arrow would type the chain
-    // as Future<Template>, which the void-returning onError then violates.
-    _template.then((t) {
-      _resolvedTemplate = t;
+    // as Future<Document>, which the void-returning onError then violates.
+    _documentLoad.then((d) {
+      _document = d;
     }, onError: (_) {});
     _loadCatalog();
   }
+
+  /// A published template (or a blank draft) folded into the continuous model.
+  /// Templates are authored as panels; this is the same reflow the project
+  /// store does on read, with no user overlay yet.
+  Document _documentFrom(Template template) =>
+      migrateToV4(template, const SlotContent()).document;
 
   /// Fetches the frame/sticker catalog so uploaded frames resolve. Best-effort:
   /// on a cold offline start it just stays empty and bundled seeds are used.
@@ -1042,7 +1074,7 @@ class _TemplateScreenState extends State<TemplateScreen>
   /// gallery pick: one photo becomes a plain image element; several open the
   /// layout picker (presets for that exact count, previewed with the actual
   /// photos) and land as a pre-filled grid, one undo step, nothing selected.
-  Future<void> _insertPhotos(Template template) async {
+  Future<void> _insertPhotos() async {
     final files = await _picker.pickMultiImage(maxWidth: 2160);
     if (files.isEmpty) return;
     final bytesList = <Uint8List>[
@@ -1052,7 +1084,7 @@ class _TemplateScreenState extends State<TemplateScreen>
     if (bytesList.length == 1) {
       final image = await _persistImage(bytesList.single);
       if (!mounted) return;
-      _addImageLayer(template, image: image);
+      _addImageLayer(image: image);
       return;
     }
     // Previews stay in memory; the photos are only persisted to project
@@ -1060,23 +1092,21 @@ class _TemplateScreenState extends State<TemplateScreen>
     final preset = await showLayoutPickerSheet(
       context,
       photos: [for (final bytes in bytesList) MemoryImage(bytes)],
-      canvasAspect: template.canvasWidth / template.canvasHeight,
+      canvasAspect: _doc.slideWidth / _doc.slideHeight,
     );
     if (preset == null || !mounted) return;
     final images = <ImageProvider>[
       for (final bytes in bytesList) await _persistImage(bytes),
     ];
     if (!mounted) return;
-    _insertFilledGrid(template, preset, images);
+    _insertFilledGrid(preset, images);
   }
 
   /// Tapping a slot selects it (shows the handles for move/resize). A text
   /// slot's second tap starts inline editing. Image slots and grid cells never
   /// edit — their photo icon opens the gallery instead (see [_onPickImage]).
-  void _handleSlotTap(Template template, String slotId) {
-    final isText = _allLayers(
-      template,
-    ).any((l) => l is TextLayer && l.slotId == slotId);
+  void _handleSlotTap(String slotId) {
+    final isText = _allLayers.any((l) => l is TextLayer && l.slotId == slotId);
     final wasSelected = _selectedSlot == slotId;
     if (!wasSelected) {
       // Same tick the snap/rotation locks use — selection is a physical event.
@@ -1140,17 +1170,17 @@ class _TemplateScreenState extends State<TemplateScreen>
   /// when hopping between slides.
   void _focusPanelAt(
     int index,
-    List<Panel> panels,
+    int slideCount,
     double panelWidth,
     double viewportWidth,
   ) {
     setState(() {
-      _focusedPanelId = panels[index].id;
+      _lastTouchedSlide = index;
       _selectedSlot = null;
       _editingSlot = null;
     });
     // Mirror the strip's layout: 16px strip padding + 6px per-panel padding.
-    final stripWidth = 32 + panels.length * (panelWidth + 12.0);
+    final stripWidth = 32 + slideCount * (panelWidth + 12.0);
     final maxTx = (stripWidth - viewportWidth).clamp(0.0, double.infinity);
     final tx = (index * (panelWidth + 12.0)).clamp(0.0, maxTx);
     _zoom.value = Matrix4.identity()..setTranslationRaw(-tx, 0, 0);
@@ -1170,8 +1200,8 @@ class _TemplateScreenState extends State<TemplateScreen>
   /// when slots overlap), drag rows to restack, or hide/show it. All edits
   /// are SlotContent overrides, so the sheet reflects them live and the canvas
   /// updates underneath.
-  void _showLayersSheet(Template template) {
-    final templatePanel = _focusedPanel(template);
+  void _showLayersSheet() {
+    final slide = _focusedSlide;
     showModalBottomSheet<void>(
       context: context,
       builder: (sheetContext) {
@@ -1180,18 +1210,25 @@ class _TemplateScreenState extends State<TemplateScreen>
         return StatefulBuilder(
           builder: (context, setSheetState) {
             // Recompute each rebuild so an added/removed layer shows up live.
-            final panel = _effectivePanel(templatePanel);
+            // LayersSheet still speaks Panel; on a continuous canvas the
+            // focused slide IS that view, built fresh each rebuild so an
+            // added/removed layer shows up live.
+            final panel = Panel(
+              id: 'slide_$slide',
+              backgroundColor: _doc.backgroundFor(slide),
+              layers: _doc.layersInSlide(slide),
+            );
             return LayersSheet(
               panel: panel,
               content: _content,
               assetCatalog: _catalog,
               // Only the user's own added layers can be deleted; template
               // layers can be hidden but not removed.
-              removableLayerIds: {
-                for (final l in _content.addedLayersFor(panel.id)) l.id,
-              },
+              // Every layer is removable now: the document owns them all, so
+              // there is no immutable-template subset to protect.
+              removableLayerIds: {for (final l in panel.layers) l.id},
               onRemove: (layer) {
-                _removeAddedLayer(panel.id, layer);
+                _removeLayer(layer);
                 setSheetState(() {});
               },
               onSelect: (slotId) {
@@ -1233,7 +1270,7 @@ class _TemplateScreenState extends State<TemplateScreen>
   /// by Export (share sheet) and Save (photo gallery). Deselects first: the
   /// handles (and the inline editor's cursor) are widgets inside the
   /// RepaintBoundary and would otherwise end up in the PNG.
-  Future<List<Uint8List>> _capturePanels(Template template) async {
+  Future<List<Uint8List>> _capturePanels() async {
     if (_selectedSlot != null || _editingSlot != null) {
       setState(() {
         _selectedSlot = null;
@@ -1241,28 +1278,25 @@ class _TemplateScreenState extends State<TemplateScreen>
       });
       await WidgetsBinding.instance.endOfFrame;
     }
-    final panels = _panels(template);
-    final shots = <Uint8List>[];
-    for (final panel in panels) {
-      shots.add(await capturePng(_panelKey(panel.id), template.canvasWidth));
-    }
-    return shots;
+    // ONE raster of the continuous canvas, sliced per slide: the seams line up
+    // by construction instead of being two independently exported canvases.
+    return capturePngSlices(_canvasKey, _doc, targetSlideWidth: _doc.slideWidth);
   }
 
-  Future<void> _exportPng(Template template) async {
+  Future<void> _exportPng() async {
     setState(() => _exporting = true);
     try {
       // One PNG per panel (added panels included), in carousel order — ready
       // to post as a carousel.
-      final shots = await _capturePanels(template);
+      final shots = await _capturePanels();
       final files = <XFile>[];
       final names = <String>[];
       for (var i = 0; i < shots.length; i++) {
         files.add(XFile.fromData(shots[i], mimeType: 'image/png'));
         names.add(
           shots.length == 1
-              ? '${template.id}.png'
-              : '${template.id}_${i + 1}.png',
+              ? '${_doc.id}.png'
+              : '${_doc.id}_${i + 1}.png',
         );
       }
       // fileNameOverrides is REQUIRED with XFile.fromData: cross_file drops
@@ -1289,7 +1323,7 @@ class _TemplateScreenState extends State<TemplateScreen>
   /// carousel order — the quick path that skips the share sheet. On Android
   /// 10+ this needs no runtime permission; older Androids and iOS get a
   /// one-time prompt via [Gal.requestAccess].
-  Future<void> _saveToGallery(Template template) async {
+  Future<void> _saveToGallery() async {
     setState(() => _saving = true);
     try {
       if (!await Gal.requestAccess()) {
@@ -1301,7 +1335,7 @@ class _TemplateScreenState extends State<TemplateScreen>
         );
         return;
       }
-      final shots = await _capturePanels(template);
+      final shots = await _capturePanels();
       // Gallery apps order photos by time, NOT filename, and default to
       // newest-first (Google Photos, the Instagram picker). Two catches:
       // Android forces DATE_ADDED to the write instant (our explicit value is
@@ -1314,7 +1348,7 @@ class _TemplateScreenState extends State<TemplateScreen>
       for (var i = shots.length - 1; i >= 0; i--) {
         await GallerySaver.save(
           shots[i],
-          name: shots.length == 1 ? template.id : '${template.id}_${i + 1}',
+          name: shots.length == 1 ? _doc.id : '${_doc.id}_${i + 1}',
           dateTaken: base.subtract(Duration(seconds: i)),
         );
       }
@@ -1346,10 +1380,10 @@ class _TemplateScreenState extends State<TemplateScreen>
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<Template>(
-      future: _template,
+    return FutureBuilder<Document>(
+      future: _documentLoad,
       builder: (context, snapshot) {
-        final template = snapshot.data;
+        final document = snapshot.data;
         // Read the keyboard/safe-area insets HERE, above the Scaffold: the
         // Scaffold consumes the keyboard inset and hands its body a MediaQuery
         // with viewInsets.bottom == 0, so reading it inside _buildBody would
@@ -1360,20 +1394,20 @@ class _TemplateScreenState extends State<TemplateScreen>
         return Scaffold(
           appBar: AppBar(
             actions: [
-              if (template != null) ...[
+              if (document != null) ...[
                 IconButton(
                   icon: const Icon(Icons.undo),
                   tooltip: 'Undo',
                   onPressed: _undoStack.isEmpty
                       ? null
-                      : () => _undoEdit(template),
+                      : () => _undoEdit(),
                 ),
                 IconButton(
                   icon: const Icon(Icons.redo),
                   tooltip: 'Redo',
                   onPressed: _redoStack.isEmpty
                       ? null
-                      : () => _redoEdit(template),
+                      : () => _redoEdit(),
                 ),
                 // Quick path: write the panels straight to the photo gallery,
                 // no share sheet. Sits beside Export (the share finish line).
@@ -1388,7 +1422,7 @@ class _TemplateScreenState extends State<TemplateScreen>
                   tooltip: 'Save to gallery',
                   onPressed: (_saving || _exporting)
                       ? null
-                      : () => _saveToGallery(template),
+                      : () => _saveToGallery(),
                 ),
                 // Export is the flow's finish line — a labeled button, not
                 // one more icon. Inserting/layers live in the bottom toolbar.
@@ -1398,7 +1432,7 @@ class _TemplateScreenState extends State<TemplateScreen>
                     child: FilledButton(
                       onPressed: (_exporting || _saving)
                           ? null
-                          : () => _exportPng(template),
+                          : () => _exportPng(),
                       child: _exporting
                           ? const SizedBox(
                               width: 18,
@@ -1434,11 +1468,7 @@ class _TemplateScreenState extends State<TemplateScreen>
                 textAlign: TextAlign.center,
               ),
             ),
-            ConnectionState.done => _buildBody(
-              template!,
-              keyboardInset,
-              safeBottom,
-            ),
+            ConnectionState.done => _buildBody(keyboardInset, safeBottom),
             _ => const Center(child: CircularProgressIndicator()),
           },
         );
@@ -1448,10 +1478,10 @@ class _TemplateScreenState extends State<TemplateScreen>
 
   /// The TextLayer of the currently selected slot, or null when nothing —
   /// or a non-text slot — is selected. Drives the styling bar.
-  TextLayer? _selectedTextLayer(Template template) {
+  TextLayer? _selectedTextLayer() {
     final slot = _selectedSlot;
     if (slot == null) return null;
-    for (final layer in _allLayers(template)) {
+    for (final layer in _allLayers) {
       if (layer is TextLayer && layer.slotId == slot) return layer;
     }
     return null;
@@ -1459,20 +1489,20 @@ class _TemplateScreenState extends State<TemplateScreen>
 
   /// The ImageLayer of the currently selected slot (or null). Grid cells are
   /// not ImageLayers, so a selected cell falls through to the grid bar.
-  ImageLayer? _selectedImageLayer(Template template) {
+  ImageLayer? _selectedImageLayer() {
     final slot = _selectedSlot;
     if (slot == null) return null;
-    for (final layer in _allLayers(template)) {
+    for (final layer in _allLayers) {
       if (layer is ImageLayer && layer.slotId == slot) return layer;
     }
     return null;
   }
 
   /// The StickerLayer selected by its layer id (or null).
-  StickerLayer? _selectedStickerLayer(Template template) {
+  StickerLayer? _selectedStickerLayer() {
     final slot = _selectedSlot;
     if (slot == null) return null;
-    for (final layer in _allLayers(template)) {
+    for (final layer in _allLayers) {
       if (layer is StickerLayer && layer.id == slot) return layer;
     }
     return null;
@@ -1480,10 +1510,10 @@ class _TemplateScreenState extends State<TemplateScreen>
 
   /// The GridLayer owning the selected cell (or null). Drives the grid bar and
   /// tells us a grid cell — not a plain image/text slot — is selected.
-  GridLayer? _selectedGridLayer(Template template) {
+  GridLayer? _selectedGridLayer() {
     final slot = _selectedSlot;
     if (slot == null) return null;
-    for (final layer in _allLayers(template)) {
+    for (final layer in _allLayers) {
       if (layer is GridLayer && layer.cells.any((c) => c.slotId == slot)) {
         return layer;
       }
@@ -1497,10 +1527,10 @@ class _TemplateScreenState extends State<TemplateScreen>
   /// its model size (pre-stretch, for the edge pills' anchoring math) and
   /// whether it's text (edge pills then stretch the wrap width only). Null
   /// when nothing is selected.
-  (String, double, Size, bool)? _selectionTarget(Template template) {
+  (String, double, Size, bool)? _selectionTarget() {
     final slot = _selectedSlot;
     if (slot == null) return null;
-    for (final layer in _allLayers(template)) {
+    for (final layer in _allLayers) {
       switch (layer) {
         case ImageLayer l when l.slotId == slot:
           return (l.slotId, l.rotation, Size(l.width, l.height), false);
@@ -1524,22 +1554,16 @@ class _TemplateScreenState extends State<TemplateScreen>
   /// template units, so its transform-to-global scale IS the composed
   /// FittedBox × zoom factor (both uniform). Evaluated at gesture start
   /// (post-layout, and the zoom is frozen while a slot is selected).
-  double _screenToTemplate(Template template) {
-    final box = _panelKeys[template.panels.first.id]?.currentContext
-        ?.findRenderObject();
+  double _screenToTemplate() {
+    final box = _canvasKey.currentContext?.findRenderObject();
     if (box is! RenderBox || !box.hasSize) return 1.0;
     final scale = box.getTransformTo(null).getMaxScaleOnAxis();
     return scale > 0 ? 1 / scale : 1.0;
   }
 
-  Widget _buildBody(
-    Template template,
-    double keyboardInset,
-    double safeBottom,
-  ) {
-    final panels = _panels(template);
-    final focusedPanel = _focusedPanel(template);
-    final bottomBar = _buildBottomBar(template);
+  Widget _buildBody(double keyboardInset, double safeBottom) {
+    final slideCount = _doc.slideCount;
+    final bottomBar = _buildBottomBar();
     // Constant height for the bar strip (incl. the home-indicator inset), so
     // the canvas area is a fixed size regardless of which bar shows.
     final barArea = _kBottomBarHeight + safeBottom;
@@ -1576,9 +1600,9 @@ class _TemplateScreenState extends State<TemplateScreen>
                   // is height-limited, and reserving more width would only
                   // letterbox the FittedBox — bands that read as a huge gap
                   // between panels.
-                  final aspect = template.canvasWidth / template.canvasHeight;
+                  final aspect = _doc.slideWidth / _doc.slideHeight;
                   final panelWidth = math.min(
-                    panels.length == 1
+                    slideCount == 1
                         ? constraints.maxWidth - 36
                         : constraints.maxWidth * 0.82,
                     (canvasHeight - 32) * aspect,
@@ -1596,131 +1620,77 @@ class _TemplateScreenState extends State<TemplateScreen>
                   // chrome is used instead — the overlay would sit on top of
                   // the inline TextField.
                   final target = _editingSlot == null
-                      ? _selectionTarget(template)
+                      ? _selectionTarget()
                       : null;
-                  // Effective (user-override-applied) panels, indexed: each
-                  // canvas also needs its NEIGHBOURS for the carousel bleed,
-                  // and the ghosts must reflect the same overrides.
-                  final effectivePanels = [
-                    for (final p in panels) _effectivePanel(p),
-                  ];
-                  // The surface is top-left aligned (constrained:false), so the
-                  // strip only looks centered when it happens to be viewport-
-                  // wide. A single height-limited panel (a tall Story canvas) is
-                  // narrower than that and would pin to the left, so pad the
-                  // leftover evenly. Multi-panel strips overflow the viewport, so
-                  // this collapses back to the base 16px there (no shift).
-                  final innerWidth = panels.length * (panelWidth + 4);
-                  final sidePad = math.max(
-                    16.0,
-                    (constraints.maxWidth - innerWidth) / 2,
-                  );
+                  // ONE continuous canvas for the whole document. This
+                  // replaced a Row of PanelCanvas — one per slide, each echoing
+                  // its neighbours through the bleed. With every layer in a
+                  // single coordinate space a panorama simply spans the slides,
+                  // so there is nothing to echo and no seam to align by eye.
                   final strip = SizedBox(
                     height: canvasHeight,
                     child: Padding(
-                      padding: EdgeInsets.symmetric(
-                        horizontal: sidePad,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
                         vertical: 16,
                       ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          for (final (i, panel) in effectivePanels.indexed)
-                            Padding(
-                              // Tight seam between panels — with the carousel
-                              // bleed the slides should read as contiguous.
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 2,
-                              ),
-                              child: SizedBox(
-                                width: panelWidth,
-                                // The export boundary is INSIDE PanelCanvas's
-                                // FittedBox (template units): a boundary out
-                                // here captures the letterbox bands whenever
-                                // this box doesn't match the canvas aspect,
-                                // shrinking the artwork in the exported PNG.
-                                child: PanelCanvas(
-                                  exportKey: _panelKey(panel.id),
-                                  panel: panel,
-                                  panelBefore: i > 0
-                                      ? effectivePanels[i - 1]
-                                      : null,
-                                  panelAfter: i + 1 < effectivePanels.length
-                                      ? effectivePanels[i + 1]
-                                      : null,
-                                  canvasWidth: template.canvasWidth,
-                                  canvasHeight: template.canvasHeight,
-                                  fontResolver: widget.fontResolver,
-                                  guideXs: panel.id == focusedPanel.id
-                                      ? _guideXs
-                                      : const [],
-                                  guideYs: panel.id == focusedPanel.id
-                                      ? _guideYs
-                                      : const [],
-                                  content: _content,
-                                  assetCatalog: _catalog,
-                                  selectedSlotId: _selectedSlot,
-                                  editingSlotId: _editingSlot,
-                                  onSlotTap: (slotId) {
-                                    _focusedPanelId = panel.id;
-                                    _handleSlotTap(template, slotId);
-                                  },
-                                  onPickImage: (slotId) {
-                                    _focusedPanelId = panel.id;
-                                    _onPickImage(slotId);
-                                  },
-                                  onSlotDelete: (slotId) =>
-                                      _deleteSelected(template, slotId),
-                                  onCanvasTap: () => setState(() {
-                                    _focusedPanelId = panel.id;
-                                    _selectedSlot = null;
-                                    _editingSlot = null;
-                                  }),
-                                  onTextChanged: (slotId, value) => _edit(
-                                    _content.withText(slotId, value),
-                                    coalesce: 'text:$slotId',
-                                  ),
-                                  onSlotDrag: (slotId, delta) =>
-                                      _dragSelected(template, slotId, delta),
-                                  onSlotScale: (slotId, scale) => _edit(
-                                    _content.withScale(slotId, scale),
-                                    coalesce: 'scale:$slotId',
-                                  ),
-                                  onSlotRotate: _rotateSelected,
-                                  onSlotEdgeResize: _edgeResizeSelected,
-                                  onGridFractions:
-                                      (gridId, columns, fractions) {
-                                        _record('fractions:$gridId');
-                                        setState(() {
-                                          _focusedPanelId = panel.id;
-                                          _content = columns
-                                              ? _content.withGridColFractions(
-                                                  gridId,
-                                                  fractions,
-                                                )
-                                              : _content.withGridRowFractions(
-                                                  gridId,
-                                                  fractions,
-                                                );
-                                        });
-                                      },
-                                  selectionLink: target == null
-                                      ? null
-                                      : _selectionLink,
-                                  onSelectionSize: target == null
-                                      ? null
-                                      : (s) {
-                                          if (_selectionBox == (target.$1, s)) {
-                                            return;
-                                          }
-                                          setState(() {
-                                            _selectionBox = (target.$1, s);
-                                          });
-                                        },
-                                ),
-                              ),
-                            ),
-                        ],
+                      child: SizedBox(
+                        width: panelWidth * slideCount,
+                        child: CanvasView(
+                          exportKey: _canvasKey,
+                          document: _doc,
+                          content: _content,
+                          fontResolver: widget.fontResolver,
+                          assetCatalog: _catalog,
+                          // The editor is the only place the cut lines show.
+                          showCutGuides: true,
+                          guideXs: _guideXs,
+                          guideYs: _guideYs,
+                          selectedSlotId: _selectedSlot,
+                          editingSlotId: _editingSlot,
+                          onSlotTap: (slotId) => _handleSlotTap(slotId),
+                          onPickImage: (slotId) => _onPickImage(slotId),
+                          onSlotDelete: (slotId) => _deleteSelected(slotId),
+                          onCanvasTap: () => setState(() {
+                            _selectedSlot = null;
+                            _editingSlot = null;
+                          }),
+                          onTextChanged: (slotId, value) => _edit(
+                            _content.withText(slotId, value),
+                            coalesce: 'text:$slotId',
+                          ),
+                          onSlotDrag: (slotId, delta) =>
+                              _dragSelected(slotId, delta),
+                          onSlotScale: (slotId, scale) => _edit(
+                            _content.withScale(slotId, scale),
+                            coalesce: 'scale:$slotId',
+                          ),
+                          onSlotRotate: _rotateSelected,
+                          onSlotEdgeResize: _edgeResizeSelected,
+                          onGridFractions: (gridId, columns, fractions) {
+                            _record('fractions:$gridId');
+                            setState(() {
+                              _content = columns
+                                  ? _content.withGridColFractions(
+                                      gridId,
+                                      fractions,
+                                    )
+                                  : _content.withGridRowFractions(
+                                      gridId,
+                                      fractions,
+                                    );
+                            });
+                          },
+                          selectionLink: target == null ? null : _selectionLink,
+                          onSelectionSize: target == null
+                              ? null
+                              : (sz) {
+                                  if (_selectionBox == (target.$1, sz)) return;
+                                  setState(() {
+                                    _selectionBox = (target.$1, sz);
+                                  });
+                                },
+                        ),
                       ),
                     ),
                   );
@@ -1768,7 +1738,7 @@ class _TemplateScreenState extends State<TemplateScreen>
                   // hops between surfaces still lands in one undo step —
                   // and drags route through the snapping path either way.
                   void dragSelected(String slotId, Offset delta) =>
-                      _dragSelected(template, slotId, delta);
+                      _dragSelected(slotId, delta);
                   void scaleSelected(String slotId, double scale) => _edit(
                     _content.withScale(slotId, scale),
                     coalesce: 'scale:$slotId',
@@ -1796,7 +1766,7 @@ class _TemplateScreenState extends State<TemplateScreen>
                             onScaleChange: scaleSelected,
                             onRotateChange: _rotateSelected,
                             onEdgeResize: _edgeResizeSelected,
-                            onDelete: (id) => _deleteSelected(template, id),
+                            onDelete: (id) => _deleteSelected(id),
                           ),
                         ),
                       ],
@@ -1811,14 +1781,14 @@ class _TemplateScreenState extends State<TemplateScreen>
                       targetId: target.$1,
                       currentScale: _content.scaleFor(target.$1),
                       currentRotation: _content.rotationFor(target.$1),
-                      screenToTemplate: () => _screenToTemplate(template),
+                      screenToTemplate: () => _screenToTemplate(),
                       onDrag: dragSelected,
                       onScaleChange: scaleSelected,
                       onRotateChange: _rotateSelected,
                       child: body,
                     );
                   }
-                  if (panels.length > 1) {
+                  if (slideCount > 1) {
                     // Carousel dots: which panel is focused, out of how many.
                     // Tapping one focuses that panel and slides it into view.
                     body = Stack(
@@ -1831,13 +1801,13 @@ class _TemplateScreenState extends State<TemplateScreen>
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              for (final (i, panel) in panels.indexed)
+                              for (var i = 0; i < slideCount; i++)
                                 GestureDetector(
                                   key: ValueKey('panel-dot-$i'),
                                   behavior: HitTestBehavior.opaque,
                                   onTap: () => _focusPanelAt(
                                     i,
-                                    panels,
+                                    slideCount,
                                     panelWidth,
                                     constraints.maxWidth,
                                   ),
@@ -1847,12 +1817,12 @@ class _TemplateScreenState extends State<TemplateScreen>
                                       duration: const Duration(
                                         milliseconds: 150,
                                       ),
-                                      width: panel.id == focusedPanel.id
+                                      width: i == _focusedSlide
                                           ? 18
                                           : 8,
                                       height: 8,
                                       decoration: BoxDecoration(
-                                        color: panel.id == focusedPanel.id
+                                        color: i == _focusedSlide
                                             ? AppColors.accent
                                             : Colors.white38,
                                         borderRadius: BorderRadius.circular(4),
@@ -1916,8 +1886,8 @@ class _TemplateScreenState extends State<TemplateScreen>
   /// contextual bar with an explicit title and Done, so the strip never
   /// changes silently: text styling, grid spacing/corners, photo actions,
   /// sticker actions — and background colors while [_backgroundMode] is on.
-  Widget _buildBottomBar(Template template) {
-    final textLayer = _selectedTextLayer(template);
+  Widget _buildBottomBar() {
+    final textLayer = _selectedTextLayer();
     if (textLayer != null) {
       final weight =
           _content.weightFor(textLayer.slotId) ?? textLayer.fontWeight;
@@ -1940,12 +1910,12 @@ class _TemplateScreenState extends State<TemplateScreen>
           _content.withScale(textLayer.slotId, v),
           coalesce: 'scale:${textLayer.slotId}',
         ),
-        onDuplicate: () => _duplicateSelected(template, textLayer.slotId),
-        onDelete: () => _deleteSelected(template, textLayer.slotId),
+        onDuplicate: () => _duplicateSelected(textLayer.slotId),
+        onDelete: () => _deleteSelected(textLayer.slotId),
         onDone: _closeContextBar,
       );
     }
-    final gridLayer = _selectedGridLayer(template);
+    final gridLayer = _selectedGridLayer();
     if (gridLayer != null) {
       final g = gridLayer;
       final minSide = g.width < g.height ? g.width : g.height;
@@ -1962,18 +1932,18 @@ class _TemplateScreenState extends State<TemplateScreen>
           _content.withGridCornerRadius(g.id, v),
           coalesce: 'corner:${g.id}',
         ),
-        onDuplicate: () => _duplicateSelected(template, g.id),
-        onDelete: () => _deleteSelected(template, g.id),
+        onDuplicate: () => _duplicateSelected(g.id),
+        onDelete: () => _deleteSelected(g.id),
         onDone: _closeContextBar,
       );
     }
-    final imageLayer = _selectedImageLayer(template);
+    final imageLayer = _selectedImageLayer();
     if (imageLayer != null) {
       return ContextBarShell(
         key: ValueKey('bar-photo-${imageLayer.slotId}'),
         title: 'Photo',
-        onDuplicate: () => _duplicateSelected(template, imageLayer.slotId),
-        onDelete: () => _deleteSelected(template, imageLayer.slotId),
+        onDuplicate: () => _duplicateSelected(imageLayer.slotId),
+        onDelete: () => _deleteSelected(imageLayer.slotId),
         onDone: _closeContextBar,
         child: Align(
           alignment: Alignment.centerLeft,
@@ -1988,13 +1958,13 @@ class _TemplateScreenState extends State<TemplateScreen>
         ),
       );
     }
-    final stickerLayer = _selectedStickerLayer(template);
+    final stickerLayer = _selectedStickerLayer();
     if (stickerLayer != null) {
       return ContextBarShell(
         key: ValueKey('bar-sticker-${stickerLayer.id}'),
         title: 'Sticker',
-        onDuplicate: () => _duplicateSelected(template, stickerLayer.id),
-        onDelete: () => _deleteSelected(template, stickerLayer.id),
+        onDuplicate: () => _duplicateSelected(stickerLayer.id),
+        onDelete: () => _deleteSelected(stickerLayer.id),
         onDone: _closeContextBar,
         child: const Padding(
           padding: EdgeInsets.fromLTRB(16, 0, 16, 12),
@@ -2009,26 +1979,25 @@ class _TemplateScreenState extends State<TemplateScreen>
       );
     }
     if (_backgroundMode) {
-      final focusedPanel = _focusedPanel(template);
+      final slide = _focusedSlide;
       return BackgroundColorBar(
         key: const ValueKey('bar-background'),
-        currentColor:
-            _content.backgroundFor(focusedPanel.id) ??
-            focusedPanel.backgroundColor,
-        onColor: (color) =>
-            _edit(_content.withPanelBackground(focusedPanel.id, color)),
+        currentColor: _doc.backgroundFor(slide),
+        // Per-slide backgrounds are the one naturally per-slide datum, so this
+        // is a structural edit on the document rather than an overlay override.
+        onColor: (color) => _editDoc(setSlideBackground(_doc, slide, color)),
         onDone: _closeContextBar,
       );
     }
     return EditorToolbar(
       key: const ValueKey('bar-toolbar'),
-      onLayout: () => _insertGrid(template),
-      onText: () => _addTextLayer(template),
-      onPhoto: () => _insertPhotos(template),
-      onSticker: () => _insertAsset(template),
+      onLayout: () => _insertGrid(),
+      onText: () => _addTextLayer(),
+      onPhoto: () => _insertPhotos(),
+      onSticker: () => _insertAsset(),
       onBackground: () => setState(() => _backgroundMode = true),
-      onPanel: () => _addPanel(template),
-      onLayers: () => _showLayersSheet(template),
+      onPanel: () => _addPanel(),
+      onLayers: () => _showLayersSheet(),
     );
   }
 }

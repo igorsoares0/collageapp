@@ -173,6 +173,29 @@ Document setSlideBackground(Document doc, int index, Color color) {
   );
 }
 
+/// Removes the layer with [layerId], if present.
+Document removeLayer(Document doc, String layerId) => _rebuild(
+  doc,
+  slideCount: doc.slideCount,
+  slideBackgrounds: doc.slideBackgrounds,
+  layers: [
+    for (final l in doc.layers)
+      if (l.id != layerId) l,
+  ],
+);
+
+/// Appends [layer] exactly where it already is.
+///
+/// For layers whose x is ALREADY in continuous space — duplicating an existing
+/// element, or anything derived from one. Using [addLayerToSlide] for those
+/// would add the slide offset a second time and fling the copy off to the right.
+Document appendLayer(Document doc, Layer layer) => _rebuild(
+  doc,
+  slideCount: doc.slideCount,
+  slideBackgrounds: doc.slideBackgrounds,
+  layers: [...doc.layers, layer],
+);
+
 /// Appends [layer] to the document, positioning it relative to slide [slide].
 ///
 /// The layer arrives in SLIDE-LOCAL coordinates (what an "add at x=100 of this

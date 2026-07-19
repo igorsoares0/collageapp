@@ -8,7 +8,9 @@ TextStyle testFontResolver(String family, TextStyle base) => base;
 void main() {
   final undoButton = find.widgetWithIcon(IconButton, Icons.undo);
   final redoButton = find.widgetWithIcon(IconButton, Icons.redo);
-  final canvas = find.byKey(const ValueKey('canvas-background'));
+  // Slides each carry their own background key now, so the presence of the
+  // SECOND one is what 'the document has two slides' looks like.
+  final secondSlide = find.byKey(const ValueKey('slide-background-1'));
 
   Future<void> pumpDraft(WidgetTester tester) async {
     tester.view.physicalSize = const Size(540, 960);
@@ -42,18 +44,18 @@ void main() {
     expect(enabled(tester, redoButton), isFalse);
 
     await addFromToolbar(tester, 'Panel');
-    expect(canvas, findsNWidgets(2));
+    expect(secondSlide, findsOneWidget);
     expect(enabled(tester, undoButton), isTrue);
 
     await tester.tap(undoButton);
     await tester.pumpAndSettle();
-    expect(canvas, findsOneWidget);
+    expect(secondSlide, findsNothing);
     expect(enabled(tester, undoButton), isFalse);
     expect(enabled(tester, redoButton), isTrue);
 
     await tester.tap(redoButton);
     await tester.pumpAndSettle();
-    expect(canvas, findsNWidgets(2));
+    expect(secondSlide, findsOneWidget);
     expect(enabled(tester, redoButton), isFalse);
   });
 

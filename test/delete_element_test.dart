@@ -49,7 +49,7 @@ void main() {
     // Leave inline editing (tap the empty canvas corner), then re-select the
     // text with a single tap — selected but not editing, so the overlay
     // chrome (and its delete handle) mounts.
-    final canvas = find.byKey(const ValueKey('canvas-background'));
+    final canvas = find.byKey(const ValueKey('slide-background-0'));
     await tester.tapAt(tester.getTopLeft(canvas) + const Offset(8, 8));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Hello'));
@@ -93,7 +93,7 @@ void main() {
     // Tap inside the slot but away from its centered pick icon (which would
     // open the gallery): the slot spans template x 340..740, y 660..1060.
     final canvas = tester.getRect(
-      find.byKey(const ValueKey('canvas-background')),
+      find.byKey(const ValueKey('slide-background-0')),
     );
     await tester.tapAt(
       canvas.topLeft +

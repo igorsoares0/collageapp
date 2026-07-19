@@ -86,19 +86,23 @@ void main() {
   ) async {
     await pumpDraft(tester);
     await addFromToolbar(tester, 'Panel');
-    expect(find.byKey(const ValueKey('canvas-background')), findsNWidgets(2));
+    expect(find.byKey(const ValueKey('slide-background-1')), findsOneWidget);
 
     // The debounced save fires without any further interaction (typing-style
-    // edits produce no canvas pointer-up to piggyback on). The added panel is
-    // 'panel_2' (the blank template owns 'panel_1').
+    // edits produce no canvas pointer-up to piggyback on). The added slide
+    // shows up as slideCount 2 — the continuous document has no panel ids.
     await tester.pump(const Duration(seconds: 3));
-    await drainWrites(tester, done: () => savedContains('"panel_2"'));
+    await drainWrites(tester, done: () => savedContains('"slideCount":2'));
 
     final list = await tester.runAsync(() => store.list());
     expect(list, hasLength(1));
     expect(list!.single.name, 'New collage');
-    final project = await tester.runAsync(() => store.load(list.single.id));
-    expect(project!.content.addedPanels, hasLength(1));
+    final project = await tester.runAsync(
+      () => store.loadAsDocument(list.single.id),
+    );
+    // The editor authors v4 now, so the saved document carries the second
+    // slide in its own structure instead of as a SlotContent override.
+    expect(project!.document.slideCount, 2);
 
     // Resuming the saved project restores the second panel.
     await tester.pumpWidget(
@@ -112,7 +116,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('canvas-background')), findsNWidgets(2));
+    expect(find.byKey(const ValueKey('slide-background-1')), findsOneWidget);
     // Let the disposed first screen's queued cleanup finish before tearDown
     // deletes the directory under it.
     await drainWrites(tester);
@@ -124,16 +128,19 @@ void main() {
     await pumpDraft(tester);
     await addFromToolbar(tester, 'Panel');
     await tester.pump(const Duration(seconds: 3));
-    await drainWrites(tester, done: () => savedContains('"panel_2"'));
+    await drainWrites(tester, done: () => savedContains('"slideCount":2'));
 
     await addFromToolbar(tester, 'Panel');
     await tester.pump(const Duration(seconds: 3));
-    await drainWrites(tester, done: () => savedContains('"panel_3"'));
+    await drainWrites(tester, done: () => savedContains('"slideCount":3'));
 
     final list = await tester.runAsync(() => store.list());
     expect(list, hasLength(1));
-    final project = await tester.runAsync(() => store.load(list!.single.id));
-    expect(project!.content.addedPanels, hasLength(2));
+    final project = await tester.runAsync(
+      () => store.loadAsDocument(list!.single.id),
+    );
+    // Three slides in ONE project — the edits updated it instead of forking.
+    expect(project!.document.slideCount, 3);
   });
 
   testWidgets('browsing without editing never creates a project', (

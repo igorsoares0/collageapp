@@ -49,7 +49,7 @@ void main() {
 
   testWidgets('a blank draft opens with an empty canvas', (tester) async {
     await pumpDraft(tester);
-    expect(find.byKey(const ValueKey('canvas-background')), findsOneWidget);
+    expect(find.byKey(const ValueKey('slide-background-0')), findsOneWidget);
     expect(find.textContaining('Could not load'), findsNothing);
   });
 
@@ -85,7 +85,7 @@ void main() {
     await pumpDraft(tester);
     await addFromToolbar(tester, 'Panel');
 
-    expect(find.byKey(const ValueKey('canvas-background')), findsNWidgets(2));
+    expect(find.byKey(const ValueKey('slide-background-1')), findsOneWidget);
   });
 
   testWidgets('carousel dots appear with a second panel and a tap refocuses', (
@@ -105,7 +105,7 @@ void main() {
     await tester.pumpAndSettle();
     await addFromToolbar(tester, 'Text');
     final firstCanvas = tester.getRect(
-      find.byKey(const ValueKey('canvas-background')).first,
+      find.byKey(const ValueKey('slide-background-0')).first,
     );
     expect(
       firstCanvas.contains(tester.getCenter(find.byType(TextField))),

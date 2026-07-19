@@ -82,7 +82,7 @@ void main() {
     // The collage is really there: a tap inside the left cell selects it.
     // (getRect is in GLOBAL px — getSize would be template units.)
     final canvas = tester.getRect(
-      find.byKey(const ValueKey('canvas-background')),
+      find.byKey(const ValueKey('slide-background-0')),
     );
     await tester.tapAt(canvas.center - Offset(canvas.width * 0.2, 0));
     await tester.pumpAndSettle();
