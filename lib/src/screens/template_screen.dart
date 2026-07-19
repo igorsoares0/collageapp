@@ -703,6 +703,100 @@ class _TemplateScreenState extends State<TemplateScreen>
     });
   }
 
+  /// Slide management for slide [index] — reorder or delete. Reached by
+  /// long-pressing its carousel dot; adding is the toolbar's Panel button.
+  Future<void> _showSlideActions(int index) async {
+    final count = _doc.slideCount;
+    if (count <= 1) return;
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Slide ${index + 1} of $count',
+                  style: const TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+            ),
+            if (index > 0)
+              ListTile(
+                key: const ValueKey('slide-move-left'),
+                leading: const Icon(Symbols.arrow_back_rounded),
+                title: const Text('Move left'),
+                onTap: () => Navigator.pop(sheetContext, 'left'),
+              ),
+            if (index < count - 1)
+              ListTile(
+                key: const ValueKey('slide-move-right'),
+                leading: const Icon(Symbols.arrow_forward_rounded),
+                title: const Text('Move right'),
+                onTap: () => Navigator.pop(sheetContext, 'right'),
+              ),
+            ListTile(
+              key: const ValueKey('slide-delete'),
+              leading: const Icon(Symbols.delete_rounded, color: Colors.red),
+              title: const Text(
+                'Delete slide',
+                style: TextStyle(color: Colors.red),
+              ),
+              subtitle: const Text('Its elements are deleted with it'),
+              onTap: () => Navigator.pop(sheetContext, 'delete'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (action == null || !mounted) return;
+    switch (action) {
+      case 'left':
+        _moveSlide(index, index - 1);
+      case 'right':
+        _moveSlide(index, index + 1);
+      case 'delete':
+        _deleteSlide(index);
+    }
+  }
+
+  /// Moves a slide, carrying its content as a group (see reorderSlide) — what
+  /// makes independent pages feel native on a continuous canvas.
+  void _moveSlide(int from, int to) {
+    _record();
+    setState(() {
+      _document = reorderSlide(_doc, from, to);
+      _lastTouchedSlide = to;
+      _selectedSlot = null;
+      _editingSlot = null;
+    });
+  }
+
+  void _deleteSlide(int index) {
+    // An element CROSSING a cut belongs to no single slide, so removeSlide
+    // leaves it where it is instead of tearing a panorama in half. Say so, or
+    // the leftover reads as a bug.
+    final crossing = spanningLayers(_doc).isNotEmpty;
+    _record();
+    setState(() {
+      _document = removeSlide(_doc, index);
+      _lastTouchedSlide = index.clamp(0, _doc.slideCount - 1);
+      _selectedSlot = null;
+      _editingSlot = null;
+    });
+    if (crossing && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Elements crossing slides were kept.')),
+      );
+    }
+  }
+
   Future<void> _insertGrid() async {
     final preset = await showGridPresetSheet(context);
     if (preset == null || !mounted) return;
@@ -1811,6 +1905,8 @@ class _TemplateScreenState extends State<TemplateScreen>
                                     panelWidth,
                                     constraints.maxWidth,
                                   ),
+                                  // Long-press: reorder or delete this slide.
+                                  onLongPress: () => _showSlideActions(i),
                                   child: Padding(
                                     padding: const EdgeInsets.all(6),
                                     child: AnimatedContainer(
