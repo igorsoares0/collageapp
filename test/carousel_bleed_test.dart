@@ -117,4 +117,79 @@ void main() {
     await tester.pumpWidget(host(TemplateCanvas(template: t)));
     expect(spillShape(), findsOneWidget);
   });
+
+  testWidgets("a panel's own layer paints above the right neighbour's bleed", (
+    tester,
+  ) async {
+    // p1 owns a green shape; p2 (the right neighbour, panelAfter) has a pink
+    // shape spilling LEFT (x < 0) that bleeds into p1. The user's own layer
+    // must sit ON TOP — a text/sticker added here can't be trapped under an
+    // image spilling in from an adjacent panel.
+    final t = Template.fromJson({
+      'id': 'carousel',
+      'schemaVersion': 2,
+      'version': 1,
+      'name': 'Carousel',
+      'aspectRatio': 'story',
+      'canvas': {'width': 1080, 'height': 1920},
+      'panels': [
+        {
+          'id': 'p1',
+          'backgroundColor': '#FFFFFF',
+          'layers': [
+            {
+              'type': 'shape',
+              'id': 'own',
+              'x': 700,
+              'y': 100,
+              'width': 300,
+              'height': 100,
+              'fill': '#00CC77',
+            },
+          ],
+        },
+        {
+          'id': 'p2',
+          'backgroundColor': '#FFFFFF',
+          'layers': [
+            {
+              'type': 'shape',
+              'id': 'spill',
+              'x': -200,
+              'y': 100,
+              'width': 300,
+              'height': 100,
+              'fill': '#FF0066',
+            },
+          ],
+        },
+      ],
+    });
+
+    await tester.pumpWidget(
+      host(
+        PanelCanvas(
+          panel: t.panels[0],
+          panelAfter: t.panels[1],
+          canvasWidth: t.canvasWidth,
+          canvasHeight: t.canvasHeight,
+        ),
+      ),
+    );
+
+    // Stack paints children in order and Finder.evaluate walks the tree in that
+    // same pre-order, so the bleed (pink) must come BEFORE the panel's own
+    // layer (green): under it in the stack.
+    final colors = find
+        .byWidgetPredicate(
+          (w) =>
+              w is Container &&
+              (w.color == const Color(0xFFFF0066) ||
+                  w.color == const Color(0xFF00CC77)),
+        )
+        .evaluate()
+        .map((e) => (e.widget as Container).color)
+        .toList();
+    expect(colors, const [Color(0xFFFF0066), Color(0xFF00CC77)]);
+  });
 }

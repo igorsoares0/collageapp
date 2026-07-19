@@ -346,9 +346,10 @@ class PanelCanvas extends StatelessWidget {
   /// layer spills past the shared edge continues here, offset by exactly one
   /// canvas width. Ghosts are inert (IgnorePointer), clipped to the canvas,
   /// and render INSIDE the export boundary so the exported slide carries the
-  /// bleed. Left neighbour paints under this panel's layers, right one above
-  /// — z grows with panel index, consistently across the strip (same rule as
-  /// the web editor).
+  /// bleed. Both neighbour bleeds paint UNDER this panel's own layers: they're
+  /// cosmetic echoes for swipe continuity, so a local element the user adds
+  /// here (text, sticker…) always sits above an image that spills in from an
+  /// adjacent panel — it's still reorderable against the panel's real layers.
   final Panel? panelBefore;
   final Panel? panelAfter;
 
@@ -464,7 +465,11 @@ class PanelCanvas extends StatelessWidget {
                               panel.backgroundColor,
                         ),
                       ),
+                      // Both bleeds sit UNDER this panel's own layers (see
+                      // panelBefore/panelAfter): a local element always wins
+                      // over an image spilling in from an adjacent panel.
                       if (panelBefore case final p?) _bleed(p, -canvasWidth),
+                      if (panelAfter case final p?) _bleed(p, canvasWidth),
                       for (final layer in visibleLayers)
                         _LayerWidget(
                           layer: layer,
@@ -500,7 +505,6 @@ class PanelCanvas extends StatelessWidget {
                               ? editingFieldKey
                               : null,
                         ),
-                      if (panelAfter case final p?) _bleed(p, canvasWidth),
                     ],
                   ),
                 ),
