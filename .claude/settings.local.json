@@ -3,7 +3,11 @@
     "allow": [
       "Bash(cmd.exe /c \"flutter analyze --no-pub\")",
       "Bash(cmd.exe /c \"flutter analyze\")",
-      "Bash(cmd.exe /c \"flutter test --concurrency=1\")"
+      "Bash(cmd.exe /c \"flutter test --concurrency=1\")",
+      "Bash(cmd.exe /c \"flutter test test/projects_screen_test.dart --concurrency=1 --plain-name REPRO\")",
+      "Bash(cmd.exe /c \"flutter test test/projects_screen_test.dart --concurrency=1 --plain-name refreshes\")",
+      "WebSearch",
+      "WebFetch(domain:captionsland.com)"
     ]
   }
 }

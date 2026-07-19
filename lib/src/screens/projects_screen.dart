@@ -230,22 +230,51 @@ class _ProjectCardState extends State<_ProjectCard> {
                     );
                   }
                   final template = project.template;
+                  // Every slide of the document — the template's own panels plus
+                  // the ones the user added while editing (added panels live in
+                  // the content, not the template). Effective panels so
+                  // user-added layers show too.
+                  final panels = [
+                    for (final p in [
+                      ...template.panels,
+                      ...project.content.addedPanels,
+                    ])
+                      project.content.effectivePanel(p),
+                  ];
+                  // Preview the WHOLE carousel — all slides side by side, each
+                  // with its neighbour bleed — not a single panel. A seamless
+                  // panorama lives on one panel and only reaches the others
+                  // through the bleed, so any single-panel crop shows just a
+                  // slice (a blank cover, or "only the right half"). The strip
+                  // fits into the card, so it reads as the full carousel.
+                  final aspect = template.canvasWidth / template.canvasHeight;
                   return Center(
-                    child: AspectRatio(
-                      aspectRatio: template.canvasWidth / template.canvasHeight,
-                      child: IgnorePointer(
-                        child: PanelCanvas(
-                          // Effective panel, not the raw template one: layers
-                          // the user ADDED while editing (text, photos on a
-                          // scratch canvas) live in the content overrides and
-                          // would otherwise vanish from the thumbnail.
-                          panel: project.content.effectivePanel(
-                            template.panels.first,
-                          ),
-                          canvasWidth: template.canvasWidth,
-                          canvasHeight: template.canvasHeight,
-                          content: project.content,
-                          fontResolver: widget.fontResolver,
+                    child: IgnorePointer(
+                      child: FittedBox(
+                        fit: BoxFit.contain,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            for (final (i, panel) in panels.indexed)
+                              SizedBox(
+                                width: template.canvasWidth,
+                                height: template.canvasHeight,
+                                child: AspectRatio(
+                                  aspectRatio: aspect,
+                                  child: PanelCanvas(
+                                    panel: panel,
+                                    panelBefore: i > 0 ? panels[i - 1] : null,
+                                    panelAfter: i + 1 < panels.length
+                                        ? panels[i + 1]
+                                        : null,
+                                    canvasWidth: template.canvasWidth,
+                                    canvasHeight: template.canvasHeight,
+                                    content: project.content,
+                                    fontResolver: widget.fontResolver,
+                                  ),
+                                ),
+                              ),
+                          ],
                         ),
                       ),
                     ),

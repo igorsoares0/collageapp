@@ -171,6 +171,95 @@ void main() {
     });
   });
 
+  testWidgets('thumbnail previews the WHOLE carousel — every slide, not just '
+      'the first panel', (tester) async {
+    await tester.runAsync(() async {
+      // A multi-panel doc where each slide carries its own element (a seamless
+      // panorama's content also lives on a later panel and reaches the first
+      // slide only through the bleed). The card must show the full carousel, so
+      // BOTH slides' content appears — not a single-panel crop that would show
+      // only a blank cover or only one half.
+      await store.save(
+        Project(
+          id: 'p_multi',
+          name: 'Carousel',
+          updatedAt: DateTime.now(),
+          template: const Template(
+            id: 'tpl',
+            schemaVersion: 3,
+            version: 1,
+            name: 'Carousel',
+            aspectRatio: '9:16',
+            canvasWidth: 1080,
+            canvasHeight: 1920,
+            panels: [
+              Panel(
+                id: 'panel_1',
+                backgroundColor: Color(0xFFFFFFFF),
+                layers: [
+                  TextLayer(
+                    id: 'layer_a',
+                    hidden: false,
+                    slotId: 'slot_a',
+                    x: 100,
+                    y: 100,
+                    width: 500,
+                    fontFamily: 'Inter',
+                    fontSize: 64,
+                    fontWeight: 700,
+                    color: Color(0xFF111111),
+                    alignment: 'left',
+                  ),
+                ],
+              ),
+            ],
+          ),
+          content: const SlotContent(
+            texts: {'slot_a': 'FirstSlide', 'slot_b': 'SecondSlide'},
+            addedPanels: [
+              Panel(
+                id: 'panel_2',
+                backgroundColor: Color(0xFFFFFFFF),
+                layers: [],
+              ),
+            ],
+            addedLayers: {
+              'panel_2': [
+                TextLayer(
+                  id: 'layer_b',
+                  hidden: false,
+                  slotId: 'slot_b',
+                  x: 100,
+                  y: 100,
+                  width: 500,
+                  fontFamily: 'Inter',
+                  fontSize: 64,
+                  fontWeight: 700,
+                  color: Color(0xFF111111),
+                  alignment: 'left',
+                ),
+              ],
+            },
+          ),
+        ),
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ProjectsList(store: store, fontResolver: testFontResolver),
+          ),
+        ),
+      );
+      await pumpUntil(
+        tester,
+        () =>
+            tester.any(find.text('FirstSlide')) &&
+            tester.any(find.text('SecondSlide')),
+        reason: 'the thumbnail did not render every slide of the carousel',
+      );
+    });
+  });
+
   testWidgets('cancelling the dialog keeps the project', (tester) async {
     await tester.runAsync(() async {
       await seedProject('p_1', 'Beach trip');
