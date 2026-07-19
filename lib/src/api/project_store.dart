@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
 import 'package:path_provider/path_provider.dart';
 
+import '../model/migrate_v4.dart';
 import '../model/slot_content.dart';
 import '../model/template.dart';
 
@@ -32,6 +33,30 @@ class Project {
     required this.updatedAt,
     required this.template,
     required this.content,
+  });
+}
+
+/// A saved project loaded into the v4 continuous model (Modelo B), as returned
+/// by [ProjectStore.loadAsDocument]. The panel-scoped parts of the overlay have
+/// already folded into [document]; [content] keeps the slot-scoped overrides.
+class ContinuousProject {
+  final String id;
+  final String name;
+  final DateTime updatedAt;
+  final Document document;
+  final SlotContent content;
+
+  /// True when this came from a v3 (panels) file migrated on read, false when
+  /// the file was already v4. Nothing is written back either way.
+  final bool migrated;
+
+  const ContinuousProject({
+    required this.id,
+    required this.name,
+    required this.updatedAt,
+    required this.document,
+    required this.content,
+    required this.migrated,
   });
 }
 
@@ -107,9 +132,12 @@ class ProjectStore {
     }
   });
 
-  /// Loads one project, or null when it's missing, corrupt, or written by a
-  /// newer app version — the caller shows "couldn't open", not a crash.
-  Future<Project?> load(String id) async {
+  /// Raw project JSON, or null when it's missing, corrupt, or written by a
+  /// newer app version. Shared by [load] and [loadAsDocument] so both inherit
+  /// the same refuse-don't-crash behaviour.
+  Future<({Map<String, dynamic> json, Directory dir})?> _readProjectJson(
+    String id,
+  ) async {
     try {
       final dir = await _projectDir(id);
       final json =
@@ -118,6 +146,19 @@ class ProjectStore {
       if (((json['projectVersion'] as num?)?.toInt() ?? 0) > kProjectVersion) {
         return null;
       }
+      return (json: json, dir: dir);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Loads one project, or null when it's missing, corrupt, or written by a
+  /// newer app version — the caller shows "couldn't open", not a crash.
+  Future<Project?> load(String id) async {
+    final read = await _readProjectJson(id);
+    if (read == null) return null;
+    try {
+      final json = read.json;
       return Project(
         id: id,
         name: json['name'] as String,
@@ -125,8 +166,62 @@ class ProjectStore {
         template: Template.fromJson(json['template'] as Map<String, dynamic>),
         content: _decodeContent(
           json['content'] as Map<String, dynamic>,
-          Directory('${dir.path}/images'),
+          Directory('${read.dir.path}/images'),
         ),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Loads one project into the v4 continuous model (Modelo B).
+  ///
+  /// Dual read: a file holding a `document` is already v4 and is parsed
+  /// straight through; the classic `template` + panels shape is migrated on
+  /// READ by [migrateToV4].
+  ///
+  /// Deliberately writes NOTHING. The migration is deterministic and lossless,
+  /// so re-running it on every load costs microseconds and keeps the file
+  /// readable by the current renderer. Persisting v4 only becomes necessary
+  /// once the app AUTHORS it — until then, rewriting the file would strand the
+  /// user's project in a format nothing can draw yet.
+  Future<ContinuousProject?> loadAsDocument(String id) async {
+    final read = await _readProjectJson(id);
+    if (read == null) return null;
+    try {
+      final json = read.json;
+      final images = Directory('${read.dir.path}/images');
+      final content = _decodeContent(
+        json['content'] as Map<String, dynamic>,
+        images,
+      );
+      final name = json['name'] as String;
+      final updatedAt = DateTime.parse(json['updatedAt'] as String);
+
+      final documentJson = json['document'];
+      if (documentJson is Map<String, dynamic>) {
+        // Natively v4 — no migration needed.
+        return ContinuousProject(
+          id: id,
+          name: name,
+          updatedAt: updatedAt,
+          document: Document.fromJson(documentJson),
+          content: content,
+          migrated: false,
+        );
+      }
+
+      final result = migrateToV4(
+        Template.fromJson(json['template'] as Map<String, dynamic>),
+        content,
+      );
+      return ContinuousProject(
+        id: id,
+        name: name,
+        updatedAt: updatedAt,
+        document: result.document,
+        content: result.content,
+        migrated: true,
       );
     } catch (_) {
       return null;
