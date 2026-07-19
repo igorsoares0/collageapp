@@ -10,6 +10,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../api/gallery_saver.dart';
 import '../api/project_store.dart';
 import '../api/template_store.dart';
 import '../model/asset_record.dart';
@@ -1301,21 +1302,20 @@ class _TemplateScreenState extends State<TemplateScreen>
         return;
       }
       final shots = await _capturePanels(template);
-      // Gallery apps order photos by capture time, NOT filename, and most
-      // default to newest-first (Google Photos, the Instagram picker). gal
-      // can't set a timestamp, so the OS stamps DATE_ADDED (whole seconds) at
-      // write time. Saving the panels in reverse, a beat apart, makes panel 1
-      // the newest — so the carousel reads 1→2→3 there, matching the editor.
-      // (The gap must clear a full second for the stamps to differ.)
+      // Gallery apps order photos by time, NOT filename, and default to
+      // newest-first (Google Photos, the Instagram picker). Two catches:
+      // Android forces DATE_ADDED to the write instant (our explicit value is
+      // ignored), and when times tie it breaks by insertion order, newest row
+      // first. So write the panels in REVERSE — panel 1 goes LAST, giving it
+      // the highest row id, the newest DATE_ADDED, and (via GallerySaver) the
+      // newest DATE_TAKEN. All three sort keys then agree and the carousel
+      // reads 1→2→3, with no wall-clock spacing.
+      final base = DateTime.now();
       for (var i = shots.length - 1; i >= 0; i--) {
-        if (i < shots.length - 1) {
-          await Future<void>.delayed(const Duration(milliseconds: 1100));
-        }
-        await Gal.putImageBytes(
+        await GallerySaver.save(
           shots[i],
-          name: shots.length == 1
-              ? template.id
-              : '${template.id}_${i + 1}',
+          name: shots.length == 1 ? template.id : '${template.id}_${i + 1}',
+          dateTaken: base.subtract(Duration(seconds: i)),
         );
       }
       HapticFeedback.mediumImpact();
