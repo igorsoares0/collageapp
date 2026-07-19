@@ -156,6 +156,122 @@ class Template {
   List<String> get slotIds => [for (final p in panels) ...p.slotIds];
 }
 
+/// v4: the continuous canvas (Modelo B). See docs/model-b-migration.md.
+///
+/// STATUS: model only. Nothing reads this yet — [kSupportedSchemaVersion] is
+/// deliberately still 3, so a v4 template is filtered out during sync rather
+/// than half-rendered. The dual v3/v4 read path lands in the next phase, once
+/// the renderer can actually draw a continuous canvas.
+///
+/// Instead of N independent [Panel]s, one canvas [slideCount] slides wide with
+/// every layer in a SINGLE coordinate system (x from 0 to [contentWidth]).
+/// Slides are just cut lines; the slicing happens at export. This is a SUPERSET
+/// of the panel model: independent slides are the degenerate case where no
+/// layer crosses a cut, and a panorama is one layer whose x spans several.
+///
+/// Mirror of ContinuousTemplate in the editor (lib/template/types.ts).
+class Document {
+  final String id;
+  final int schemaVersion;
+  final int version;
+  final String name;
+  final String aspectRatio;
+
+  final double slideWidth;
+  final double slideHeight;
+  final int slideCount;
+
+  /// Space BETWEEN slides; 0 for a seamless carousel.
+  final double gutter;
+
+  /// The one naturally per-slide datum. Length == [slideCount].
+  final List<Color> slideBackgrounds;
+
+  /// Continuous coordinates: 0 .. [contentWidth]. No layer carries a slide
+  /// index — see slide_aware.dart, where that is derived from geometry.
+  final List<Layer> layers;
+
+  const Document({
+    required this.id,
+    required this.schemaVersion,
+    required this.version,
+    required this.name,
+    required this.aspectRatio,
+    required this.slideWidth,
+    required this.slideHeight,
+    required this.slideCount,
+    required this.gutter,
+    required this.slideBackgrounds,
+    required this.layers,
+  });
+
+  /// Total width: N slides plus the N-1 gutters BETWEEN them (no outer gutter).
+  double get contentWidth =>
+      slideCount * slideWidth + math.max(0, slideCount - 1) * gutter;
+
+  /// The region slide [i] occupies in continuous space — the export crop rect
+  /// and the editor's cut guides both come from here.
+  Rect slideRect(int i) =>
+      Rect.fromLTWH(i * (slideWidth + gutter), 0, slideWidth, slideHeight);
+
+  /// Background of slide [i], white when the list is short (defensive: a
+  /// malformed template must not crash the renderer).
+  Color backgroundFor(int i) => i >= 0 && i < slideBackgrounds.length
+      ? slideBackgrounds[i]
+      : const Color(0xFFFFFFFF);
+
+  factory Document.fromJson(Map<String, dynamic> json) {
+    final canvas = json['canvas'] as Map<String, dynamic>;
+    final backgrounds = json['slideBackgrounds'];
+    return Document(
+      id: json['id'] as String,
+      schemaVersion: (json['schemaVersion'] as num?)?.toInt() ?? 4,
+      version: (json['version'] as num).toInt(),
+      name: json['name'] as String,
+      aspectRatio: json['aspectRatio'] as String,
+      slideWidth: (canvas['slideWidth'] as num).toDouble(),
+      slideHeight: (canvas['slideHeight'] as num).toDouble(),
+      slideCount: (canvas['slideCount'] as num).toInt(),
+      gutter: (canvas['gutter'] as num?)?.toDouble() ?? 0,
+      slideBackgrounds: backgrounds is List
+          ? [
+              for (final b in backgrounds)
+                b is String ? parseHexColor(b) : const Color(0xFFFFFFFF),
+            ]
+          : const [],
+      layers: _parseLayers(json['layers']),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'schemaVersion': schemaVersion,
+    'version': version,
+    'name': name,
+    'aspectRatio': aspectRatio,
+    'canvas': {
+      'slideWidth': slideWidth,
+      'slideHeight': slideHeight,
+      'slideCount': slideCount,
+      'gutter': gutter,
+    },
+    'slideBackgrounds': [for (final c in slideBackgrounds) colorToHex(c)],
+    'layers': [for (final l in layers) l.toJson()],
+  };
+
+  /// Slot ids that accept user content, in stack order. A grid contributes one
+  /// slot per cell, exactly as in the panel model.
+  List<String> get slotIds => [
+    for (final layer in layers)
+      ...switch (layer) {
+        ImageLayer l => [l.slotId],
+        TextLayer l => [l.slotId],
+        GridLayer l => [for (final c in l.cells) c.slotId],
+        _ => const <String>[],
+      },
+  ];
+}
+
 sealed class Layer {
   final String id;
 
