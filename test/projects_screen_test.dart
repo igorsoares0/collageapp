@@ -260,6 +260,78 @@ void main() {
     });
   });
 
+  testWidgets('thumbnail renders each element ONCE — no bleed ghosts', (
+    tester,
+  ) async {
+    await tester.runAsync(() async {
+      // Two slides, content on the first only. The old thumbnail drew a strip
+      // of one PanelCanvas per slide, and slide 2 echoed slide 1 through its
+      // panelBefore bleed — so this text appeared TWICE in the tree. On the
+      // continuous canvas there is one layer in one coordinate space, so it
+      // must appear exactly once.
+      await store.save(
+        Project(
+          id: 'p_once',
+          name: 'Carousel',
+          updatedAt: DateTime.now(),
+          template: const Template(
+            id: 'tpl',
+            schemaVersion: 3,
+            version: 1,
+            name: 'Carousel',
+            aspectRatio: '9:16',
+            canvasWidth: 1080,
+            canvasHeight: 1920,
+            panels: [
+              Panel(
+                id: 'panel_1',
+                backgroundColor: Color(0xFFFFFFFF),
+                layers: [
+                  TextLayer(
+                    id: 'layer_a',
+                    hidden: false,
+                    slotId: 'slot_a',
+                    x: 100,
+                    y: 100,
+                    width: 500,
+                    fontFamily: 'Inter',
+                    fontSize: 64,
+                    fontWeight: 700,
+                    color: Color(0xFF111111),
+                    alignment: 'left',
+                  ),
+                ],
+              ),
+              Panel(
+                id: 'panel_2',
+                backgroundColor: Color(0xFFFFFFFF),
+                layers: [],
+              ),
+            ],
+          ),
+          content: const SlotContent(texts: {'slot_a': 'OnlyOnce'}),
+        ),
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ProjectsList(store: store, fontResolver: testFontResolver),
+          ),
+        ),
+      );
+      await pumpUntil(
+        tester,
+        () => tester.any(find.text('OnlyOnce')),
+        reason: 'the thumbnail never rendered the element',
+      );
+      expect(
+        find.text('OnlyOnce'),
+        findsOneWidget,
+        reason: 'a bleed ghost would render this element a second time',
+      );
+    });
+  });
+
   testWidgets('cancelling the dialog keeps the project', (tester) async {
     await tester.runAsync(() async {
       await seedProject('p_1', 'Beach trip');

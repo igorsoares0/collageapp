@@ -199,7 +199,12 @@ class _ProjectCard extends StatefulWidget {
 class _ProjectCardState extends State<_ProjectCard> {
   // Cached across rebuilds so scrolls/reloads don't re-read the file; the
   // card's ValueKey retires this state when the id changes.
-  late final Future<Project?> _project = widget.store.load(widget.summary.id);
+  // Loaded into the v4 continuous model: a v3 file is migrated on READ (the
+  // store writes nothing), so the card previews the same document the editor
+  // will eventually work in.
+  late final Future<ContinuousProject?> _project = widget.store.loadAsDocument(
+    widget.summary.id,
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -213,11 +218,11 @@ class _ProjectCardState extends State<_ProjectCard> {
           children: [
             Padding(
               padding: const EdgeInsets.all(10),
-              child: FutureBuilder<Project?>(
+              child: FutureBuilder<ContinuousProject?>(
                 future: _project,
                 builder: (context, snapshot) {
                   final project = snapshot.data;
-                  if (project == null || project.template.panels.isEmpty) {
+                  if (project == null || project.document.slideCount == 0) {
                     // Loading, corrupt or empty — the neutral glyph covers
                     // all three; a broken project still opens the "couldn't
                     // open" path from the card itself.
@@ -229,53 +234,21 @@ class _ProjectCardState extends State<_ProjectCard> {
                       ),
                     );
                   }
-                  final template = project.template;
-                  // Every slide of the document — the template's own panels plus
-                  // the ones the user added while editing (added panels live in
-                  // the content, not the template). Effective panels so
-                  // user-added layers show too.
-                  final panels = [
-                    for (final p in [
-                      ...template.panels,
-                      ...project.content.addedPanels,
-                    ])
-                      project.content.effectivePanel(p),
-                  ];
-                  // Preview the WHOLE carousel — all slides side by side, each
-                  // with its neighbour bleed — not a single panel. A seamless
-                  // panorama lives on one panel and only reaches the others
-                  // through the bleed, so any single-panel crop shows just a
-                  // slice (a blank cover, or "only the right half"). The strip
-                  // fits into the card, so it reads as the full carousel.
-                  final aspect = template.canvasWidth / template.canvasHeight;
+                  // The WHOLE document in one continuous canvas (Modelo B).
+                  // This replaced a strip of one PanelCanvas per slide, each
+                  // echoing its neighbours through the bleed: with every layer
+                  // in a single coordinate space, a panorama simply spans the
+                  // slides, so the preview is the document itself rather than
+                  // an assembly of crops. It also retires the old "which panel
+                  // represents the document?" question — the ambiguity that
+                  // made this thumbnail render blank for carousels whose
+                  // content sat on a later slide.
                   return Center(
                     child: IgnorePointer(
-                      child: FittedBox(
-                        fit: BoxFit.contain,
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            for (final (i, panel) in panels.indexed)
-                              SizedBox(
-                                width: template.canvasWidth,
-                                height: template.canvasHeight,
-                                child: AspectRatio(
-                                  aspectRatio: aspect,
-                                  child: PanelCanvas(
-                                    panel: panel,
-                                    panelBefore: i > 0 ? panels[i - 1] : null,
-                                    panelAfter: i + 1 < panels.length
-                                        ? panels[i + 1]
-                                        : null,
-                                    canvasWidth: template.canvasWidth,
-                                    canvasHeight: template.canvasHeight,
-                                    content: project.content,
-                                    fontResolver: widget.fontResolver,
-                                  ),
-                                ),
-                              ),
-                          ],
-                        ),
+                      child: CanvasView(
+                        document: project.document,
+                        content: project.content,
+                        fontResolver: widget.fontResolver,
                       ),
                     ),
                   );
