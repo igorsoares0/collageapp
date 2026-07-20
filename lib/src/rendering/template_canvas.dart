@@ -327,6 +327,24 @@ class PanelCanvas extends StatelessWidget {
   /// derived from the layer alone.
   final ValueChanged<Size>? onSelectionSize;
 
+  /// The canvas zoom the chrome has to survive: 1 at rest, 0.25 pinched all
+  /// the way out. Every chrome dimension is a constant divided by a scale, so
+  /// that it stays visually constant however far the ELEMENT is scaled — but
+  /// the chrome renders through the FittedBox and the editor's zoom too, and
+  /// those were not in the divisor. Zoomed out the handles shrank with the
+  /// canvas until they were a few px across and could not be grabbed.
+  ///
+  /// So the chrome divides by `slotScale * viewScale` instead. Note this grows
+  /// the chrome PAD, not just the glyphs: the overlay's hit region gates on
+  /// the padded box (see [_RingHitRegion]), so a bigger handle inside the old
+  /// pad would have been drawn but not touchable.
+  ///
+  /// Deliberately NOT folded into the slot scale the gestures read: that one
+  /// is the element's true scale and drives the resize math
+  /// (`_edgeCompensation`) and the -pad shift in `_slot`. Conflating them
+  /// would move the element on selection and skew every edge drag.
+  final double viewScale;
+
   /// Key for the export RepaintBoundary. It sits INSIDE the FittedBox, on the
   /// template-unit canvas box, so [capturePng] always captures exactly
   /// canvasWidth×canvasHeight — a boundary OUTSIDE the FittedBox captures the
@@ -366,6 +384,7 @@ class PanelCanvas extends StatelessWidget {
     this.onGridFractions,
     this.selectionLink,
     this.onSelectionSize,
+    this.viewScale = 1.0,
     this.exportKey,
     this.guideXs = const [],
     this.guideYs = const [],
@@ -441,6 +460,7 @@ class PanelCanvas extends StatelessWidget {
                           onGridFractions: onGridFractions,
                           selectionLink: selectionLink,
                           onSelectionSize: onSelectionSize,
+                          viewScale: viewScale,
                           selected:
                               layer is ImageLayer &&
                                   layer.slotId == selectedSlotId ||
@@ -601,6 +621,9 @@ class CanvasView extends StatelessWidget {
   final LayerLink? selectionLink;
   final ValueChanged<Size>? onSelectionSize;
 
+  /// See [PanelCanvas.viewScale].
+  final double viewScale;
+
   /// Alignment guides, in continuous template units. Painted outside the
   /// export boundary, so a guide never reaches the PNG.
   final List<double> guideXs;
@@ -630,6 +653,7 @@ class CanvasView extends StatelessWidget {
     this.onGridFractions,
     this.selectionLink,
     this.onSelectionSize,
+    this.viewScale = 1.0,
     this.guideXs = const [],
     this.guideYs = const [],
   });
@@ -693,6 +717,7 @@ class CanvasView extends StatelessWidget {
                           onGridFractions: onGridFractions,
                           selectionLink: selectionLink,
                           onSelectionSize: onSelectionSize,
+                          viewScale: viewScale,
                           selected:
                               layer is ImageLayer &&
                                   layer.slotId == selectedSlotId ||
@@ -956,6 +981,9 @@ class _LayerWidget extends StatelessWidget {
   final LayerLink? selectionLink;
   final ValueChanged<Size>? onSelectionSize;
 
+  /// See [PanelCanvas.viewScale].
+  final double viewScale;
+
   const _LayerWidget({
     required this.layer,
     required this.content,
@@ -974,10 +1002,15 @@ class _LayerWidget extends StatelessWidget {
     this.onGridFractions,
     this.selectionLink,
     this.onSelectionSize,
+    this.viewScale = 1.0,
     this.selected = false,
     this.editing = false,
     this.fieldKey,
   });
+
+  /// The scale the selection chrome is sized AGAINST: the element's own scale
+  /// times the canvas zoom. See [PanelCanvas.viewScale] for why both.
+  double _chromeScale(double slotScale) => slotScale * viewScale;
 
   @override
   Widget build(BuildContext context) {
@@ -1083,7 +1116,8 @@ class _LayerWidget extends StatelessWidget {
         l.cells.any((c) => c.slotId == selectedSlotId);
     final gScale = content.scaleFor(l.id);
     final gOffset = content.offsetFor(l.id);
-    final pad = active ? kChromePad / gScale : 0.0;
+    final gChrome = _chromeScale(gScale);
+    final pad = active ? kChromePad / gChrome : 0.0;
 
     final cells = _GridSlot(
       grid: l,
@@ -1110,6 +1144,7 @@ class _LayerWidget extends StatelessWidget {
             child: _SlotGestures(
               slotId: l.id,
               currentScale: gScale,
+              chromeScale: gChrome,
               currentRotation: content.rotationFor(l.id),
               templateRotation: l.rotation,
               currentStretchX: content.stretchXFor(l.id),
@@ -1125,7 +1160,7 @@ class _LayerWidget extends StatelessWidget {
               child: const SizedBox.expand(),
             ),
           ),
-          _leaderChromed(gScale, cells),
+          _leaderChromed(gChrome, cells),
         ],
       );
     }
@@ -1147,7 +1182,7 @@ class _LayerWidget extends StatelessWidget {
   Widget _chromed(String slotId, Widget child, {bool verticalPills = true}) {
     if (!selected) return child;
     return _leaderChromed(
-      content.scaleFor(slotId),
+      _chromeScale(content.scaleFor(slotId)),
       child,
       verticalPills: verticalPills,
     );
@@ -1205,10 +1240,13 @@ class _LayerWidget extends StatelessWidget {
   }) {
     final offset = content.offsetFor(slotId);
     final scale = content.scaleFor(slotId);
+    final chromeScale = _chromeScale(scale);
     // When selected the chrome floats a kChromePad margin around the element
     // (so corner zones overflow it and stay touchable); shift back by the
-    // same pad so the element's center stays put on selection.
-    final pad = selected ? kChromePad / scale : 0.0;
+    // same pad so the element's center stays put on selection. This MUST use
+    // the same divisor as _chromed's padding — they are the two halves of that
+    // cancellation, and a mismatch makes the element jump on selection.
+    final pad = selected ? kChromePad / chromeScale : 0.0;
     Widget inner = child;
     if (gestures &&
         (onSlotTap != null ||
@@ -1219,6 +1257,7 @@ class _LayerWidget extends StatelessWidget {
       inner = _SlotGestures(
         slotId: slotId,
         currentScale: scale,
+        chromeScale: chromeScale,
         currentRotation: content.rotationFor(slotId),
         templateRotation: templateRotation,
         currentStretchX: content.stretchXFor(slotId),
@@ -1306,7 +1345,18 @@ class _LayerWidget extends StatelessWidget {
 /// gesture start, re-based whenever the finger count changes.
 class _SlotGestures extends StatefulWidget {
   final String slotId;
+
+  /// The element's TRUE scale. Drives the resize math only — see
+  /// [chromeScale] for the split.
   final double currentScale;
+
+  /// The scale the chrome is sized against: [currentScale] × the canvas zoom
+  /// (see [PanelCanvas.viewScale]). Everything about WHERE the handles are and
+  /// how big their touch zones grow uses this, so a zoomed-out canvas still
+  /// has grabbable handles. [currentScale] stays the element's real scale
+  /// because `_edgeCompensation` needs the actual paint scale — feeding it the
+  /// zoom would skew every edge drag by the zoom factor.
+  final double chromeScale;
 
   /// The slot's current user rotation in degrees — the base a two-finger
   /// twist adds onto.
@@ -1358,6 +1408,7 @@ class _SlotGestures extends StatefulWidget {
   const _SlotGestures({
     required this.slotId,
     required this.currentScale,
+    required this.chromeScale,
     required this.currentRotation,
     required this.templateRotation,
     required this.selected,
@@ -1439,11 +1490,11 @@ class _SlotGesturesState extends State<_SlotGestures> {
   /// The resize zones — see [_nearCornerZone]. The gesture surface is inside
   /// the rotations, so [local] arrives already un-rotated.
   bool _nearCorner(Offset local, Size size) =>
-      _nearCornerZone(local, size, widget.currentScale);
+      _nearCornerZone(local, size, widget.chromeScale);
 
   /// The rotation-handle zone — see [_nearRotateZone].
   bool _nearRotationHandle(Offset local, Size size) =>
-      _nearRotateZone(local, size, widget.currentScale);
+      _nearRotateZone(local, size, widget.chromeScale);
 
   // Delete-tap detection rides a raw Listener instead of a tap recognizer: a
   // tap recognizer would join the gesture arena and delay the scale
@@ -1464,13 +1515,13 @@ class _SlotGesturesState extends State<_SlotGestures> {
     if (!(widget.selected &&
         widget.onDelete != null &&
         size != null &&
-        _nearDeleteZone(local, size, widget.currentScale))) {
+        _nearDeleteZone(local, size, widget.chromeScale))) {
       return false;
     }
     final edgeHit = _edgeZoneHit(local, size);
     return edgeHit == null ||
         edgeHit.$1 != SlotEdge.top ||
-        _deleteHandleDistSq(local, size, widget.currentScale) <= edgeHit.$2;
+        _deleteHandleDistSq(local, size, widget.chromeScale) <= edgeHit.$2;
   }
 
   /// The edge-pill zone a touch at [local] falls in, when edge resize is
@@ -1480,7 +1531,7 @@ class _SlotGesturesState extends State<_SlotGestures> {
     return _nearEdgeZone(
       local,
       size,
-      widget.currentScale,
+      widget.chromeScale,
       vertical: widget.verticalEdges,
     );
   }
@@ -1544,8 +1595,8 @@ class _SlotGesturesState extends State<_SlotGestures> {
         size != null &&
         edgeHit.$1 == SlotEdge.top &&
         widget.onDelete != null &&
-        _nearDeleteZone(d.localFocalPoint, size, widget.currentScale) &&
-        _deleteHandleDistSq(d.localFocalPoint, size, widget.currentScale) <=
+        _nearDeleteZone(d.localFocalPoint, size, widget.chromeScale) &&
+        _deleteHandleDistSq(d.localFocalPoint, size, widget.chromeScale) <=
             edgeHit.$2) {
       edgeHit = null;
     }
@@ -1557,7 +1608,7 @@ class _SlotGesturesState extends State<_SlotGestures> {
     _isRotating =
         nearRotate &&
         (edgeHit == null ||
-            _rotateHandleDistSq(d.localFocalPoint, size, widget.currentScale) <=
+            _rotateHandleDistSq(d.localFocalPoint, size, widget.chromeScale) <=
                 edgeHit.$2);
     _activeEdge = (!_isResizing && !_isRotating) ? edgeHit?.$1 : null;
     _gestureCenter = (_isResizing || _isRotating) ? _centerGlobal() : null;
@@ -1581,7 +1632,10 @@ class _SlotGesturesState extends State<_SlotGestures> {
       _activeEdge = null;
       return;
     }
-    final pad = kChromePad / widget.currentScale;
+    // chromeScale, not currentScale: [size] is the PADDED box, and the pad
+    // baked into it by `_slot` is the chrome's — so recovering the element's
+    // own w/h has to subtract that same one.
+    final pad = kChromePad / widget.chromeScale;
     final w = size.width - 2 * pad;
     final h = size.height - 2 * pad;
     // Local (unrotated) midpoints of the dragged edge's OPPOSITE edge, and
@@ -2793,6 +2847,11 @@ class CanvasSelectionOverlay extends StatelessWidget {
 
   /// False hides/suppresses the top/bottom pills (text slots).
   final bool verticalEdges;
+
+  /// See [PanelCanvas.viewScale]. MUST match what the canvas was given, or the
+  /// follower's chrome and the leader's padded box disagree about where the
+  /// element's edges are.
+  final double viewScale;
   final void Function(String slotId, Offset delta)? onDrag;
   final void Function(String slotId, double scale)? onScaleChange;
   final void Function(String slotId, double degrees)? onRotateChange;
@@ -2821,6 +2880,7 @@ class CanvasSelectionOverlay extends StatelessWidget {
     this.currentStretchY = 1.0,
     this.baseSize,
     this.verticalEdges = true,
+    this.viewScale = 1.0,
     this.onDrag,
     this.onScaleChange,
     this.onRotateChange,
@@ -2830,6 +2890,10 @@ class CanvasSelectionOverlay extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // The chrome lives in LEADER-LOCAL units (template px) — the follower
+    // inherits the canvas zoom — so its dimensions divide by the zoom too, or
+    // the handles shrink with the canvas until they can't be hit.
+    final chromeScale = currentScale * viewScale;
     return CompositedTransformFollower(
       link: link,
       showWhenUnlinked: false,
@@ -2841,11 +2905,12 @@ class CanvasSelectionOverlay extends StatelessWidget {
       // own-size hit-test gate for the same reason.
       child: _LeaderSpace(
         child: _RingHitRegion(
-          scale: currentScale,
+          scale: chromeScale,
           verticalEdges: verticalEdges,
           child: _SlotGestures(
             slotId: targetId,
             currentScale: currentScale,
+            chromeScale: chromeScale,
             currentRotation: currentRotation,
             templateRotation: templateRotation,
             currentStretchX: currentStretchX,
@@ -2866,7 +2931,7 @@ class CanvasSelectionOverlay extends StatelessWidget {
               width: size.width,
               height: size.height,
               child: _SelectionChrome(
-                scale: currentScale,
+                scale: chromeScale,
                 verticalPills: verticalEdges,
               ),
             ),

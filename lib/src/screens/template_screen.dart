@@ -1751,6 +1751,14 @@ class _TemplateScreenState extends State<TemplateScreen>
                   // are off and would otherwise fight the selection handles.
                   final interacting =
                       _selectedSlot != null || _editingSlot != null;
+                  // The chrome sizes itself against this so the handles stay
+                  // grabbable when the canvas is pinched out — see
+                  // [PanelCanvas.viewScale]. Reading `_zoom.value` in build is
+                  // enough precisely BECAUSE of `interacting` above: selecting
+                  // an element swaps the InteractiveViewer for a static
+                  // Transform, so the zoom is frozen for as long as there is
+                  // any chrome on screen. No per-frame listener needed.
+                  final viewScale = _zoom.value.getMaxScaleOnAxis();
                   // Selection chrome + ring/handle gestures float in an overlay
                   // ABOVE the strip (unclipped by the canvas, so handles work
                   // past its edge). While editing text the legacy in-canvas
@@ -1781,6 +1789,7 @@ class _TemplateScreenState extends State<TemplateScreen>
                           assetCatalog: _catalog,
                           // The editor is the only place the cut lines show.
                           showCutGuides: true,
+                          viewScale: viewScale,
                           guideXs: _guideXs,
                           guideYs: _guideYs,
                           selectedSlotId: _selectedSlot,
@@ -1901,6 +1910,7 @@ class _TemplateScreenState extends State<TemplateScreen>
                             currentStretchY: _content.stretchYFor(target.$1),
                             baseSize: target.$3,
                             verticalEdges: !target.$4,
+                            viewScale: viewScale,
                             onDrag: dragSelected,
                             onScaleChange: scaleSelected,
                             onRotateChange: _rotateSelected,
