@@ -1682,8 +1682,27 @@ class _TemplateScreenState extends State<TemplateScreen>
   double _screenToTemplate() {
     final box = _canvasKey.currentContext?.findRenderObject();
     if (box is! RenderBox || !box.hasSize) return 1.0;
-    final scale = box.getTransformTo(null).getMaxScaleOnAxis();
+    final scale = _planarScale(box.getTransformTo(null));
     return scale > 0 ? 1 / scale : 1.0;
+  }
+
+  /// The 2D scale of a paint transform — NOT Matrix4.getMaxScaleOnAxis, which
+  /// takes the max over X, Y **and Z**. The composed transform above includes
+  /// the FittedBox's, and RenderFittedBox scales X and Y while leaving Z at 1
+  /// — so getMaxScaleOnAxis returned that 1 for every canvas drawn smaller
+  /// than life size, which is the normal editor view. The canvas-wide drag
+  /// surface then skipped its screen→template conversion entirely: the element
+  /// crawled at the fitted scale (~35% of the finger) instead of tracking it,
+  /// and the snap threshold shrank by the same factor.
+  ///
+  /// The zoom matrix alone is NOT affected — InteractiveViewer scales all
+  /// three axes — which is why `viewScale` reads it with getMaxScaleOnAxis and
+  /// is correct. Only the composed transform needs this.
+  static double _planarScale(Matrix4 m) {
+    final s = m.storage;
+    return math.sqrt(
+      math.max(s[0] * s[0] + s[1] * s[1], s[4] * s[4] + s[5] * s[5]),
+    );
   }
 
   Widget _buildBody(double keyboardInset, double safeBottom) {
