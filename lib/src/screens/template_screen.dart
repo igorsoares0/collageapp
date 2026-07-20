@@ -1647,6 +1647,33 @@ class _TemplateScreenState extends State<TemplateScreen>
     return null;
   }
 
+  /// The padded chrome box the overlay draws for [target] — the same box
+  /// _leaderChromed lays out around the element, in leader-local units.
+  ///
+  /// Images, stickers and grids lay out to exactly base × stretch, so the box
+  /// is DERIVED here, in the very build that applies the resize: the white
+  /// ring and its handles then move on the same frame as the content. Reading
+  /// it back from the measured leader instead (as text must) costs a frame —
+  /// the measurement is post-layout and setStates — and that lag was visible
+  /// as the photo/grid shrinking out from under a ring still on its old size.
+  ///
+  /// Text hugs its glyphs, so nothing here can predict its box; it keeps the
+  /// measured path, unchanged, and the overlay waits for the measurement.
+  Size? _chromeBoxFor((String, double, Size, bool) target, double viewScale) {
+    final (id, _, base, isText) = target;
+    if (isText) {
+      final measured = _selectionBox;
+      return (measured != null && measured.$1 == id) ? measured.$2 : null;
+    }
+    // Must match _leaderChromed's padding exactly (kChromePad over the chrome
+    // scale, which folds in the canvas zoom), or the ring misses the edges.
+    final pad = kChromePad / (_content.scaleFor(id) * viewScale);
+    return Size(
+      base.width * _content.stretchXFor(id) + 2 * pad,
+      base.height * _content.stretchYFor(id) + 2 * pad,
+    );
+  }
+
   /// Screen px → template px for the canvas-wide gesture surface, which
   /// lives outside the FittedBox/zoom transforms. The export boundary sits in
   /// template units, so its transform-to-global scale IS the composed
@@ -1828,7 +1855,11 @@ class _TemplateScreenState extends State<TemplateScreen>
                             });
                           },
                           selectionLink: target == null ? null : _selectionLink,
-                          onSelectionSize: target == null
+                          // Only TEXT needs measuring — see _chromeBoxFor. For
+                          // every other layer the measurement is both redundant
+                          // and harmful: its post-frame setState made the chrome
+                          // trail the content by a frame on every resize.
+                          onSelectionSize: (target == null || !target.$4)
                               ? null
                               : (sz) {
                                   if (_selectionBox == (target.$1, sz)) return;
@@ -1891,9 +1922,11 @@ class _TemplateScreenState extends State<TemplateScreen>
                     _content.withScale(slotId, scale),
                     coalesce: 'scale:$slotId',
                   );
-                  final box = _selectionBox;
+                  final chromeBox = target == null
+                      ? null
+                      : _chromeBoxFor(target, viewScale);
                   Widget body = scroll;
-                  if (target != null && box != null && box.$1 == target.$1) {
+                  if (target != null && chromeBox != null) {
                     body = Stack(
                       clipBehavior: Clip.none,
                       children: [
@@ -1901,7 +1934,7 @@ class _TemplateScreenState extends State<TemplateScreen>
                         Positioned.fill(
                           child: CanvasSelectionOverlay(
                             link: _selectionLink,
-                            size: box.$2,
+                            size: chromeBox,
                             targetId: target.$1,
                             currentScale: _content.scaleFor(target.$1),
                             currentRotation: _content.rotationFor(target.$1),
