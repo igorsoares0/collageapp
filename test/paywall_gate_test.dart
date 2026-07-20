@@ -154,8 +154,8 @@ void main() {
   ) async {
     await tester.runAsync(() async {
       final entitlements = await pumpGallery(tester);
-      // Only the premium card carries the lock badge.
-      expect(find.byIcon(Icons.lock), findsOneWidget);
+      // Only the premium card carries the PRO badge.
+      expect(find.text('PRO'), findsOneWidget);
 
       await openPreview(tester, 'tpl_pro');
       // Looking is free: the template's real render, no paywall yet, and the
@@ -194,7 +194,7 @@ void main() {
       'directly', (tester) async {
     await tester.runAsync(() async {
       await pumpGallery(tester, pro: true);
-      expect(find.byIcon(Icons.lock), findsNothing);
+      expect(find.text('PRO'), findsNothing);
 
       await openPreview(tester, 'tpl_pro');
       expect(find.text('Use this template'), findsOneWidget);

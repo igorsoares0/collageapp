@@ -16,7 +16,13 @@
       "Bash(cmd.exe /c \"flutter test test/projects_screen_test.dart\")",
       "Bash(grep -vE \"^$\")",
       "Bash(cmd.exe /c \"flutter test test/zoom_chrome_probe_test.dart\")",
-      "Bash(cmd.exe /c \"flutter test test/layer_reorder_canvas_test.dart\")"
+      "Bash(cmd.exe /c \"flutter test test/layer_reorder_canvas_test.dart\")",
+      "Bash(cmd.exe /c \"flutter test test/gallery_card_layout_test.dart\")",
+      "Bash(cmd.exe /c \"dart format lib/src/screens/gallery_screen.dart test/gallery_card_layout_test.dart\")",
+      "Bash(cmd.exe /c \"flutter analyze lib test\")",
+      "Bash(python3 -c ' *)",
+      "Bash(cmd.exe /c \"flutter test test/layers_test.dart\")",
+      "Bash(cmd.exe /c \"dart format test/layers_test.dart\")"
     ]
   }
 }

@@ -406,13 +406,38 @@ void main() {
       expect(toggled, isNotEmpty);
 
       // Dragging a row by its handle reports the panel's complete new stack
-      // order (bottom-first) with every layer still present.
+      // order, bottom-first — the exact permutation, not merely "something
+      // was reported". A weaker assertion here let a reorder that never
+      // reached the canvas pass for a whole migration.
       final handles = find.byIcon(Icons.drag_indicator);
       expect(handles, findsNWidgets(panel.layers.length));
-      await tester.drag(handles.first, const Offset(0, 60));
+
+      // One row down, measured rather than guessed.
+      final rowHeight =
+          tester.getCenter(handles.at(1)).dy -
+          tester.getCenter(handles.first).dy;
+      // ReorderableListView follows the pointer frame by frame; a single
+      // tester.drag() jumps past its bookkeeping and drops the row in place.
+      final gesture = await tester.startGesture(
+        tester.getCenter(handles.first),
+      );
+      await tester.pump(const Duration(milliseconds: 300));
+      for (var i = 0; i < 10; i++) {
+        await gesture.moveBy(Offset(0, rowHeight / 10));
+        await tester.pump();
+      }
+      await gesture.up();
       await tester.pumpAndSettle();
-      expect(reordered, isNotEmpty);
-      expect(reordered.last.toSet(), {for (final l in panel.layers) l.id});
+
+      // The sheet lists front-first, so its top row is the stack's LAST
+      // entry: dragging it down one swaps the two topmost layers and leaves
+      // everything below them alone.
+      final natural = [for (final l in panel.layers) l.id];
+      expect(reordered.last, [
+        ...natural.sublist(0, natural.length - 2),
+        natural.last,
+        natural[natural.length - 2],
+      ]);
     });
 
     testWidgets('only user-added layers expose a delete button', (

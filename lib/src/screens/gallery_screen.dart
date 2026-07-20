@@ -1,7 +1,9 @@
 import 'dart:convert';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
 import '../api/entitlements.dart';
@@ -333,8 +335,13 @@ class _GalleryScreenState extends State<GalleryScreen> {
                       child: ValueListenableBuilder<bool>(
                         valueListenable: _entitlements.isPro,
                         builder: (context, isPro, _) => GridView.builder(
-                          padding: const EdgeInsets.all(12),
-                          gridDelegate: _kGridDelegate,
+                          padding: const EdgeInsets.all(_kGridGap),
+                          gridDelegate: _MasonryGridDelegate(
+                            aspects: [
+                              for (final t in visible)
+                                aspectRatioOf(t.aspectRatio),
+                            ],
+                          ),
                           itemCount: visible.length,
                           itemBuilder: (context, i) => _AppearFromBelow(
                             // Re-keyed per template so switching category
@@ -484,14 +491,137 @@ class _CreateButton extends StatelessWidget {
   }
 }
 
-/// Shared by the real grid and its skeleton so the loading layout is exact.
-const SliverGridDelegate _kGridDelegate =
-    SliverGridDelegateWithFixedCrossAxisCount(
-      crossAxisCount: 2,
-      childAspectRatio: 0.62,
-      crossAxisSpacing: 12,
-      mainAxisSpacing: 12,
+/// Gap between cards, both axes. Also the grid's outer padding.
+const double _kGridGap = 12;
+
+const int _kGridColumns = 2;
+
+/// The card's shape IS the template's shape, so the artwork fills it edge to
+/// edge with nothing left over to letterbox. That makes the grid ragged, which
+/// is the point: format is the first thing someone picks by, and a wall of
+/// identical rectangles hides it.
+///
+/// [TemplateSummary.aspectRatio] is a published contract — either a named
+/// preset or a plain `W:H` — so the tile is sized before any template loads.
+/// A name nobody recognises falls back to the dominant format rather than
+/// guessing: an unknown template renders as a story and, at worst, letterboxes
+/// the way every card used to.
+double aspectRatioOf(String value) {
+  const presets = {
+    'story': 9 / 16,
+    'reel': 9 / 16,
+    'portrait': 4 / 5,
+    'post': 4 / 5,
+    'square': 1.0,
+    'landscape': 16 / 9,
+  };
+  final preset = presets[value.trim().toLowerCase()];
+  if (preset != null) return preset;
+  final parts = value.split(':');
+  if (parts.length == 2) {
+    final w = double.tryParse(parts[0].trim());
+    final h = double.tryParse(parts[1].trim());
+    if (w != null && h != null && w > 0 && h > 0) return w / h;
+  }
+  return 9 / 16;
+}
+
+/// Lazy masonry: children keep their own heights and each one lands in the
+/// column that is currently shortest.
+///
+/// Written out rather than pulled from a package because the aspects are all
+/// known up front — the whole layout is one O(n) pass over a list of doubles,
+/// and the sliver protocol's index lookups keep the grid building only what is
+/// on screen (a gallery must never mount every card: each one reads a template
+/// off disk).
+class _MasonryGridDelegate extends SliverGridDelegate {
+  final List<double> aspects;
+
+  const _MasonryGridDelegate({required this.aspects});
+
+  @override
+  SliverGridLayout getLayout(SliverConstraints constraints) {
+    const columns = _kGridColumns;
+    const gap = _kGridGap;
+    final width = (constraints.crossAxisExtent - gap * (columns - 1)) / columns;
+    final tops = <double>[];
+    final lefts = <double>[];
+    final heights = <double>[];
+    final bottoms = List<double>.filled(columns, 0);
+    for (final aspect in aspects) {
+      var col = 0;
+      for (var i = 1; i < columns; i++) {
+        // The epsilon keeps ties going to the leftmost column, so a uniform
+        // list fills in reading order instead of zig-zagging.
+        if (bottoms[i] < bottoms[col] - 0.5) col = i;
+      }
+      final height = width / (aspect <= 0 ? 9 / 16 : aspect);
+      tops.add(bottoms[col]);
+      lefts.add(col * (width + gap));
+      heights.add(height);
+      bottoms[col] = bottoms[col] + height + gap;
+    }
+    return _MasonryLayout(
+      tops: tops,
+      lefts: lefts,
+      heights: heights,
+      width: width,
+      // Trailing gap trimmed: the grid's own padding provides the bottom edge.
+      extent: math.max(0, bottoms.reduce(math.max) - gap),
     );
+  }
+
+  @override
+  bool shouldRelayout(_MasonryGridDelegate old) =>
+      !listEquals(old.aspects, aspects);
+}
+
+class _MasonryLayout extends SliverGridLayout {
+  final List<double> tops;
+  final List<double> lefts;
+  final List<double> heights;
+  final double width;
+  final double extent;
+
+  const _MasonryLayout({
+    required this.tops,
+    required this.lefts,
+    required this.heights,
+    required this.width,
+    required this.extent,
+  });
+
+  @override
+  double computeMaxScrollOffset(int childCount) => extent;
+
+  @override
+  SliverGridGeometry getGeometryForChildIndex(int index) => SliverGridGeometry(
+    scrollOffset: tops[index],
+    crossAxisOffset: lefts[index],
+    mainAxisExtent: heights[index],
+    crossAxisExtent: width,
+  );
+
+  // The sliver builds one CONTIGUOUS index range, so these two must bracket
+  // everything visible without assuming tops are globally sorted (they aren't
+  // — two columns interleave). Each predicate is exact: below the first, every
+  // child has already ended; past the last, none has started yet.
+  @override
+  int getMinChildIndexForScrollOffset(double offset) {
+    for (var i = 0; i < tops.length; i++) {
+      if (tops[i] + heights[i] > offset) return i;
+    }
+    return math.max(0, tops.length - 1);
+  }
+
+  @override
+  int getMaxChildIndexForScrollOffset(double offset) {
+    for (var i = tops.length - 1; i >= 0; i--) {
+      if (tops[i] <= offset) return i;
+    }
+    return 0;
+  }
+}
 
 /// Pulsing ghost cards shown while the template index loads.
 class _SkeletonGrid extends StatefulWidget {
@@ -536,46 +666,28 @@ class _SkeletonGridState extends State<_SkeletonGrid>
       ).animate(CurvedAnimation(parent: _pulse, curve: Curves.easeInOut)),
       child: GridView.builder(
         physics: const NeverScrollableScrollPhysics(),
-        padding: const EdgeInsets.all(12),
-        gridDelegate: _kGridDelegate,
-        itemCount: 6,
-        itemBuilder: (context, i) => Card(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Expanded(child: ColoredBox(color: AppColors.surfaceHigh)),
-              Padding(
-                padding: const EdgeInsets.all(10),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _bar(widthFactor: 0.6, height: 12),
-                    const SizedBox(height: 6),
-                    _bar(widthFactor: 0.4, height: 10),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  static Widget _bar({required double widthFactor, required double height}) {
-    return FractionallySizedBox(
-      alignment: Alignment.centerLeft,
-      widthFactor: widthFactor,
-      child: Container(
-        height: height,
-        decoration: BoxDecoration(
-          color: AppColors.surfaceBright,
-          borderRadius: BorderRadius.circular(4),
+        padding: const EdgeInsets.all(_kGridGap),
+        // Mixed formats, so the ghost has the ragged silhouette the real grid
+        // will have — a uniform skeleton would visibly reflow on arrival.
+        gridDelegate: const _MasonryGridDelegate(aspects: _kSkeletonAspects),
+        itemCount: _kSkeletonAspects.length,
+        itemBuilder: (context, i) => const Card(
+          margin: EdgeInsets.zero,
+          child: ColoredBox(color: AppColors.surfaceHigh),
         ),
       ),
     );
   }
 }
+
+const List<double> _kSkeletonAspects = [
+  9 / 16,
+  4 / 5,
+  4 / 5,
+  9 / 16,
+  9 / 16,
+  1,
+];
 
 /// One-shot entrance for grid items: fade in while sliding up 12px, staggered
 /// by [order] (capped so deep items don't wait). Runs once per element — a
@@ -740,76 +852,69 @@ class _TemplateCard extends StatelessWidget {
       // and Heroes target a specific card without a text label.
       key: ValueKey('template-card-${summary.id}'),
       clipBehavior: Clip.antiAlias,
+      // The grid delegate already spaces the tiles, and the tile IS the card
+      // now — Material's default 4px margin would inset the artwork inside its
+      // own tile and skew the aspect the tile was cut to.
+      margin: EdgeInsets.zero,
       child: InkWell(
         onTap: onTap,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+        // The artwork IS the card — no letterbox, no caption bar. The tile
+        // already carries the template's aspect (see [_MasonryGridDelegate]),
+        // so the format the caption used to spell out is now the card's own
+        // silhouette, and the space it took goes back to the art.
+        child: Stack(
+          fit: StackFit.expand,
           children: [
-            Expanded(
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  // Shared with the preview screen's canvas: the thumbnail
-                  // flies into place instead of vanishing and reappearing.
-                  Hero(
-                    tag: 'template-${summary.id}',
-                    child: _CardCarousel(
-                      summary: summary,
-                      store: store,
-                      fontResolver: fontResolver,
-                      catalog: catalog,
-                    ),
-                  ),
-                  // Always mounted so the badge can animate out the moment a
-                  // purchase lands (isPro rebuilds flip [locked] live).
-                  Positioned(
-                    top: 8,
-                    right: 8,
-                    child: AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 200),
-                      switchInCurve: Curves.easeOutBack,
-                      switchOutCurve: Curves.easeIn,
-                      transitionBuilder: (child, animation) => ScaleTransition(
-                        scale: animation,
-                        child: FadeTransition(opacity: animation, child: child),
-                      ),
-                      child: locked
-                          ? Container(
-                              key: const ValueKey('locked'),
-                              padding: const EdgeInsets.all(6),
-                              decoration: const BoxDecoration(
-                                color: Colors.black54,
-                                shape: BoxShape.circle,
-                              ),
-                              child: const Icon(
-                                Icons.lock,
-                                size: 16,
-                                color: AppColors.gold,
-                              ),
-                            )
-                          : const SizedBox.shrink(key: ValueKey('unlocked')),
-                    ),
-                  ),
-                ],
+            // Shared with the preview screen's canvas: the thumbnail
+            // flies into place instead of vanishing and reappearing.
+            Hero(
+              tag: 'template-${summary.id}',
+              child: _CardCarousel(
+                summary: summary,
+                store: store,
+                fontResolver: fontResolver,
+                catalog: catalog,
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.all(8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    // The gold badge already says premium; repeating it in
-                    // text would be noise.
-                    [
-                      summary.aspectRatio,
-                      if (summary.category != null) summary.category!,
-                    ].join(' · '),
-                    style: Theme.of(context).textTheme.bodySmall!.copyWith(
-                      color: AppColors.textSecondary,
-                    ),
-                  ),
-                ],
+            // Always mounted so the badge can animate out the moment a
+            // purchase lands (isPro rebuilds flip [locked] live).
+            Positioned(
+              left: 8,
+              bottom: 8,
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 200),
+                switchInCurve: Curves.easeOutBack,
+                switchOutCurve: Curves.easeIn,
+                transitionBuilder: (child, animation) => ScaleTransition(
+                  scale: animation,
+                  child: FadeTransition(opacity: animation, child: child),
+                ),
+                // A word, not a padlock: the old black disc read as a warning
+                // over the artwork. Bottom-left keeps it off the subject of a
+                // photo, which is almost always centred or high.
+                child: locked
+                    ? Container(
+                        key: const ValueKey('locked'),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 7,
+                          vertical: 3,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.gold,
+                          borderRadius: BorderRadius.circular(5),
+                        ),
+                        child: const Text(
+                          'PRO',
+                          style: TextStyle(
+                            color: AppColors.onGold,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 0.6,
+                            height: 1.1,
+                          ),
+                        ),
+                      )
+                    : const SizedBox.shrink(key: ValueKey('unlocked')),
               ),
             ),
           ],
@@ -850,30 +955,16 @@ class _CardCarouselState extends State<_CardCarousel> {
   /// the dots row, never the mounted canvases.
   final _page = ValueNotifier<int>(0);
 
-  /// Recreated when the slide width changes (viewportFraction is final): each
-  /// page is sized to the canvas' rendered width so adjacent panels sit flush
-  /// and the carousel bleed reads as one image — the preview screen's fix,
-  /// applied to the card. See _controllerFor.
-  PageController _pageController = PageController();
-  double? _viewportFraction;
+  /// A plain full-width controller: the card is cut to this template's aspect,
+  /// so one page is exactly one slide. (It used to be rebuilt per layout to
+  /// carry a fractional viewport — see the PageView below for why that went.)
+  final PageController _pageController = PageController();
 
   @override
   void dispose() {
     _pageController.dispose();
     _page.dispose();
     super.dispose();
-  }
-
-  PageController _controllerFor(double fraction) {
-    if (_viewportFraction == fraction) return _pageController;
-    final old = _pageController;
-    WidgetsBinding.instance.addPostFrameCallback((_) => old.dispose());
-    _viewportFraction = fraction;
-    _pageController = PageController(
-      viewportFraction: fraction,
-      initialPage: _page.value,
-    );
-    return _pageController;
   }
 
   @override
@@ -894,70 +985,76 @@ class _CardCarouselState extends State<_CardCarousel> {
         return Stack(
           fit: StackFit.expand,
           children: [
-            LayoutBuilder(
-              builder: (context, constraints) {
-                // Each page is exactly the canvas' rendered width, so the
-                // slides touch instead of each floating letterboxed in a
-                // full-width page (which read as a gap between panels).
-                final aspect = template.canvasWidth / template.canvasHeight;
-                final slideWidth = math.min(
-                  constraints.maxWidth,
-                  constraints.maxHeight * aspect,
-                );
-                final fraction = (slideWidth / constraints.maxWidth)
-                    .clamp(0.05, 1.0)
-                    .toDouble();
-                return PageView.builder(
-                  controller: _controllerFor(fraction),
-                  itemCount: document.slideCount,
-                  onPageChanged: (i) => _page.value = i,
-                  itemBuilder: (context, i) => Center(
-                    child: AspectRatio(
-                      aspectRatio: template.canvasWidth / template.canvasHeight,
-                      // Inert, like the preview: the card's InkWell keeps the
-                      // tap, the PageView keeps the horizontal drag.
-                      child: IgnorePointer(
-                        child: SlideView(
-                          document: document,
-                          slideIndex: i,
-                          fontResolver: widget.fontResolver,
-                          assetCatalog: catalog,
-                          // Cards show the "with sample photos" look, matching
-                          // the static thumbnail they replace.
-                          showTemplatePhotos: true,
-                        ),
-                      ),
+            // One slide per page, filling the card. The card's tile already
+            // carries this template's aspect, so a full-width page IS the
+            // slide's width — the old fractional viewport existed to make
+            // slides touch inside an oversized tile, and its side effect was
+            // the neighbour peeking out and being sliced off at the card's
+            // border, which read as a rendering fault.
+            PageView.builder(
+              controller: _pageController,
+              itemCount: document.slideCount,
+              onPageChanged: (i) => _page.value = i,
+              itemBuilder: (context, i) => Center(
+                child: AspectRatio(
+                  aspectRatio: template.canvasWidth / template.canvasHeight,
+                  // Inert, like the preview: the card's InkWell keeps the
+                  // tap, the PageView keeps the horizontal drag.
+                  child: IgnorePointer(
+                    child: SlideView(
+                      document: document,
+                      slideIndex: i,
+                      fontResolver: widget.fontResolver,
+                      assetCatalog: catalog,
+                      // Cards show the "with sample photos" look, matching
+                      // the static thumbnail they replace.
+                      showTemplatePhotos: true,
                     ),
                   ),
-                );
-              },
+                ),
+              ),
             ),
-            // Tiny page dots so the swipe is discoverable; inert so they
-            // never steal the card's tap.
+            // Which slide you're on. Inert, so they never steal the card's
+            // tap. They ride in a scrim pill because they sit ON the artwork
+            // and the artwork is any colour at all — the old bare dots used
+            // black26 for the inactive state and disappeared entirely against
+            // a dark photo.
             Positioned(
               left: 0,
               right: 0,
-              bottom: 6,
+              bottom: 8,
               child: IgnorePointer(
-                child: ValueListenableBuilder<int>(
-                  valueListenable: _page,
-                  builder: (context, page, _) => Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      for (var i = 0; i < document.slideCount; i++)
-                        AnimatedContainer(
-                          duration: const Duration(milliseconds: 150),
-                          width: i == page ? 12 : 5,
-                          height: 5,
-                          margin: const EdgeInsets.symmetric(horizontal: 2),
-                          decoration: BoxDecoration(
-                            color: i == page
-                                ? AppColors.accent
-                                : Colors.black26,
-                            borderRadius: BorderRadius.circular(3),
-                          ),
-                        ),
-                    ],
+                child: Center(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.35),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: ValueListenableBuilder<int>(
+                      valueListenable: _page,
+                      builder: (context, page, _) => Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          for (var i = 0; i < document.slideCount; i++)
+                            AnimatedContainer(
+                              duration: const Duration(milliseconds: 150),
+                              width: i == page ? 10 : 4,
+                              height: 4,
+                              margin: const EdgeInsets.symmetric(horizontal: 2),
+                              decoration: BoxDecoration(
+                                color: i == page
+                                    ? AppColors.accent
+                                    : Colors.white.withValues(alpha: 0.45),
+                                borderRadius: BorderRadius.circular(2),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
                   ),
                 ),
               ),
