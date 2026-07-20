@@ -1273,10 +1273,14 @@ class _TemplateScreenState extends State<TemplateScreen>
       _selectedSlot = null;
       _editingSlot = null;
     });
-    // Mirror the strip's layout: 16px strip padding + 6px per-panel padding.
-    final stripWidth = 32 + slideCount * (panelWidth + 12.0);
+    // Mirror the strip's layout: 16px of padding around ONE continuous canvas
+    // whose slides tile edge to edge. There is no per-panel padding to account
+    // for — that belonged to the Row of PanelCanvas this replaced, and leaving
+    // it here shifted every hop by 12px MORE than the last (dot 6 landed most
+    // of a slide off), while also letting maxTx scroll past the document end.
+    final stripWidth = 32 + panelWidth * slideCount;
     final maxTx = (stripWidth - viewportWidth).clamp(0.0, double.infinity);
-    final tx = (index * (panelWidth + 12.0)).clamp(0.0, maxTx);
+    final tx = (index * panelWidth).clamp(0.0, maxTx);
     _zoom.value = Matrix4.identity()..setTranslationRaw(-tx, 0, 0);
   }
 
