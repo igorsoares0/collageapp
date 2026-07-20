@@ -1701,6 +1701,34 @@ class _TemplateScreenState extends State<TemplateScreen>
                         : constraints.maxWidth * 0.82,
                     (canvasHeight - 32) * aspect,
                   );
+                  // How far out you can pinch. The old 0.25 was a leftover from
+                  // the panel era, where zooming out did little; on a continuous
+                  // canvas it is how you step BACK from the work — to judge a
+                  // composition, or to see a whole carousel at once. 0.25 is
+                  // the value this screen always declared; it simply never
+                  // worked (see boundaryMargin below), and it turns out to be
+                  // the right feel once it does. Below that the canvas reads as
+                  // a stamp, so the deeper zoom is reserved for the case that
+                  // needs it: a carousel too long to fit any other way (a fixed
+                  // floor caps a panorama at a few slides however long it is).
+                  final stripWidth = 32 + panelWidth * slideCount;
+                  final minZoom = math
+                      .min(0.25, (constraints.maxWidth / stripWidth) * 0.9)
+                      .clamp(0.08, 0.25);
+                  // minScale ALONE does nothing here. InteractiveViewer floors
+                  // the scale at `viewport / boundaryRect` BEFORE it clamps to
+                  // minScale (see _matrixScale), so a finite boundaryMargin is
+                  // what actually decides how far out you can pinch: with the
+                  // old EdgeInsets.all(64) the strip is viewport-tall, giving a
+                  // real floor near 0.94 — the editor barely zoomed out at all.
+                  // So the margin is derived FROM minZoom: pad by exactly what
+                  // the child needs to still cover the viewport at that scale.
+                  // (Infinite margins would also work, but they unbound panning
+                  // and the canvas can be dragged off into nowhere.)
+                  final margin = math.max(
+                    (constraints.maxWidth / minZoom - stripWidth) / 2,
+                    (constraints.maxHeight / minZoom - canvasHeight) / 2,
+                  );
                   // With nothing selected the surface is an InteractiveViewer
                   // (pinch zoom + pan). With a slot selected it becomes a STATIC
                   // transform — same matrix and layout, but NO gesture detector:
@@ -1813,9 +1841,11 @@ class _TemplateScreenState extends State<TemplateScreen>
                           panAxis: _isZoomed
                               ? PanAxis.free
                               : PanAxis.horizontal,
-                          minScale: 0.25,
+                          minScale: minZoom,
                           maxScale: 4,
-                          boundaryMargin: const EdgeInsets.all(64),
+                          boundaryMargin: EdgeInsets.all(
+                            math.max(64, margin),
+                          ),
                           child: strip,
                         );
                   final scroll = SingleChildScrollView(
