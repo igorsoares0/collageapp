@@ -1691,19 +1691,30 @@ class _TemplateScreenState extends State<TemplateScreen>
                   // Panels sit side by side; with more than one, each is a bit
                   // narrower than the viewport so the next one peeks in. A
                   // single panel instead fills the viewport minus the strip's
-                  // 16px + per-panel 2px paddings (36px total), so the strip
-                  // is exactly viewport-wide and the panel sits centered.
-                  // Either way, never wider than the canvas actually paints at
-                  // the strip's height (32px vertical padding): a tall canvas
-                  // is height-limited, and reserving more width would only
-                  // letterbox the FittedBox — bands that read as a huge gap
-                  // between panels.
+                  // own 16px on each side. Either way, never wider than the
+                  // canvas actually paints at the strip's height (32px vertical
+                  // padding): a tall canvas is height-limited, and reserving
+                  // more width would only letterbox the FittedBox — bands that
+                  // read as a huge gap between panels.
                   final aspect = _doc.slideWidth / _doc.slideHeight;
                   final panelWidth = math.min(
                     slideCount == 1
-                        ? constraints.maxWidth - 36
+                        ? constraints.maxWidth - 32
                         : constraints.maxWidth * 0.82,
                     (canvasHeight - 32) * aspect,
+                  );
+                  // Centring is the strip's job, not the viewer's: the surface
+                  // below lays the strip out `constrained: false`, which aligns
+                  // it TOP-LEFT. So whenever the content is narrower than the
+                  // viewport the padding has to absorb the slack, or the canvas
+                  // hugs the left edge. That only happens when the canvas is
+                  // limited by HEIGHT instead of width — a 9:16 story on a tall
+                  // phone. Portrait and square fill the width and look fine
+                  // either way, which is exactly why this kept regressing.
+                  final contentWidth = panelWidth * slideCount;
+                  final hPad = math.max(
+                    16.0,
+                    (constraints.maxWidth - contentWidth) / 2,
                   );
                   // How far out you can pinch. The old 0.25 was a leftover from
                   // the panel era, where zooming out did little; on a continuous
@@ -1715,7 +1726,7 @@ class _TemplateScreenState extends State<TemplateScreen>
                   // a stamp, so the deeper zoom is reserved for the case that
                   // needs it: a carousel too long to fit any other way (a fixed
                   // floor caps a panorama at a few slides however long it is).
-                  final stripWidth = 32 + panelWidth * slideCount;
+                  final stripWidth = contentWidth + hPad * 2;
                   final minZoom = math
                       .min(0.25, (constraints.maxWidth / stripWidth) * 0.9)
                       .clamp(0.08, 0.25);
@@ -1756,12 +1767,12 @@ class _TemplateScreenState extends State<TemplateScreen>
                   final strip = SizedBox(
                     height: canvasHeight,
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
+                      padding: EdgeInsets.symmetric(
+                        horizontal: hPad,
                         vertical: 16,
                       ),
                       child: SizedBox(
-                        width: panelWidth * slideCount,
+                        width: contentWidth,
                         child: CanvasView(
                           exportKey: _canvasKey,
                           document: _doc,
