@@ -1350,11 +1350,13 @@ class _TemplateScreenState extends State<TemplateScreen>
                 });
                 setSheetState(() {});
               },
+              // The stack lives in the document's layer list, not in a
+              // SlotContent override — see [reorderLayersInSlide]. Writing the
+              // override instead was a silent no-op: the sheet read its own
+              // list back through it and looked reordered while the canvas,
+              // which paints doc.layers directly, never moved.
               onReorderList: (orderedIds) {
-                _record();
-                setState(() {
-                  _content = _content.withLayerOrder(panel.id, orderedIds);
-                });
+                _editDoc(reorderLayersInSlide(_doc, slide, orderedIds));
                 setSheetState(() {});
               },
             );

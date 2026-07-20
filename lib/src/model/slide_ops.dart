@@ -63,10 +63,8 @@ Document addSlide(
         translateLayerX(layer, pitch),
   ];
 
-  final backgrounds = [...doc.slideBackgrounds]..insert(
-    index.clamp(0, doc.slideBackgrounds.length),
-    background,
-  );
+  final backgrounds = [...doc.slideBackgrounds]
+    ..insert(index.clamp(0, doc.slideBackgrounds.length), background);
 
   return _rebuild(
     doc,
@@ -195,6 +193,46 @@ Document appendLayer(Document doc, Layer layer) => _rebuild(
   slideBackgrounds: doc.slideBackgrounds,
   layers: [...doc.layers, layer],
 );
+
+/// Restacks slide [slide]'s layers into [orderedIds] (index 0 = bottom).
+///
+/// On the continuous canvas the list order IS the stack order, so a reorder is
+/// a permutation of [Document.layers] — NOT an override kept beside them. (The
+/// panel model's SlotContent.layerOrders is the v3 mechanism; migrate_v4 bakes
+/// it into this list and it has no effect here.)
+///
+/// Only the positions this slide's layers already occupy are rewritten, so the
+/// document's cross-slide order is untouched — a slide's stack is a local
+/// concern, and slides don't overlap on screen anyway. Ids [orderedIds] omits
+/// keep their natural order at the top, so a stale list can never drop a layer.
+Document reorderLayersInSlide(
+  Document doc,
+  int slide,
+  List<String> orderedIds,
+) {
+  final mine = doc.layersInSlide(slide);
+  if (mine.isEmpty) return doc;
+  final pending = {for (final l in mine) l.id: l};
+  final restacked = <Layer>[
+    for (final id in orderedIds)
+      if (pending.remove(id) case final layer?) layer,
+  ];
+  for (final layer in mine) {
+    if (pending.containsKey(layer.id)) restacked.add(layer);
+  }
+
+  final layers = [...doc.layers];
+  var next = 0;
+  for (var i = 0; i < layers.length; i++) {
+    if (doc.slideOf(layers[i]) == slide) layers[i] = restacked[next++];
+  }
+  return _rebuild(
+    doc,
+    slideCount: doc.slideCount,
+    slideBackgrounds: doc.slideBackgrounds,
+    layers: layers,
+  );
+}
 
 /// Appends [layer] to the document, positioning it relative to slide [slide].
 ///
