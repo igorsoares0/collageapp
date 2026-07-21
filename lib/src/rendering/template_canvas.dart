@@ -1479,11 +1479,23 @@ class _SlotGesturesState extends State<_SlotGestures> {
     return Offset(v.dx * cos - v.dy * sin, v.dx * sin + v.dy * cos);
   }
 
-  /// A local drag delta lands in the element's ROTATED frame (this widget sits
-  /// inside both rotations); rotate it back so the offset moves in template
-  /// space and the element still follows the finger.
+  /// A local drag delta lands in the element's ROTATED, SCALED frame (this
+  /// widget sits inside both rotations AND the Transform.scale); undo both so
+  /// the offset moves in template space and the element still follows the
+  /// finger.
+  ///
+  /// The scale factor is the subtle half. ScaleUpdateDetails.focalPointDelta is
+  /// LOCAL (gestures/scale.dart: `_delta = _localFocalPoint -
+  /// localPreviousFocalPoint`), so it arrives pre-divided by every transform
+  /// above — the canvas fit/zoom, which we WANT (it is the screen->template
+  /// conversion), and the element's own scale, which we do not: offsets are
+  /// consumed outside Transform.scale, at the element's Positioned. Left
+  /// uncorrected the element tracks the finger at 1/scale, so a scaled-up text
+  /// drags heavy and a scaled-down one races. Multiplying it back is the
+  /// in-transform equivalent of the explicit screenToTemplate factor
+  /// [SelectionGestureSurface] applies from outside.
   Offset _dragToTemplate(Offset delta) => _rotateVec(
-    delta,
+    delta * widget.currentScale,
     (widget.currentRotation + widget.templateRotation) * math.pi / 180,
   );
 

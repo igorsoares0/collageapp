@@ -22,7 +22,11 @@
       "Bash(cmd.exe /c \"flutter analyze lib test\")",
       "Bash(python3 -c ' *)",
       "Bash(cmd.exe /c \"flutter test test/layers_test.dart\")",
-      "Bash(cmd.exe /c \"dart format test/layers_test.dart\")"
+      "Bash(cmd.exe /c \"dart format test/layers_test.dart\")",
+      "Bash(cmd.exe /c \"flutter test test/slot_drag_test.dart --concurrency=1\")",
+      "Bash(echo \"exit=$?\")",
+      "Bash(cmd.exe /c \"flutter test test/projects_screen_test.dart --concurrency=1\")",
+      "Bash(git stash *)"
     ]
   }
 }

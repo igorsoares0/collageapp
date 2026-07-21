@@ -89,6 +89,51 @@ void main() {
     expect(content.offsetFor('hero_image').dx, greaterThan(0));
   });
 
+  // Regression: focalPointDelta is LOCAL, so it arrives pre-divided by the
+  // element's own Transform.scale on top of the canvas fit — but offsets are
+  // consumed outside that transform. Uncorrected, the element tracked the
+  // finger at 1/scale: a scaled-up text dragged heavy, a scaled-down one raced.
+  // The element must follow the finger 1:1 at EVERY scale, exactly as it does
+  // at the 1.0 it is born with.
+  for (final scale in [2.0, 0.5]) {
+    testWidgets('a slot scaled ${scale}x still tracks the finger 1:1', (
+      tester,
+    ) async {
+      var content = SlotContent(scales: {'title': scale});
+      await pump(
+        tester,
+        StatefulBuilder(
+          builder: (context, setState) => TemplateCanvas(
+            template: template,
+            content: content,
+            fontResolver: testFontResolver,
+            selectedSlotId: 'title',
+            onSlotDrag: (slotId, delta) => setState(() {
+              content = content.withOffset(
+                slotId,
+                content.offsetFor(slotId) + delta,
+              );
+            }),
+          ),
+        ),
+      );
+
+      final gesture = await tester.startGesture(tester.getCenter(find.text('title')));
+      // First move eats the touch slop; the second is delivered in full.
+      await gesture.moveBy(const Offset(40, 0));
+      await tester.pump();
+      final mid = tester.getTopLeft(find.text('title'));
+      await gesture.moveBy(const Offset(50, 30));
+      await tester.pump();
+      await gesture.up();
+      final end = tester.getTopLeft(find.text('title'));
+
+      // Screen px in, the same screen px out — no scale leaking into the rate.
+      expect(end.dx - mid.dx, closeTo(50, 0.001));
+      expect(end.dy - mid.dy, closeTo(30, 0.001));
+    });
+  }
+
   testWidgets('an unselected slot is not draggable', (tester) async {
     var content = const SlotContent();
     var dragged = false;
