@@ -186,6 +186,18 @@ class _TemplateScreenState extends State<TemplateScreen>
   // pointer-up alongside the undo coalescing run.
   Offset? _dragRaw;
   String? _dragKey;
+  // Everything the snap needs that CANNOT change while one element is dragged,
+  // captured when the gesture starts and dropped with the rest of the drag
+  // state on pointer-up. The dragged element's own box is fixed (a drag moves
+  // it, it does not resize or restretch it); the other elements are not the one
+  // moving; and the screen→template factor is frozen because selecting an
+  // element swaps the InteractiveViewer for a static Transform (see
+  // [_buildBody]). Recomputing all of it per pointer event meant walking every
+  // layer of the document and the render tree on every frame of every drag.
+  Rect? _dragBox;
+  SnapTargets? _dragTargets;
+  double _dragOriginX = 0;
+  double _dragThreshold = 0;
   List<double> _guideXs = const [];
   List<double> _guideYs = const [];
 
@@ -286,6 +298,8 @@ class _TemplateScreenState extends State<TemplateScreen>
     _editRunKey = null;
     _dragRaw = null;
     _dragKey = null;
+    _dragBox = null;
+    _dragTargets = null;
     setState(() {
       _document = snapshot.doc;
       _content = snapshot.content;
@@ -307,6 +321,8 @@ class _TemplateScreenState extends State<TemplateScreen>
   void _onPointerEnd() {
     _editRunKey = null;
     _saveProject();
+    _dragBox = null;
+    _dragTargets = null;
     if (_dragRaw == null && _guideXs.isEmpty && _guideYs.isEmpty) return;
     setState(() {
       _dragRaw = null;
@@ -322,34 +338,27 @@ class _TemplateScreenState extends State<TemplateScreen>
   /// plain move when the element's painted box can't be derived (template-
   /// rotated elements, unmeasured text).
   void _dragSelected(String slotId, Offset delta) {
-    final raw =
-        ((_dragKey == slotId ? _dragRaw : null) ?? _content.offsetFor(slotId)) +
-        delta;
+    final previous = _dragKey == slotId ? _dragRaw : null;
+    if (previous == null) _startDrag(slotId);
+    final raw = (previous ?? _content.offsetFor(slotId)) + delta;
     var snapped = raw;
     List<double> xs = const [], ys = const [];
-    final box = _dragTargetBox(slotId);
-    if (box != null) {
-      // Snapping is SLIDE-scoped: the element snaps to the edges and centre of
-      // the slide it is in, and to that slide's other elements — not to the
-      // whole document (which would put every canvas guide on slide 0) and not
-      // to elements two slides away. Snap in slide-local space, then shift the
-      // guides back into continuous coordinates for painting.
-      final slide = _doc.slideIndexAtX(box.center.dx);
-      final originX = _doc.slideRect(slide).left;
-      final toLocal = Offset(-originX, 0);
+    final box = _dragBox;
+    final targets = _dragTargets;
+    if (box != null && targets != null) {
+      // Scale and rotation are read LIVE, not captured with the rest: two
+      // fingers on the element fire onDrag and onScaleChange within the same
+      // gesture, so both can move while this runs.
       final result = snapDrag(
-        box: box.shift(toLocal),
+        box: box,
         scale: _content.scaleFor(slotId),
         raw: raw,
-        canvas: Size(_doc.slideWidth, _doc.slideHeight),
-        others: [
-          for (final r in _snapTargets(slotId, slide)) r.shift(toLocal),
-        ],
-        threshold: _kSnapReachPx * _screenToTemplate(),
+        targets: targets,
+        threshold: _dragThreshold,
         snapEdges: _content.rotationFor(slotId) == 0,
       );
       snapped = result.offset;
-      xs = [for (final x in result.guideXs) x + originX];
+      xs = [for (final x in result.guideXs) x + _dragOriginX];
       ys = result.guideYs;
     }
     // A tick the moment the element locks onto a (new) guide — not on every
@@ -358,7 +367,6 @@ class _TemplateScreenState extends State<TemplateScreen>
         (!listEquals(xs, _guideXs) || !listEquals(ys, _guideYs))) {
       HapticFeedback.selectionClick();
     }
-    _record('drag:$slotId');
     setState(() {
       _dragKey = slotId;
       _dragRaw = raw;
@@ -366,6 +374,38 @@ class _TemplateScreenState extends State<TemplateScreen>
       _guideYs = ys;
       _content = _content.withOffset(slotId, snapped);
     });
+  }
+
+  /// Opens a drag gesture on [slotId]: takes the drag's ONE undo step and
+  /// captures the snap inputs that stay fixed for its whole run (see the
+  /// [_dragBox] field). The undo step is recorded here rather than coalesced
+  /// frame by frame — a drag is one user action, and [_onPointerEnd] already
+  /// closes the run, so nothing downstream needs the per-edit bookkeeping.
+  void _startDrag(String slotId) {
+    _record();
+    // Snapping is SLIDE-scoped: the element snaps to the edges and centre of
+    // the slide it is in, and to that slide's other elements — not to the
+    // whole document (which would put every canvas guide on slide 0) and not
+    // to elements two slides away. Everything below is stored in slide-local
+    // space; only the guides are shifted back for painting.
+    final box = _dragTargetBox(slotId);
+    if (box == null) {
+      // No derivable box (template-rotated element, unmeasured text): this
+      // drag simply moves without snapping. Deciding once per gesture also
+      // keeps snapping from appearing halfway through one.
+      _dragBox = null;
+      _dragTargets = null;
+      return;
+    }
+    final slide = _doc.slideIndexAtX(box.center.dx);
+    _dragOriginX = _doc.slideRect(slide).left;
+    final toLocal = Offset(-_dragOriginX, 0);
+    _dragBox = box.shift(toLocal);
+    _dragTargets = SnapTargets.around(
+      Size(_doc.slideWidth, _doc.slideHeight),
+      [for (final r in _snapTargets(slotId, slide)) r.shift(toLocal)],
+    );
+    _dragThreshold = _kSnapReachPx * _screenToTemplate();
   }
 
   /// The unrotated layout box (template units, before user offset/scale) of

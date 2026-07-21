@@ -16,6 +16,18 @@ class EntitlementsService {
   final ValueNotifier<bool> isPro = ValueNotifier(false);
 
   Future<void> init() async {
+    // A Test Store key is rejected by the SDK in any non-debug build, and the
+    // rejection comes from the native side — the catch below never sees it, so
+    // the app dies at startup instead of degrading to free. That makes it
+    // impossible to profile the editor, which is exactly what profile builds
+    // are for. Skipping is strictly better than crashing here: the SDK could
+    // not have worked in this build either way. RELEASE deliberately keeps
+    // crashing — that is RevenueCat's guard against shipping a test key, and
+    // it stops being relevant on its own once _apiKey is a real store key.
+    if (kProfileMode && _apiKey.startsWith('test_')) {
+      debugPrint('RevenueCat skipped: Test Store key in a profile build.');
+      return;
+    }
     try {
       await Purchases.configure(PurchasesConfiguration(_apiKey));
       Purchases.addCustomerInfoUpdateListener(_apply);

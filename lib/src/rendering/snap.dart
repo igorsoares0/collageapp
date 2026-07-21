@@ -34,16 +34,48 @@ import 'dart:ui';
   return (shift: shift, guide: guide);
 }
 
+/// Every position a dragged element can align to: the canvas edges and centre,
+/// plus the edges and centres of the other elements.
+///
+/// Built ONCE per gesture, not per frame. Nothing in here can move while a
+/// single element is being dragged — the canvas is fixed and the other
+/// elements are, by definition, not the one moving — so recomputing these
+/// lists on every pointer event was pure waste (and one list allocation per
+/// element per frame).
+class SnapTargets {
+  final List<double> xs;
+  final List<double> ys;
+
+  const SnapTargets({required this.xs, required this.ys});
+
+  /// [canvas] is the slide box in template units and [others] the painted
+  /// bounds of its other elements, both in the same (slide-local) space.
+  factory SnapTargets.around(Size canvas, List<Rect> others) => SnapTargets(
+    xs: [
+      0.0,
+      canvas.width / 2,
+      canvas.width,
+      for (final r in others) ...[r.left, r.center.dx, r.right],
+    ],
+    ys: [
+      0.0,
+      canvas.height / 2,
+      canvas.height,
+      for (final r in others) ...[r.top, r.center.dy, r.bottom],
+    ],
+  );
+}
+
 /// Snaps a dragged element to the canvas edges/center and to other elements'
 /// edges/centers.
 ///
 /// [box] is the element's unrotated layout box in template units; its painted
 /// bounds are the box scaled by [scale] around its center and shifted by the
 /// user offset. [raw] is the accumulated unsnapped offset for this gesture.
-/// [others] are the painted bounds of the panel's other (unrotated) elements.
-/// [snapEdges] is false when the element carries a user rotation — its painted
-/// edges no longer match the axis-aligned box, but the center (the rotation
-/// pivot) still does, so center guides stay available.
+/// [targets] are the gesture's precomputed alignment positions. [snapEdges] is
+/// false when the element carries a user rotation — its painted edges no
+/// longer match the axis-aligned box, but the center (the rotation pivot)
+/// still does, so center guides stay available.
 ///
 /// Returns the corrected offset plus the matched guide positions (at most one
 /// per axis) in template units.
@@ -51,8 +83,7 @@ import 'dart:ui';
   required Rect box,
   required double scale,
   required Offset raw,
-  required Size canvas,
-  required List<Rect> others,
+  required SnapTargets targets,
   required double threshold,
   required bool snapEdges,
 }) {
@@ -67,21 +98,8 @@ import 'dart:ui';
       ? [center.dy - halfH, center.dy, center.dy + halfH]
       : [center.dy];
 
-  final targetsX = [
-    0.0,
-    canvas.width / 2,
-    canvas.width,
-    for (final r in others) ...[r.left, r.center.dx, r.right],
-  ];
-  final targetsY = [
-    0.0,
-    canvas.height / 2,
-    canvas.height,
-    for (final r in others) ...[r.top, r.center.dy, r.bottom],
-  ];
-
-  final x = snapAxis(points: pointsX, targets: targetsX, threshold: threshold);
-  final y = snapAxis(points: pointsY, targets: targetsY, threshold: threshold);
+  final x = snapAxis(points: pointsX, targets: targets.xs, threshold: threshold);
+  final y = snapAxis(points: pointsY, targets: targets.ys, threshold: threshold);
 
   return (
     offset: raw + Offset(x.shift, y.shift),

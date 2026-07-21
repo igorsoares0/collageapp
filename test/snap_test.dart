@@ -32,8 +32,7 @@ void main() {
         box: box,
         scale: 1,
         raw: const Offset(94, 106), // center lands 6 px off (540±, 960±)
-        canvas: canvas,
-        others: const [],
+        targets: SnapTargets.around(canvas, const []),
         threshold: 10,
         snapEdges: true,
       );
@@ -48,8 +47,9 @@ void main() {
         box: box,
         scale: 2,
         raw: const Offset(-233, 0), // left edge at 7 → near other's left 0…
-        canvas: canvas,
-        others: const [Rect.fromLTWH(0, 300, 100, 100)],
+        targets: SnapTargets.around(canvas, const [
+          Rect.fromLTWH(0, 300, 100, 100),
+        ]),
         threshold: 10,
         snapEdges: true,
       );
@@ -64,8 +64,7 @@ void main() {
         box: box,
         scale: 1,
         raw: const Offset(-334, 0), // left edge lands at 6, center at 106
-        canvas: canvas,
-        others: const [],
+        targets: SnapTargets.around(canvas, const []),
         threshold: 10,
         snapEdges: false,
       );

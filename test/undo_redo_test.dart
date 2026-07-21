@@ -88,6 +88,82 @@ void main() {
     expect(enabled(tester, undoButton), isFalse);
   });
 
+  testWidgets('a whole drag is one undo step', (tester) async {
+    // A single 300×300 element, so the sweep below has nothing to snap to but
+    // the canvas itself and the drag stays a plain move.
+    final template = Template(
+      id: 't',
+      schemaVersion: 3,
+      version: 1,
+      name: 'T',
+      aspectRatio: '9:16',
+      canvasWidth: 1080,
+      canvasHeight: 1920,
+      panels: const [
+        Panel(
+          id: 'p',
+          backgroundColor: Color(0xFFFFFFFF),
+          layers: [
+            ImageLayer(
+              id: 'img',
+              hidden: false,
+              slotId: 'img',
+              x: 270,
+              y: 690,
+              width: 300,
+              height: 300,
+              rotation: 0,
+              opacity: 1,
+              borderRadius: 0,
+            ),
+          ],
+        ),
+      ],
+    );
+    tester.view.physicalSize = const Size(540, 960);
+    tester.view.devicePixelRatio = 1;
+    await tester.pumpWidget(
+      MaterialApp(
+        debugShowCheckedModeBanner: false,
+        home: TemplateScreen(draft: template, fontResolver: testFontResolver),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final slot = find.byWidgetPredicate(
+      (w) => w is Container && w.color == const Color(0xFFE4E4E7),
+    );
+    // Select it (tapping the placeholder below the pick icon). Selecting is
+    // not an edit, so there is still nothing to undo.
+    await tester.tapAt(tester.getCenter(slot) + const Offset(0, 40));
+    await tester.pumpAndSettle();
+    expect(enabled(tester, undoButton), isFalse);
+
+    // Sweep from empty canvas space — the canvas-wide surface moves the
+    // selected element. Every one of these moves is its own _dragSelected
+    // call; the whole run must collapse into ONE undo step, not twelve.
+    final before = tester.getCenter(slot);
+    final canvasRect = tester.getRect(
+      find.byKey(const ValueKey('slide-background-0')),
+    );
+    final gesture = await tester.startGesture(
+      canvasRect.topLeft + const Offset(60, 60),
+    );
+    for (var i = 0; i < 12; i++) {
+      await gesture.moveBy(const Offset(4, 4));
+      await tester.pump();
+    }
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(tester.getCenter(slot), isNot(before));
+
+    await tester.tap(undoButton);
+    await tester.pumpAndSettle();
+    expect(tester.getCenter(slot), before);
+    // Nothing left: one undo took back the entire gesture.
+    expect(enabled(tester, undoButton), isFalse);
+  });
+
   testWidgets('a new edit clears the redo branch', (tester) async {
     await pumpDraft(tester);
     await addFromToolbar(tester, 'Panel');
