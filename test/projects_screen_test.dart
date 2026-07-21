@@ -110,7 +110,17 @@ void main() {
       await tester.tap(find.text('Delete'));
       await pumpUntil(
         tester,
-        () => !tester.any(find.byKey(const ValueKey('project-p_1'))),
+        // BOTH clauses matter. Deleting calls _reload(), which swaps in a new
+        // future — so the FutureBuilder drops the whole list for a
+        // CircularProgressIndicator while the store re-reads from disk. In that
+        // window p_1 is absent because the list is LOADING, not because it was
+        // deleted, and settling on that state left pumpUntil's pumpAndSettle
+        // spinning on the indeterminate progress animation until it timed out.
+        // That was the intermittent failure here (worse under full-suite disk
+        // load, where the re-read is slow enough to still be pending).
+        () =>
+            !tester.any(find.byType(CircularProgressIndicator)) &&
+            !tester.any(find.byKey(const ValueKey('project-p_1'))),
         reason: 'the deleted project never left the list',
       );
 
