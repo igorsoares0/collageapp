@@ -119,8 +119,9 @@ class LayersSheet extends StatelessWidget {
                 buildDefaultDragHandles: false,
                 padding: const EdgeInsets.only(bottom: 8),
                 itemCount: display.length,
-                onReorder: (oldIndex, newIndex) {
-                  if (newIndex > oldIndex) newIndex -= 1;
+                // onReorderItem (not onReorder): the framework already shifts
+                // newIndex down for the removed item, so no -1 here.
+                onReorderItem: (oldIndex, newIndex) {
                   final next = [...display];
                   next.insert(newIndex, next.removeAt(oldIndex));
                   // The list shows front-first; the stack stores bottom-first.
