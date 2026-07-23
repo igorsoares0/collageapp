@@ -3,6 +3,7 @@ import 'package:material_symbols_icons/symbols.dart';
 
 import '../rendering/template_canvas.dart' show googleFontsResolver;
 import '../theme.dart';
+import 'color_picker.dart';
 import 'editor_toolbar.dart' show ContextBarShell;
 
 /// Typefaces offered for text slots. Mirrors the editor's EDITOR_FONTS so a
@@ -192,23 +193,52 @@ class TextStyleBar extends StatelessWidget {
                 ],
               ),
             ),
-            SizedBox(
-              height: 52,
-              child: ListView(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                children: [
-                  for (final color in kColorChoices)
-                    _ColorDot(
-                      color: color,
-                      selected: color == currentColor,
-                      onTap: () => onColor(color),
-                    ),
-                ],
-              ),
-            ),
+            _ColorRow(currentColor: currentColor, onColor: onColor),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Curated color dots followed by the custom-picker trigger. Shared by the
+/// text and background bars so both offer the same "any color" affordance.
+class _ColorRow extends StatelessWidget {
+  final Color currentColor;
+  final ValueChanged<Color> onColor;
+
+  const _ColorRow({required this.currentColor, required this.onColor});
+
+  @override
+  Widget build(BuildContext context) {
+    // The trigger is "selected" whenever the active color is off the palette —
+    // it's the only swatch representing that color.
+    final onPalette = kColorChoices.any(
+      (c) => c.toARGB32() == currentColor.toARGB32(),
+    );
+    return SizedBox(
+      height: 52,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        children: [
+          for (final color in kColorChoices)
+            _ColorDot(
+              color: color,
+              selected: color.toARGB32() == currentColor.toARGB32(),
+              onTap: () => onColor(color),
+            ),
+          const SizedBox(width: 4),
+          ColorTrigger(
+            color: currentColor,
+            selected: !onPalette,
+            onTap: () => showColorPickerSheet(
+              context: context,
+              initialColor: currentColor,
+              onChanged: onColor,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -270,21 +300,7 @@ class BackgroundColorBar extends StatelessWidget {
     return ContextBarShell(
       title: 'Background',
       onDone: onDone,
-      child: SizedBox(
-        height: 52,
-        child: ListView(
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          children: [
-            for (final color in kColorChoices)
-              _ColorDot(
-                color: color,
-                selected: color == currentColor,
-                onTap: () => onColor(color),
-              ),
-          ],
-        ),
-      ),
+      child: _ColorRow(currentColor: currentColor, onColor: onColor),
     );
   }
 }

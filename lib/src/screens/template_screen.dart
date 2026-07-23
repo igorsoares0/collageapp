@@ -275,10 +275,12 @@ class _TemplateScreenState extends State<TemplateScreen>
   }
 
   /// Applies a STRUCTURAL edit (layers, slides, backgrounds) with undo
-  /// recording. Structural changes are always discrete — there is no continuous
-  /// gesture that adds a slide — so they never coalesce.
-  void _editDoc(Document next) {
-    _record();
+  /// recording. Most structural changes are discrete — there is no continuous
+  /// gesture that adds a slide — so they omit [coalesce]; the exception is a
+  /// live drag like background color, which passes a key so the whole gesture
+  /// collapses into one undo step.
+  void _editDoc(Document next, {String? coalesce}) {
+    _record(coalesce);
     setState(() => _document = next);
   }
 
@@ -2144,7 +2146,10 @@ class _TemplateScreenState extends State<TemplateScreen>
             _content.alignmentFor(textLayer.slotId) ?? textLayer.alignment,
         isBold: weight >= 700,
         onFont: (font) => _edit(_content.withFont(textLayer.slotId, font)),
-        onColor: (color) => _edit(_content.withColor(textLayer.slotId, color)),
+        onColor: (color) => _edit(
+          _content.withColor(textLayer.slotId, color),
+          coalesce: 'color:${textLayer.slotId}',
+        ),
         onAlignment: (align) =>
             _edit(_content.withAlignment(textLayer.slotId, align)),
         onBoldToggle: () => _edit(
@@ -2230,7 +2235,10 @@ class _TemplateScreenState extends State<TemplateScreen>
         currentColor: _doc.backgroundFor(slide),
         // Per-slide backgrounds are the one naturally per-slide datum, so this
         // is a structural edit on the document rather than an overlay override.
-        onColor: (color) => _editDoc(setSlideBackground(_doc, slide, color)),
+        onColor: (color) => _editDoc(
+          setSlideBackground(_doc, slide, color),
+          coalesce: 'bg:$slide',
+        ),
         onDone: _closeContextBar,
       );
     }
