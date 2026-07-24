@@ -1,6 +1,15 @@
 # Design: migração para o "Modelo B" (canvas contínuo + camada slide-aware)
 
-Status: **proposta / RFC** — não implementado.
+Status: **IMPLEMENTADO NO APP** (fases 1–4). A fase 5 — o `collageweb` autorar
+v4 — segue pendente; ver [Plano em fases](#plano-em-fases) para o estado por
+fase e `docs/model-b-f4c-editor-plan.md` §9 para o relato da conversão do
+editor.
+
+O texto abaixo é o RFC **como foi escrito antes da execução**: fala no futuro
+("vai virar", "some", "entra") e no presente sobre o Modelo A. Foi mantido
+assim de propósito — é o registro do raciocínio da decisão, não a descrição do
+código de hoje. Onde ele descreve o Modelo A como "atual", leia "como era".
+
 Contexto: discussão sobre como o app lida com carrosséis multi-painel e
 imagens panorâmicas ("seamless").
 
@@ -333,13 +342,35 @@ slide-aware nos editores** (fases 4–5, topo das faixas) e pra **coordenação 
 schema + round-trip WYSIWYG entre os dois repos** — este é o gargalo real; sem
 ele, o app não pode migrar sozinho.
 
-| Fase | Escopo | Esforço |
-|---|---|---|
-| 1. Schema v4 (web + app dual read) | tipos, sem UI | ~1–2 dias |
-| 2. Migração v3→v4 no load | reflow determinístico | ~1–2 dias |
-| 3. Render app + export por fatiamento | + spike do capture | ~3–4 dias |
-| 4. Editor app slide-aware | snap/reorder/fundo/slides | ~4–5 dias |
-| 5. Editor web autora v4 + slide-aware | Konva contínuo | ~4–5 dias |
+| Fase | Escopo | Esforço | Estado |
+|---|---|---|---|
+| 1. Schema v4 (web + app dual read) | tipos, sem UI | ~1–2 dias | **Feita** — `ad16db2`; `Document`/`ContinuousCanvas` dos dois lados, `slide_aware.dart` espelhado em `continuous.ts` |
+| 2. Migração v3→v4 no load | reflow determinístico | ~1–2 dias | **Feita** — `migrate_v4.dart`, `ProjectStore.loadAsDocument`/`saveDocument` |
+| 3. Render app + export por fatiamento | + spike do capture | ~3–4 dias | **Feita** — `CanvasView`, `capturePngSlices` |
+| 4. Editor app slide-aware | snap/reorder/fundo/slides | ~4–5 dias | **Feita** — `2026f48` + `75e4e53`; ver `model-b-f4c-editor-plan.md` §9 |
+| 5. Editor web autora v4 + slide-aware | Konva contínuo | ~4–5 dias | **Pendente** — ver abaixo |
+
+### O que falta (fase 5)
+
+O formato **de fio** ainda é v3. `kSupportedSchemaVersion = 3`
+(`lib/src/model/template.dart:8`) e `CURRENT_SCHEMA_VERSION = 3`
+(`collageweb/lib/template/types.ts:133`) — v4 existe como tipo nos dois repos,
+mas nada o autora nem o serializa.
+
+Na prática o canvas contínuo hoje vive **inteiro do lado do app**: templates
+publicados chegam em painéis e são dobrados no modelo contínuo na entrada
+(`migrateToV4`), e projetos salvos gravam v4 localmente. Isso funciona porque a
+migração é determinística e o caso degenerado (nada cruza o corte) é
+exatamente o que um template v3 produz.
+
+O que a fase 5 destrava, e só ela: **autorar** seamless no editor web. Hoje um
+template panorâmico não pode ser publicado como tal — a layer que atravessa o
+corte não tem como ser expressa em `panels[]`. O usuário do app consegue criar
+uma no editor mobile; o catálogo não consegue entregar uma pronta.
+
+**Amarra que continua valendo:** subir `CURRENT_SCHEMA_VERSION` para 4 exige os
+dois repos juntos e preservar o round-trip WYSIWYG. O gate por `schemaVersion`
+já está previsto dos dois lados.
 
 ---
 

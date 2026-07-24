@@ -118,32 +118,41 @@ void main() {
   testWidgets('pinch anywhere resizes the selected element', (tester) async {
     final h = await pumpHarness(tester);
 
-    // Two fingers on empty space. The recognizer re-bases its span when it
-    // ACCEPTS the gesture (after the slop move), so the measured ratio is
-    // relative to the post-acceptance span: 250 → 375 = scale 1.5.
+    // Two fingers on empty space. ScaleGestureRecognizer captures its
+    // reference span at the POINTER-DOWNS and never re-bases it — not when it
+    // accepts the gesture, not when onScaleStart fires. (Verified against a
+    // bare GestureDetector: the two-pointer onScaleStart arrives with a focal
+    // point that already reflects the acceptance move, yet the first update
+    // still reports 250/200.) So every d.scale is relative to the span at
+    // touch-down, and the acceptance move counts as real pinching — which is
+    // what the user did: they spread their fingers.
     final g1 = await tester.startGesture(const Offset(200, 300));
     final g2 = await tester.startGesture(const Offset(400, 300));
-    await g1.moveBy(const Offset(-50, 0)); // accept; span re-based to 250
+    await g1.moveBy(const Offset(-50, 0)); // accept; span 200 -> 250
     await tester.pump();
-    await g2.moveBy(const Offset(125, 0)); // span 375
+    await g2.moveBy(const Offset(125, 0)); // span 250 -> 375
     await tester.pump();
     await g1.up();
     await g2.up();
 
-    expect(h.content().scaleFor('slot_1'), closeTo(1.5, 0.05));
+    // 375 / 200 — the reference span is the one at touch-down.
+    expect(h.content().scaleFor('slot_1'), closeTo(1.875, 0.05));
   });
 
   testWidgets('two-finger twist rotates the selected element', (tester) async {
     final h = await pumpHarness(tester);
 
-    // The acceptance move keeps the finger line horizontal (angle re-bases
-    // at 0°); the second move turns it vertical, same 250 span → +90°, no
-    // scale change.
+    // A PURE twist: the fingers rotate 90° about the center (300,300) without
+    // ever changing how far apart they end up. Since d.scale only compares the
+    // CURRENT span to the touch-down span (see the pinch test), the path in
+    // between is free — only the final span has to match the initial 200 for
+    // "rotating does not resize" to be a real assertion rather than a number
+    // calibrated to whatever the gesture happened to do.
     final g1 = await tester.startGesture(const Offset(200, 300));
     final g2 = await tester.startGesture(const Offset(400, 300));
-    await g1.moveBy(const Offset(-50, 0)); // accept; line (150→400,300), 0°
+    await g1.moveTo(const Offset(300, 200)); // accept; quarter-turn of g1
     await tester.pump();
-    await g2.moveTo(const Offset(150, 550)); // line straight down, +90°
+    await g2.moveTo(const Offset(300, 400)); // line straight down, span 200
     await tester.pump();
     await g1.up();
     await g2.up();

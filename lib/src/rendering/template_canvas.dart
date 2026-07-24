@@ -1776,19 +1776,26 @@ class _SlotGesturesState extends State<_SlotGestures> {
     if (d.focalPointDelta != Offset.zero) {
       widget.onDrag?.call(widget.slotId, _dragToTemplate(d.focalPointDelta));
     }
-    if (d.pointerCount >= 2 && d.scale != 1.0) {
-      widget.onScaleChange?.call(
-        widget.slotId,
-        (_baseScale * d.scale).clamp(_kMinSlotScale, _kMaxSlotScale),
-      );
+    // d.scale/d.rotation are ABSOLUTE ratios against the touch-down span and
+    // angle, not deltas — so skipping an update leaves the element on a stale
+    // value from an earlier frame rather than simply doing nothing. Guard on
+    // the resulting VALUE, not on `d.scale != 1.0`: a two-finger pan reports
+    // scale exactly 1.0 every frame and must stay free of redundant setState,
+    // but a gesture that returns to its starting span must still land back on
+    // the starting size.
+    if (d.pointerCount >= 2) {
+      final next = (_baseScale * d.scale).clamp(_kMinSlotScale, _kMaxSlotScale);
+      if (next != widget.currentScale) {
+        widget.onScaleChange?.call(widget.slotId, next);
+      }
     }
     // Two-finger twist rotates (Stories-style), matching the canvas-wide
     // surface so pinching ON the element behaves like pinching next to it.
-    if (d.pointerCount >= 2 && d.rotation != 0) {
-      widget.onRotateChange?.call(
-        widget.slotId,
-        _baseRotation + d.rotation * 180 / math.pi,
-      );
+    if (d.pointerCount >= 2) {
+      final next = _baseRotation + d.rotation * 180 / math.pi;
+      if (next != widget.currentRotation) {
+        widget.onRotateChange?.call(widget.slotId, next);
+      }
     }
   }
 
@@ -3161,17 +3168,21 @@ class _SelectionGestureSurfaceState extends State<SelectionGestureSurface> {
       // un-rotation needed, only the scale factor.
       widget.onDrag?.call(widget.targetId, d.focalPointDelta * _factor);
     }
-    if (d.pointerCount >= 2 && d.scale != 1.0) {
-      widget.onScaleChange?.call(
-        widget.targetId,
-        (_baseScale * d.scale).clamp(_kMinSlotScale, _kMaxSlotScale),
-      );
+    // Same contract as _SlotGestureDetector above: d.scale/d.rotation are
+    // absolute against touch-down, so the guard tests the resulting value and
+    // not `d.scale != 1.0` — otherwise a gesture that ends on its starting
+    // span keeps whatever size an intermediate frame produced.
+    if (d.pointerCount >= 2) {
+      final next = (_baseScale * d.scale).clamp(_kMinSlotScale, _kMaxSlotScale);
+      if (next != widget.currentScale) {
+        widget.onScaleChange?.call(widget.targetId, next);
+      }
     }
-    if (d.pointerCount >= 2 && d.rotation != 0) {
-      widget.onRotateChange?.call(
-        widget.targetId,
-        _baseRotation + d.rotation * 180 / math.pi,
-      );
+    if (d.pointerCount >= 2) {
+      final next = _baseRotation + d.rotation * 180 / math.pi;
+      if (next != widget.currentRotation) {
+        widget.onRotateChange?.call(widget.targetId, next);
+      }
     }
   }
 
