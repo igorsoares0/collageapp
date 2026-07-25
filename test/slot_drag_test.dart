@@ -85,7 +85,10 @@ void main() {
     final end = tester.getTopLeft(find.text('hero_image'));
 
     // 50 screen px → 100 template px → re-rendered at scale 0.5 → 50 px.
-    expect(end - mid, const Offset(50, 30));
+    // Tolerant compare: the slot's 4° rotation puts the position through a
+    // trig matrix, so the round trip lands within ~1e-14 of the exact delta.
+    // What is asserted is 1:1 finger tracking, not bit-exactness.
+    expect(end - mid, offsetMoreOrLessEquals(const Offset(50, 30)));
     expect(content.offsetFor('hero_image').dx, greaterThan(0));
   });
 

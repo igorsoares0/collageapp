@@ -27,7 +27,8 @@
       "Bash(echo \"exit=$?\")",
       "Bash(cmd.exe /c \"flutter test test/projects_screen_test.dart --concurrency=1\")",
       "Bash(git stash *)",
-      "Bash(cmd.exe /c \"flutter analyze lib\\\\src\\\\theme.dart\")"
+      "Bash(cmd.exe /c \"flutter analyze lib\\\\src\\\\theme.dart\")",
+      "WebFetch(domain:pub.dev)"
     ]
   }
 }

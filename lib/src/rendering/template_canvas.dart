@@ -59,9 +59,9 @@ const double _kMaxSlotScale = 4.0;
 /// corner handles — which sit on the element corners and spill outward — are
 /// fully touchable. `_slot` shifts the element back by the same amount so it
 /// doesn't move on selection. Must exceed _kResizeReach AND the floating
-/// handles' far edge (_kRotateHandleDrop/_kDeleteHandleRise + glyph radius 30)
-/// so those buttons stay fully inside the touchable chrome box.
-const double kChromePad = 100.0;
+/// handles' far edge (_kRotateHandleDrop/_kDeleteHandleRise + _kGlyphHandle/2
+/// = 100 + 50) so those buttons stay fully inside the touchable chrome box.
+const double kChromePad = 156.0;
 
 /// Radius of the rotate/delete buttons' touch zones (pre-scale template px /
 /// scale). Kept tighter than the resize zones: these buttons float OUTSIDE
@@ -89,12 +89,21 @@ double _resizeReach(Size size, double scale) {
 /// scale template px / scale). Far enough that the glyph clears the bottom
 /// edge pill (half-thickness 17 + gap), yet kept under [kChromePad] so the
 /// handle stays inside the chrome's hit region that _SlotGestures covers.
-const double _kRotateHandleDrop = 68.0;
+const double _kRotateHandleDrop = 100.0;
 
 /// How far above the element's top edge the delete handle floats (pre-scale
 /// template px / scale) — the rotation handle's mirror on the opposite edge,
 /// under the same [kChromePad] constraint.
-const double _kDeleteHandleRise = 68.0;
+const double _kDeleteHandleRise = 100.0;
+
+/// Diameter of the two floating glyph buttons — rotate and delete — in
+/// pre-scale template px / scale. They share a size: they are mirrors on
+/// opposite edges, and a size split reads as a meaning split the UI does not
+/// have. Growing this is bounded on both sides: [kChromePad] must still exceed
+/// drop/rise + radius (so the button stays inside the touchable chrome box),
+/// and the radius must stay under the drop/rise itself minus the edge pill's
+/// half-thickness (so the glyph clears the pill it floats past).
+const double _kGlyphHandle = 100.0;
 
 /// True when [local] is within reach of one of the element's four corners —
 /// the resize zones. [size] is the PADDED chrome box; corners are axis-aligned
@@ -1922,7 +1931,7 @@ class _SelectionChrome extends StatelessWidget {
                     ),
                     _glyphHandle(
                       'delete',
-                      Icons.close,
+                      Icons.delete_outline,
                       const Color(0xFFEF4444),
                       pad + w / 2,
                       pad - rise,
@@ -1940,7 +1949,8 @@ class _SelectionChrome extends StatelessWidget {
   /// A round button with a glyph, centered at ([cx], [cy]) — the rotation
   /// handle below the element and the delete handle above it. Purely visual
   /// (the chrome is wrapped in IgnorePointer) — the interaction is recognized
-  /// by _SlotGestures' matching zone (_nearRotateZone / _nearDeleteZone).
+  /// by _SlotGestures' matching zone (_nearRotateZone / _nearDeleteZone), whose
+  /// radius is [_kCornerReach] for both, independent of the drawn size.
   Widget _glyphHandle(
     String key,
     IconData icon,
@@ -1948,7 +1958,7 @@ class _SelectionChrome extends StatelessWidget {
     double cx,
     double cy,
   ) {
-    final dot = 60.0 / scale;
+    final dot = _kGlyphHandle / scale;
     return Positioned(
       left: cx - dot / 2,
       top: cy - dot / 2,
@@ -1971,7 +1981,8 @@ class _SelectionChrome extends StatelessWidget {
             ),
           ],
         ),
-        child: Icon(icon, size: 40 / scale, color: color),
+        // Two thirds of the dot — the glyph grows with its button.
+        child: Icon(icon, size: dot * 2 / 3, color: color),
       ),
     );
   }
