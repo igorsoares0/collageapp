@@ -24,6 +24,10 @@ class TemplateSummary {
   final String aspectRatio;
   final String? category;
   final bool premium;
+  /// Whether the designer published this template to the app. Absent in
+  /// responses from a server predating the flag → treated as published, so an
+  /// older backend keeps showing everything instead of hiding the catalog.
+  final bool published;
   final String? thumbnailDataUrl;
 
   const TemplateSummary({
@@ -33,6 +37,7 @@ class TemplateSummary {
     required this.aspectRatio,
     required this.category,
     required this.premium,
+    this.published = true,
     required this.thumbnailDataUrl,
   });
 
@@ -44,6 +49,7 @@ class TemplateSummary {
         aspectRatio: json['aspectRatio'] as String,
         category: json['category'] as String?,
         premium: json['premium'] == true,
+        published: json['published'] != false,
         thumbnailDataUrl: json['thumbnailDataUrl'] as String?,
       );
 }
@@ -104,6 +110,7 @@ class TemplateApi {
     final list = jsonDecode(body) as List<dynamic>;
     return list
         .map((e) => TemplateSummary.fromJson(e as Map<String, dynamic>))
+        .where((s) => s.published)
         .where((s) => s.schemaVersion <= kSupportedSchemaVersion)
         .toList();
   }
