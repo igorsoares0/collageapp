@@ -174,6 +174,9 @@ void main() {
       });
       expect(frame.window, isNotNull);
       expect(frame.window!.w, 0.9);
+      // No premium key → free (old-server back-compat: an unmarked catalog is
+      // never accidentally locked).
+      expect(frame.premium, isFalse);
       final sticker = AssetRecord.fromJson({
         'id': 'a2',
         'type': 'sticker',
@@ -181,8 +184,10 @@ void main() {
         'dataUrl': 'data:image/png;base64,AAAA',
         'aspect': 1,
         'window': null,
+        'premium': true,
       });
       expect(sticker.window, isNull);
+      expect(sticker.premium, isTrue);
     });
 
     test('resolveFrame falls back to seeds, then the remote catalog', () {

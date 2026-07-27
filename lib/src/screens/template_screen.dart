@@ -10,6 +10,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../api/entitlements.dart';
 import '../api/gallery_saver.dart';
 import '../api/project_store.dart';
 import '../api/template_store.dart';
@@ -23,6 +24,7 @@ import '../rendering/export.dart';
 import '../rendering/snap.dart';
 import '../rendering/template_canvas.dart';
 import '../theme.dart';
+import 'paywall_screen.dart';
 import '../widgets/editor_toolbar.dart';
 import '../widgets/grid_style_bar.dart';
 import '../widgets/insert_sheets.dart';
@@ -57,6 +59,12 @@ class TemplateScreen extends StatefulWidget {
   /// the default runtime-fetching resolver.
   final FontResolver fontResolver;
 
+  /// The app's single entitlement seam (owned by `main()`), threaded through so
+  /// the asset picker can gate premium frames/stickers. Null in tests and the
+  /// draft/blank flow, where a fresh instance reports free — which is the safe
+  /// default (a real pro user always arrives with the initialized instance).
+  final EntitlementsService? entitlements;
+
   const TemplateScreen({
     super.key,
     this.id,
@@ -64,6 +72,7 @@ class TemplateScreen extends StatefulWidget {
     this.project,
     this.projects,
     this.fontResolver = googleFontsResolver,
+    this.entitlements,
   }) : assert(
          (id != null ? 1 : 0) +
                  (draft != null ? 1 : 0) +
@@ -92,6 +101,11 @@ class _TemplateScreenState extends State<TemplateScreen>
     with WidgetsBindingObserver {
   final _store = TemplateStore();
   final _picker = ImagePicker();
+  // Gates premium frames/stickers in the asset picker. A fresh fallback reports
+  // free (locked), which is safe: the real pro user always arrives with main()'s
+  // initialized instance threaded in from the gallery/preview/projects flows.
+  late final EntitlementsService _entitlements =
+      widget.entitlements ?? EntitlementsService();
   // ONE RepaintBoundary over the whole continuous canvas. The export rasters it
   // once and slices per slide (capturePngSlices), so the seams line up by
   // construction — this replaced a key per panel, where each slide was an
@@ -846,8 +860,19 @@ class _TemplateScreenState extends State<TemplateScreen>
   }
 
   Future<void> _insertAsset() async {
-    final asset = await showAssetPickerSheet(context, _catalog);
+    final isPro = _entitlements.isPro.value;
+    final asset = await showAssetPickerSheet(context, _catalog, isPro: isPro);
     if (asset == null || !mounted) return;
+    // A free user who picks a paid-only asset lands on the paywall instead of
+    // inserting it; the badge already told them it was locked.
+    if (asset.premium && !_entitlements.isPro.value) {
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => PaywallScreen(entitlements: _entitlements),
+        ),
+      );
+      return;
+    }
     if (asset.isFrame) {
       // A frame is not a layer of its own — it decorates a photo slot, so
       // inserting one creates a framed image slot and opens the gallery.

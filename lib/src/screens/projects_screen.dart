@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
+import '../api/entitlements.dart';
 import '../api/project_store.dart';
 import '../rendering/template_canvas.dart';
 import '../theme.dart';
@@ -35,10 +36,15 @@ class ProjectsList extends StatefulWidget {
   /// fake.
   final FontResolver fontResolver;
 
+  /// Threaded into the editor so the asset picker can gate premium assets;
+  /// null in tests/standalone (a fresh instance reports free).
+  final EntitlementsService? entitlements;
+
   const ProjectsList({
     super.key,
     this.store,
     this.fontResolver = googleFontsResolver,
+    this.entitlements,
   });
 
   @override
@@ -80,7 +86,11 @@ class _ProjectsListState extends State<ProjectsList> {
     }
     await Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => TemplateScreen(project: project, projects: _store),
+        builder: (_) => TemplateScreen(
+          project: project,
+          projects: _store,
+          entitlements: widget.entitlements,
+        ),
       ),
     );
     _reload();

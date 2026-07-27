@@ -152,6 +152,7 @@ class _TemplatePreviewScreenState extends State<TemplatePreviewScreen> {
           id: widget.summary.id,
           projects: widget.projects,
           fontResolver: widget.fontResolver,
+          entitlements: widget.entitlements,
         ),
       ),
     );

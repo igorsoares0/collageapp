@@ -34,6 +34,11 @@ class AssetRecord {
   final double aspect;
   final FrameWindow? window;
 
+  /// Whether the app gates this asset behind the `pro` entitlement. The web
+  /// editor marks it; the picker enforces it. Absent (old server) → free, so a
+  /// pre-premium backend never locks the whole catalog.
+  final bool premium;
+
   AssetRecord({
     required this.id,
     required this.type,
@@ -41,6 +46,7 @@ class AssetRecord {
     required this.dataUrl,
     required this.aspect,
     required this.window,
+    this.premium = false,
   });
 
   factory AssetRecord.fromJson(Map<String, dynamic> j) => AssetRecord(
@@ -52,6 +58,7 @@ class AssetRecord {
     window: j['window'] == null
         ? null
         : FrameWindow.fromJson(j['window'] as Map<String, dynamic>),
+    premium: j['premium'] == true,
   );
 
   ImageProvider? _image;

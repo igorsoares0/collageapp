@@ -162,6 +162,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
           ),
           projects: _projects,
           fontResolver: widget.fontResolver,
+          entitlements: _entitlements,
         ),
       ),
     );
@@ -175,8 +176,11 @@ class _GalleryScreenState extends State<GalleryScreen> {
     final (title, body) = switch (_tab) {
       1 => (
         'My projects',
-        ProjectsList(store: _projects, fontResolver: widget.fontResolver)
-            as Widget,
+        ProjectsList(
+          store: _projects,
+          fontResolver: widget.fontResolver,
+          entitlements: _entitlements,
+        ) as Widget,
       ),
       _ => ('Collage Studio', _buildTemplatesTab()),
     };

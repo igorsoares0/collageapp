@@ -363,12 +363,17 @@ class AssetChoice {
   final bool isFrame;
   final ImageProvider image;
 
+  /// Gated to paid plans (from the asset's `premium` flag). Bundled seeds are
+  /// always free. The caller opens the paywall when a free user picks one.
+  final bool premium;
+
   const AssetChoice({
     required this.id,
     required this.name,
     required this.aspect,
     required this.isFrame,
     required this.image,
+    this.premium = false,
   });
 }
 
@@ -377,8 +382,9 @@ class AssetChoice {
 /// or null.
 Future<AssetChoice?> showAssetPickerSheet(
   BuildContext context,
-  List<AssetRecord> catalog,
-) {
+  List<AssetRecord> catalog, {
+  bool isPro = false,
+}) {
   final stickers = [
     for (final a in catalog)
       if (a.type == 'sticker')
@@ -388,6 +394,7 @@ Future<AssetChoice?> showAssetPickerSheet(
           aspect: a.aspect,
           isFrame: false,
           image: a.image,
+          premium: a.premium,
         ),
   ];
   final frames = [
@@ -407,6 +414,7 @@ Future<AssetChoice?> showAssetPickerSheet(
           aspect: a.aspect,
           isFrame: true,
           image: a.image,
+          premium: a.premium,
         ),
   ];
   return showModalBottomSheet<AssetChoice>(
@@ -434,12 +442,14 @@ Future<AssetChoice?> showAssetPickerSheet(
                       _AssetSection(
                         title: 'Stickers',
                         assets: stickers,
+                        isPro: isPro,
                         onPick: (a) => Navigator.pop(sheetContext, a),
                       ),
                     if (frames.isNotEmpty)
                       _AssetSection(
                         title: 'Frames',
                         assets: frames,
+                        isPro: isPro,
                         onPick: (a) => Navigator.pop(sheetContext, a),
                       ),
                   ],
@@ -450,14 +460,43 @@ Future<AssetChoice?> showAssetPickerSheet(
   );
 }
 
+/// The gold "PRO" pill overlaid on a paid-only asset tile. Gold is the app's
+/// reserved premium signal (see theme.dart); a word reads clearer than a
+/// padlock at this size.
+class _LockBadge extends StatelessWidget {
+  const _LockBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+      decoration: BoxDecoration(
+        color: AppColors.gold,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: const Text(
+        'PRO',
+        style: TextStyle(
+          color: Colors.black,
+          fontSize: 8,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.5,
+        ),
+      ),
+    );
+  }
+}
+
 class _AssetSection extends StatelessWidget {
   final String title;
   final List<AssetChoice> assets;
+  final bool isPro;
   final void Function(AssetChoice) onPick;
 
   const _AssetSection({
     required this.title,
     required this.assets,
+    required this.isPro,
     required this.onPick,
   });
 
@@ -489,7 +528,23 @@ class _AssetSection extends StatelessWidget {
                     SizedBox(
                       width: 72,
                       height: 72,
-                      child: Image(image: asset.image, fit: BoxFit.contain),
+                      child: Stack(
+                        children: [
+                          Positioned.fill(
+                            child: Image(
+                              image: asset.image,
+                              fit: BoxFit.contain,
+                            ),
+                          ),
+                          // Locked for free users; a purchase (isPro) removes it.
+                          if (asset.premium && !isPro)
+                            const Positioned(
+                              right: 2,
+                              top: 2,
+                              child: _LockBadge(),
+                            ),
+                        ],
+                      ),
                     ),
                     const SizedBox(height: 4),
                     SizedBox(
