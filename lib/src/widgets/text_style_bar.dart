@@ -35,6 +35,28 @@ const List<String> kFontChoices = [
   'Lobster',
 ];
 
+/// Paid-plan-only families (~70% of the catalog). Mirrors PREMIUM_FONTS in the
+/// web editor's lib/fonts.ts — a fixed product decision, not per-template. The
+/// bar badges these; template_screen enforces the gate (a free user who picks
+/// one lands on the paywall). A template already using a premium font still
+/// renders for everyone — only picking a new one is gated.
+const Set<String> kPremiumFonts = {
+  'Raleway',
+  'Work Sans',
+  'Oswald',
+  'Bebas Neue',
+  'Anton',
+  'Archivo Black',
+  'Playfair Display',
+  'Cormorant Garamond',
+  'DM Serif Display',
+  'Abril Fatface',
+  'Dancing Script',
+  'Caveat',
+  'Pacifico',
+  'Lobster',
+};
+
 /// Curated text-color palette: neutrals first, then vivid accents.
 const List<Color> kColorChoices = [
   Color(0xFFFFFFFF),
@@ -66,6 +88,9 @@ class TextStyleBar extends StatelessWidget {
   final String currentAlignment;
   final bool isBold;
   final double scale;
+  /// Whether the user owns pro — drives the "PRO" badge on paid fonts. The
+  /// actual gate lives in [onFont]'s handler (template_screen).
+  final bool isPro;
   final ValueChanged<String> onFont;
   final ValueChanged<Color> onColor;
   final ValueChanged<String> onAlignment;
@@ -82,6 +107,7 @@ class TextStyleBar extends StatelessWidget {
     required this.currentAlignment,
     required this.isBold,
     required this.scale,
+    required this.isPro,
     required this.onFont,
     required this.onColor,
     required this.onAlignment,
@@ -188,6 +214,7 @@ class TextStyleBar extends StatelessWidget {
                     _FontChip(
                       font: font,
                       selected: font == currentFont,
+                      locked: kPremiumFonts.contains(font) && !isPro,
                       onTap: () => onFont(font),
                     ),
                 ],
@@ -308,11 +335,13 @@ class BackgroundColorBar extends StatelessWidget {
 class _FontChip extends StatelessWidget {
   final String font;
   final bool selected;
+  final bool locked;
   final VoidCallback onTap;
 
   const _FontChip({
     required this.font,
     required this.selected,
+    required this.locked,
     required this.onTap,
   });
 
@@ -331,17 +360,45 @@ class _FontChip extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(8),
-        child: Container(
-          alignment: Alignment.center,
-          padding: const EdgeInsets.symmetric(horizontal: 14),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: selected ? _accent : AppColors.outline,
-              width: selected ? 2 : 1,
+        // The badge overflows the chip's top-right corner, so it can't clip.
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Container(
+              alignment: Alignment.center,
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: selected ? _accent : AppColors.outline,
+                  width: selected ? 2 : 1,
+                ),
+              ),
+              child: Text(font, style: label, maxLines: 1),
             ),
-          ),
-          child: Text(font, style: label, maxLines: 1),
+            if (locked)
+              Positioned(
+                right: -4,
+                top: -4,
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: AppColors.gold,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: const Text(
+                    'PRO',
+                    style: TextStyle(
+                      color: Colors.black,
+                      fontSize: 8,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ),
+              ),
+          ],
         ),
       ),
     );

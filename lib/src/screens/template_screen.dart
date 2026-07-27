@@ -2170,7 +2170,21 @@ class _TemplateScreenState extends State<TemplateScreen>
         currentAlignment:
             _content.alignmentFor(textLayer.slotId) ?? textLayer.alignment,
         isBold: weight >= 700,
-        onFont: (font) => _edit(_content.withFont(textLayer.slotId, font)),
+        isPro: _entitlements.isPro.value,
+        onFont: (font) {
+          // A free user picking a paid font lands on the paywall instead of
+          // applying it; the "PRO" badge already flagged it. Fonts already in
+          // the template render for everyone — only picking a new one is gated.
+          if (kPremiumFonts.contains(font) && !_entitlements.isPro.value) {
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => PaywallScreen(entitlements: _entitlements),
+              ),
+            );
+            return;
+          }
+          _edit(_content.withFont(textLayer.slotId, font));
+        },
         onColor: (color) => _edit(
           _content.withColor(textLayer.slotId, color),
           coalesce: 'color:${textLayer.slotId}',
