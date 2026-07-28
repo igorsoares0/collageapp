@@ -64,14 +64,31 @@ Feito:
 > *subscription purchases* falhava — o que isola o problema no app não estar
 > publicado, e não nas credenciais.
 
-Falta terminar:
+- [x] Notificações em tempo real (Pub/Sub) conectadas nos dois sentidos
+- [x] Products, Entitlement `pro` e Offering `default` configurados
+- [x] **Paywall listando os dois planos no device**
 
-1. **Products** → importar `collage_pro:monthly` e `collage_pro:annual`
-2. **Entitlements** → id **`pro`** → anexar os dois
-3. **Offerings** → `default` → **Make current** → packages **Monthly** e **Annual**
-4. Play Console → *Configurações → Teste de licença* → e-mails dos testers
-5. Testar ponta a ponta: paywall com os dois planos em BRL → compra → badge Pro
-   → reinstalar → **Restore purchases** devolve o Pro
+> **Segunda armadilha da tarde — offering herdada da Test Store.** O projeto no
+> RevenueCat existia desde 14/07 com uma offering `default` já marcada como
+> *current* e com os packages `$rc_monthly`/`$rc_annual` corretos — mas os
+> produtos dentro deles eram os da **Test Store** (`pro_monthly`, `pro_annual`).
+> Ao adicionar o app Google Play, a linha dele em cada package fica em **"No
+> product"**, e o dashboard não sinaliza isso em lugar nenhum: Products aparece
+> "Published", Entitlements aparece "1 Entitlement", a offering aparece
+> "2 packages". Só abrindo o package em modo de edição é que o buraco aparece.
+>
+> No device o efeito é a offering chegar vazia e o paywall cair em *"Plans are
+> unavailable right now"* — a mesma tela que aparece quando não há rede.
+>
+> **Onde olhar:** *Offerings → default → Packages → Edit* → a linha do app
+> Android de cada package. Um package carrega um produto por loja; manter o da
+> Test Store ao lado do Play é o correto, o SDK escolhe conforme onde roda.
+
+- [x] **Compra de teste concluída com sucesso no device** — monetização
+      funcionando ponta a ponta
+
+**Esta seção está encerrada.** Não há mais nada a configurar em RevenueCat,
+Google Cloud ou na parte de monetização do Play Console.
 
 > A configuração acima é toda **server-side**: quando ficar pronta, o app já
 > instalado passa a mostrar os planos sozinho. Não precisa de novo AAB.
