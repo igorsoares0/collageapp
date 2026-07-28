@@ -6,9 +6,25 @@ import 'package:purchases_flutter/purchases_flutter.dart';
 /// once at startup; everything else just watches [isPro]. Widget tests
 /// subclass it and never touch the SDK (platform channels don't exist there).
 class EntitlementsService {
-  /// RevenueCat Test Store key (project "Collage Studio"). Swap for the Play
-  /// Store app key once the app exists in the Play Console.
-  static const _apiKey = 'test_VzAaDRqPYszBSPhvEiphvgZHmkz';
+  /// RevenueCat public SDK key, picked at build time like [kApiBase]:
+  ///   flutter build --dart-define-from-file=env/prod.json
+  ///
+  /// This key is *public* by design — it ships inside every APK and is
+  /// extractable from one, which is why it lives in a committed env file
+  /// rather than a secret. The private half is the service-account JSON that
+  /// stays in the RevenueCat dashboard.
+  ///
+  /// Three states, all deliberate:
+  ///   `goog_...` — the Play Store app key (env/prod.json)
+  ///   `test_...` — the Test Store key, and the default, so a bare
+  ///                `flutter run` behaves exactly as it always has
+  ///   empty      — monetization off: the SDK is never configured and every
+  ///                user stays free. env/prod.json ships this until the Play
+  ///                Console app exists (see docs/play-launch-checklist.md).
+  static const _apiKey = String.fromEnvironment(
+    'REVENUECAT_KEY',
+    defaultValue: 'test_VzAaDRqPYszBSPhvEiphvgZHmkz',
+  );
   static const _entitlementId = 'pro';
 
   /// Whether the user owns the `pro` entitlement. Cached by the SDK, so it
@@ -16,6 +32,14 @@ class EntitlementsService {
   final ValueNotifier<bool> isPro = ValueNotifier(false);
 
   Future<void> init() async {
+    // No key configured: the app runs as a free tier, the paywall shows its
+    // "plans unavailable" state and nothing crashes. This is the shape of the
+    // first closed-testing build, uploaded before the Play Console app has
+    // subscriptions — the 14-day clock starts on a build that opens.
+    if (_apiKey.isEmpty) {
+      debugPrint('RevenueCat disabled: no REVENUECAT_KEY in this build.');
+      return;
+    }
     // A Test Store key is rejected by the SDK in any non-debug build, and the
     // rejection comes from the native side — the catch below never sees it, so
     // the app dies at startup instead of degrading to free. That makes it

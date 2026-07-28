@@ -13,6 +13,24 @@ URL toda vez, use os arquivos de ambiente versionados em `env/`:
 > deploy de produção, que é protegido por Basic Auth apenas nas páginas do
 > editor e nas escritas.
 
+Os mesmos arquivos carregam mais duas variáveis:
+
+| Variável | `dev.json` | `prod.json` | Para quê |
+|---|---|---|---|
+| `SITE_BASE` | localhost | deploy Vercel | de onde saem `/privacy` e `/terms`, linkados no Settings |
+| `REVENUECAT_KEY` | chave `test_` | **vazia** | chave pública do RevenueCat |
+
+Sobre `REVENUECAT_KEY`: vazia significa **monetização desligada** — o SDK nunca
+é configurado, todo mundo fica no tier free e o paywall mostra "plans
+unavailable". É de propósito, é o formato do primeiro build de teste fechado.
+Quando o app existir no Play Console, cole a chave `goog_...` em `env/prod.json`
+(ver `docs/play-launch-checklist.md`).
+
+> ⚠️ Uma chave `test_` **crasha** qualquer build release — é a proteção do
+> RevenueCat contra publicar com chave de teste. Por isso ela mora só no
+> `dev.json`, e o default do código (usado por um `flutter run` sem `--dart-define`)
+> mantém esse comportamento de propósito.
+
 ---
 
 ## Produção (o normal)
