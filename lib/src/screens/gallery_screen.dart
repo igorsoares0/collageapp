@@ -236,17 +236,34 @@ class _GalleryScreenState extends State<GalleryScreen> {
           return const _SkeletonGrid();
         }
         if (snapshot.hasError) {
+          // The exception itself is developer material — a socket error or a
+          // status code tells the user nothing and reads as a broken app. It
+          // goes to the log; the screen offers the one thing that can help.
+          debugPrint('Template index failed: ${snapshot.error}');
           return Center(
             child: Padding(
               padding: const EdgeInsets.all(24),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  const Icon(
+                    Symbols.cloud_off_rounded,
+                    size: 40,
+                    color: AppColors.textSecondary,
+                  ),
+                  const SizedBox(height: 16),
                   Text(
-                    'Could not load templates.\n${snapshot.error}',
+                    "Couldn't load templates",
+                    style: Theme.of(context).textTheme.titleMedium,
                     textAlign: TextAlign.center,
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 6),
+                  const Text(
+                    'Check your connection and try again.',
+                    style: TextStyle(color: AppColors.textSecondary),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 16),
                   FilledButton(onPressed: _refresh, child: const Text('Retry')),
                 ],
               ),

@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../api/entitlements.dart';
+import '../legal.dart';
 import '../theme.dart';
 import 'paywall_screen.dart';
 
@@ -23,6 +25,21 @@ class SettingsScreen extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  /// Opens a legal page in the browser. A failure here is not worth an error
+  /// dialog — the user can still reach the same pages from the store listing.
+  Future<void> _open(BuildContext context, String url) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final ok = await launchUrl(
+      Uri.parse(url),
+      mode: LaunchMode.externalApplication,
+    );
+    if (!ok) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Could not open the page.')),
+      );
+    }
   }
 
   @override
@@ -79,6 +96,25 @@ class SettingsScreen extends StatelessWidget {
                       ),
                     ],
                   ),
+          ),
+          const SizedBox(height: 20),
+          const _SectionLabel('Legal'),
+          _SettingsCard(
+            children: [
+              ListTile(
+                leading: const Icon(Symbols.shield_rounded),
+                title: const Text('Privacy Policy'),
+                trailing: const Icon(Symbols.open_in_new_rounded, size: 18),
+                onTap: () => _open(context, kPrivacyPolicyUrl),
+              ),
+              const Divider(height: 1, indent: 56),
+              ListTile(
+                leading: const Icon(Symbols.description_rounded),
+                title: const Text('Terms of Service'),
+                trailing: const Icon(Symbols.open_in_new_rounded, size: 18),
+                onTap: () => _open(context, kTermsUrl),
+              ),
+            ],
           ),
           const SizedBox(height: 20),
           const _SectionLabel('About'),

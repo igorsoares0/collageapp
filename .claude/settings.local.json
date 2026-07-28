@@ -28,7 +28,12 @@
       "Bash(cmd.exe /c \"flutter test test/projects_screen_test.dart --concurrency=1\")",
       "Bash(git stash *)",
       "Bash(cmd.exe /c \"flutter analyze lib\\\\src\\\\theme.dart\")",
-      "WebFetch(domain:pub.dev)"
+      "WebFetch(domain:pub.dev)",
+      "Bash(cmd.exe /c \"flutter --version\")",
+      "Bash(python3 -c \"import PIL; print\\('PIL', PIL.__version__\\)\")",
+      "Read(//mnt/c/**)",
+      "Read(//mnt/c/Program Files/Android/Android Studio/jbr/bin/**)",
+      "Bash(git check-ignore *)"
     ]
   }
 }

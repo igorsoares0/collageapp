@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- AppColors.ink from lib/src/theme.dart — the launcher plate is the same
+         near-black the app opens into, so there is no flash of a foreign color. -->
+    <color name="ic_launcher_background">#0D0D0F</color>
+</resources>

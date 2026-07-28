@@ -1,3 +1,4 @@
 {
-  "API_BASE": "https://collageweb-iota-mu.vercel.app"
+  "API_BASE": "https://collageweb-iota-mu.vercel.app",
+  "SITE_BASE": "https://collageweb-iota-mu.vercel.app"
 }
