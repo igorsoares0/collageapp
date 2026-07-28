@@ -487,4 +487,273 @@ void main() {
       expect(content().stretchYFor('title'), 1.0);
     });
   });
+
+  group('small text (floored resize reach)', () {
+    // A single 40px line, 200 template px wide: the shorter side (40) used to
+    // cap the corner zones at 18 template px — SMALLER than the drawn 60px
+    // corner dot, so grabbing a visible handle silently moved the element.
+    // The floor (_kMinResizeReach) keeps the zones covering the dot.
+    final smallText = Template.fromJson({
+      'id': 't_small',
+      'version': 1,
+      'name': 'small text',
+      'aspectRatio': '1:1',
+      'canvas': {'width': 400, 'height': 400},
+      'layers': [
+        {
+          'id': 'txt1',
+          'type': 'text',
+          'slotId': 'title',
+          'x': 100,
+          'y': 180,
+          'width': 200,
+          'fontFamily': 'Roboto',
+          'fontSize': 40,
+          'fontWeight': 400,
+          'color': '#000000',
+          'alignment': 'left',
+        },
+      ],
+    });
+
+    // Legacy in-canvas chrome, like the text group above: enough for the
+    // zone math, which the overlay path shares. NOTE the in-canvas detector
+    // also wires a tap recognizer, so the scale recognizer accepts (and
+    // classifies its zone) only past touch slop — the first small moveBy in
+    // these tests eats that slop, like the harness tests above.
+    Future<SlotContent Function()> pumpSmall(
+      WidgetTester tester, {
+      Template? template,
+      String text = 'aaa',
+    }) async {
+      tester.view.physicalSize = const Size(540, 960);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      var content = SlotContent(texts: {'title': text});
+      await tester.pumpWidget(
+        MaterialApp(
+          debugShowCheckedModeBanner: false,
+          home: StatefulBuilder(
+            builder: (context, setState) => Center(
+              child: TemplateCanvas(
+                template: template ?? smallText,
+                fontResolver: testFontResolver,
+                content: content,
+                selectedSlotId: 'title',
+                onSlotTap: (_) {},
+                onSlotDrag: (id, d) => setState(() {
+                  content = content.withOffset(id, content.offsetFor(id) + d);
+                }),
+                onSlotScale: (id, s) =>
+                    setState(() => content = content.withScale(id, s)),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      return () => content;
+    }
+
+    testWidgets('a near-corner grab resizes instead of dragging', (
+      tester,
+    ) async {
+      final content = await pumpSmall(tester);
+
+      // Diagonally OFF the corner dot's center — a realistic finger miss.
+      // The scale recognizer accepts one slop-crossing move later, ~50 px
+      // from the corner: inside the floored zone, while the old 18-unit cap
+      // put it in the move region and the text slid away instead.
+      final corner = tester.getCenter(find.byKey(const ValueKey('handle_br')));
+      final gesture = await tester.startGesture(corner + const Offset(15, 15));
+      await gesture.moveBy(const Offset(20, 20)); // Crosses the touch slop.
+      await tester.pump();
+      await gesture.moveBy(const Offset(40, 40));
+      await tester.pump();
+      await gesture.moveBy(const Offset(40, 40));
+      await tester.pump();
+      await gesture.up();
+
+      expect(content().scaleFor('title'), greaterThan(1.0));
+      expect(content().offsetFor('title'), Offset.zero);
+    });
+
+    testWidgets('dragging the middle still moves it', (tester) async {
+      // A wide-short line — 320x40 as hugged by the glyphs: short enough
+      // (40) for the floor to apply, wide enough that its middle stays out
+      // of every corner zone. Only the ENDS resize; the middle still moves.
+      final wideText = Template.fromJson({
+        'id': 't_wide',
+        'version': 1,
+        'name': 'wide text',
+        'aspectRatio': '1:1',
+        'canvas': {'width': 400, 'height': 400},
+        'layers': [
+          {
+            'id': 'txt1',
+            'type': 'text',
+            'slotId': 'title',
+            'x': 20,
+            'y': 180,
+            'width': 360,
+            'fontFamily': 'Roboto',
+            'fontSize': 40,
+            'fontWeight': 400,
+            'color': '#000000',
+            'alignment': 'left',
+          },
+        ],
+      });
+      final content = await pumpSmall(
+        tester,
+        template: wideText,
+        text: 'aaaaaaaa',
+      );
+
+      final center = tester.getCenter(find.text('aaaaaaaa'));
+      final gesture = await tester.startGesture(center);
+      await gesture.moveBy(const Offset(15, 20));
+      await tester.pump();
+      await gesture.moveBy(const Offset(15, 20));
+      await tester.pump();
+      await gesture.up();
+
+      expect(content().scaleFor('title'), 1.0);
+      expect(content().offsetFor('title'), isNot(Offset.zero));
+    });
+
+    // The overlay path: _RingHitRegion now claims the widened zones, so the
+    // gestures and taps below never reach the canvas — they must work from
+    // the overlay itself.
+    Future<
+      ({
+        SlotContent Function() content,
+        int Function() canvasTaps,
+        int Function() overlayTaps,
+        List<String> Function() deleted,
+      })
+    >
+    pumpOverlay(WidgetTester tester) async {
+      tester.view.physicalSize = const Size(800, 600);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final link = LayerLink();
+      var content = const SlotContent(texts: {'title': 'aaa'});
+      var canvasTaps = 0;
+      var overlayTaps = 0;
+      final deleted = <String>[];
+      Size? box;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          debugShowCheckedModeBanner: false,
+          home: StatefulBuilder(
+            builder: (context, setState) {
+              void drag(String id, Offset d) => setState(() {
+                content = content.withOffset(id, content.offsetFor(id) + d);
+              });
+              void scale(String id, double s) => setState(() {
+                content = content.withScale(id, s);
+              });
+              return Stack(
+                children: [
+                  Center(
+                    child: SizedBox(
+                      width: 200,
+                      height: 200,
+                      child: PanelCanvas(
+                        panel: smallText.panels.first,
+                        canvasWidth: 400,
+                        canvasHeight: 400,
+                        content: content,
+                        fontResolver: testFontResolver,
+                        selectedSlotId: 'title',
+                        onSlotTap: (_) => setState(() => canvasTaps++),
+                        onSlotDrag: drag,
+                        onSlotScale: scale,
+                        selectionLink: link,
+                        onSelectionSize: (s) =>
+                            setState(() => box = ('title', s).$2),
+                      ),
+                    ),
+                  ),
+                  if (box != null)
+                    Positioned.fill(
+                      child: CanvasSelectionOverlay(
+                        link: link,
+                        size: box!,
+                        targetId: 'title',
+                        currentScale: content.scaleFor('title'),
+                        currentRotation: content.rotationFor('title'),
+                        templateRotation: 0,
+                        verticalEdges: false,
+                        onDrag: drag,
+                        onScaleChange: scale,
+                        onDelete: deleted.add,
+                        onTap: (_) => setState(() => overlayTaps++),
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      return (
+        content: () => content,
+        canvasTaps: () => canvasTaps,
+        overlayTaps: () => overlayTaps,
+        deleted: () => deleted,
+      );
+    }
+
+    testWidgets('overlay: near-corner grab resizes', (tester) async {
+      final h = await pumpOverlay(tester);
+
+      final corner = tester.getCenter(find.byKey(const ValueKey('handle_br')));
+      final gesture = await tester.startGesture(corner + const Offset(12, 12));
+      await gesture.moveBy(const Offset(30, 30));
+      await tester.pump();
+      await gesture.moveBy(const Offset(30, 30));
+      await tester.pump();
+      await gesture.up();
+
+      expect(h.content().scaleFor('title'), greaterThan(1.0));
+      expect(h.content().offsetFor('title'), Offset.zero);
+    });
+
+    testWidgets('overlay: a tap on the claimed body still reaches select/edit',
+        (tester) async {
+      final h = await pumpOverlay(tester);
+
+      // Inside the text body near its bottom-right corner: claimed by the
+      // widened corner zone, so the canvas' own tap-to-edit can't see it —
+      // the overlay must hand it back through onTap.
+      final corner = tester.getCenter(find.byKey(const ValueKey('handle_br')));
+      await tester.tapAt(corner + const Offset(-15, -5));
+      await tester.pump();
+
+      expect(h.overlayTaps(), 1);
+      expect(h.canvasTaps(), 0);
+      expect(h.content().offsetFor('title'), Offset.zero);
+      expect(h.deleted(), isEmpty);
+    });
+
+    testWidgets('overlay: the delete handle still deletes at its own center', (
+      tester,
+    ) async {
+      final h = await pumpOverlay(tester);
+
+      final del = tester.getCenter(find.byKey(const ValueKey('handle_delete')));
+      await tester.tapAt(del);
+      await tester.pump();
+
+      expect(h.deleted(), ['title']);
+      expect(h.overlayTaps(), 0);
+    });
+  });
 }

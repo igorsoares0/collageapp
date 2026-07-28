@@ -74,15 +74,29 @@ const double _kCornerReach = 72.0;
 /// move. Capped per element by [_resizeReach].
 const double _kResizeReach = 96.0;
 
+/// Floor of [_resizeReach]: the corner/edge zones never shrink below this,
+/// however small the element — it must cover the drawn corner dot (radius 30)
+/// plus a finger of slop, or grabbing a visible handle silently degrades into
+/// a move. Kept under the glyph handles' 100-unit drop/rise so the rotate and
+/// delete button CENTERS always stay outside every corner zone.
+const double _kMinResizeReach = 72.0;
+
 /// The effective resize-zone radius for an element: [_kResizeReach], but
-/// never more than 45% of the shorter side — so the four corner and four
-/// edge zones can never swallow the interior, and dragging the middle of a
-/// small element still MOVES it.
+/// never more than 45% of the shorter side — so on a roomy element the corner
+/// and edge zones don't crowd the interior, and dragging the middle still
+/// MOVES it — and never less than [_kMinResizeReach]. On a tiny element the
+/// floor wins and the zones may swallow the interior; that is the right
+/// trade: a grab on a drawn handle must resize, moving stays available by
+/// dragging anywhere else on the canvas ([SelectionGestureSurface]), and
+/// interior taps still select/edit (see [_SlotGestures.onInteriorTap]).
+/// Overlaps with the floating rotate/delete buttons are arbitrated by
+/// nearest center in _SlotGestures.
 double _resizeReach(Size size, double scale) {
   final pad = kChromePad / scale;
   final w = size.width - 2 * pad;
   final h = size.height - 2 * pad;
-  return math.min(_kResizeReach / scale, 0.45 * math.min(w, h));
+  final capped = math.min(_kResizeReach / scale, 0.45 * math.min(w, h));
+  return math.max(capped, _kMinResizeReach / scale);
 }
 
 /// How far below the element's bottom edge the rotation handle floats (pre-
@@ -105,12 +119,14 @@ const double _kDeleteHandleRise = 100.0;
 /// half-thickness (so the glyph clears the pill it floats past).
 const double _kGlyphHandle = 100.0;
 
-/// True when [local] is within reach of one of the element's four corners —
-/// the resize zones. [size] is the PADDED chrome box; corners are axis-aligned
-/// because both callers sit inside the rotation transforms, so [local] arrives
-/// already un-rotated. Shared by _SlotGestures (which zone a touch starts in)
-/// and _RingHitRegion (which touches the overlay claims at all).
-bool _nearCornerZone(Offset local, Size size, double scale) {
+/// Distance² from [local] to the nearest of the element's four corners, when
+/// [local] is inside a corner resize zone — null otherwise. [size] is the
+/// PADDED chrome box; corners are axis-aligned because every caller sits
+/// inside the rotation transforms, so [local] arrives already un-rotated.
+/// The distance is exposed (not just the bool) so _SlotGestures can arbitrate
+/// against the rotate/delete handles, whose zones can overlap the corners'
+/// on a narrow element now that the reach has a floor.
+double? _cornerZoneDistSq(Offset local, Size size, double scale) {
   final pad = kChromePad / scale;
   final reach = _resizeReach(size, scale);
   final w = size.width - 2 * pad;
@@ -121,8 +137,19 @@ bool _nearCornerZone(Offset local, Size size, double scale) {
     Offset(pad, pad + h),
     Offset(pad + w, pad + h),
   ];
-  return corners.any((c) => (local - c).distanceSquared <= reach * reach);
+  double best = double.infinity;
+  for (final c in corners) {
+    final d2 = (local - c).distanceSquared;
+    if (d2 < best) best = d2;
+  }
+  return best <= reach * reach ? best : null;
 }
+
+/// True when [local] is within reach of one of the element's four corners —
+/// the resize zones. Shared by _SlotGestures (which zone a touch starts in)
+/// and _RingHitRegion (which touches the overlay claims at all).
+bool _nearCornerZone(Offset local, Size size, double scale) =>
+    _cornerZoneDistSq(local, size, scale) != null;
 
 /// Distance² from [local] to the rotation handle's center, which floats
 /// below the element's bottom-center (axis-aligned, as with [_nearCornerZone]).
@@ -1412,6 +1439,14 @@ class _SlotGestures extends StatefulWidget {
   /// Tap on the delete handle above the selected element — deletes it. Only
   /// meaningful while [selected] (the handle only exists then).
   final void Function(String slotId)? onDelete;
+
+  /// Overlay mode only: a tap landing ON the element itself (inside the
+  /// chrome pad band). The overlay claims the corner/edge zones — which on a
+  /// small element can cover most of the body — so those taps never reach the
+  /// canvas' own tap-to-select/edit; this hands them back. Rides the same raw
+  /// Listener as delete taps, NOT a tap recognizer, so the gesture arena (and
+  /// the scale recognizer's focal point) stays untouched.
+  final void Function(String slotId)? onInteriorTap;
   final Widget child;
 
   const _SlotGestures({
@@ -1431,6 +1466,7 @@ class _SlotGestures extends StatefulWidget {
     required this.onRotateChange,
     this.onEdgeResize,
     required this.onDelete,
+    this.onInteriorTap,
     required this.child,
   });
 
@@ -1508,29 +1544,23 @@ class _SlotGesturesState extends State<_SlotGestures> {
     (widget.currentRotation + widget.templateRotation) * math.pi / 180,
   );
 
-  /// The resize zones — see [_nearCornerZone]. The gesture surface is inside
-  /// the rotations, so [local] arrives already un-rotated.
-  bool _nearCorner(Offset local, Size size) =>
-      _nearCornerZone(local, size, widget.chromeScale);
-
-  /// The rotation-handle zone — see [_nearRotateZone].
-  bool _nearRotationHandle(Offset local, Size size) =>
-      _nearRotateZone(local, size, widget.chromeScale);
-
-  // Delete-tap detection rides a raw Listener instead of a tap recognizer: a
-  // tap recognizer would join the gesture arena and delay the scale
-  // recognizer's accept until past touch slop, shifting onScaleStart's focal
-  // point off the corner/rotate zones and off the resize anchor distance
+  // Delete/interior-tap detection rides a raw Listener instead of a tap
+  // recognizer: a tap recognizer would join the gesture arena and delay the
+  // scale recognizer's accept until past touch slop, shifting onScaleStart's
+  // focal point off the corner/rotate zones and off the resize anchor distance
   // (which is exactly calibrated to fire at pointer-down when scale is the
   // sole member). The Listener sees the raw events without competing.
   int _pointersDown = 0;
-  int? _deletePointer;
-  Offset _deleteDownGlobal = Offset.zero;
+  int? _tapPointer;
+  bool _tapIsDelete = false;
+  Offset _tapDownGlobal = Offset.zero;
 
   /// Whether a touch at [local] lands on the delete handle's zone (only
   /// meaningful while selected — the handle only exists then). The top edge
-  /// pill sits _kDeleteHandleRise below the handle and their zones overlap:
-  /// the closer center wins, so a pill grab can't delete.
+  /// pill sits _kDeleteHandleRise below the handle, and a corner zone can
+  /// reach the handle's fringe on a narrow element: in both overlaps the
+  /// closer center wins (mirroring _onScaleStart, so a tap and a drag from
+  /// the same spot agree about which handle they belong to).
   bool _inDeleteZone(Offset local) {
     final size = context.size;
     if (!(widget.selected &&
@@ -1539,10 +1569,25 @@ class _SlotGesturesState extends State<_SlotGestures> {
         _nearDeleteZone(local, size, widget.chromeScale))) {
       return false;
     }
+    final d2 = _deleteHandleDistSq(local, size, widget.chromeScale);
+    final cornerD2 = _cornerZoneDistSq(local, size, widget.chromeScale);
+    if (cornerD2 != null && cornerD2 < d2) return false;
     final edgeHit = _edgeZoneHit(local, size);
-    return edgeHit == null ||
-        edgeHit.$1 != SlotEdge.top ||
-        _deleteHandleDistSq(local, size, widget.chromeScale) <= edgeHit.$2;
+    return edgeHit == null || edgeHit.$1 != SlotEdge.top || d2 <= edgeHit.$2;
+  }
+
+  /// Whether [local] lands on the element's own body — inside the chrome pad
+  /// band (see [_SlotGestures.onInteriorTap]).
+  bool _inInterior(Offset local) {
+    final size = context.size;
+    if (size == null) return false;
+    final pad = kChromePad / widget.chromeScale;
+    return Rect.fromLTWH(
+      pad,
+      pad,
+      size.width - 2 * pad,
+      size.height - 2 * pad,
+    ).contains(local);
   }
 
   /// The edge-pill zone a touch at [local] falls in, when edge resize is
@@ -1559,32 +1604,43 @@ class _SlotGesturesState extends State<_SlotGestures> {
 
   void _onPointerDown(PointerDownEvent e) {
     _pointersDown++;
-    if (_pointersDown == 1 && _inDeleteZone(e.localPosition)) {
-      _deletePointer = e.pointer;
-      _deleteDownGlobal = e.position;
-    } else {
-      // A second finger (or a touch elsewhere): not a delete tap.
-      _deletePointer = null;
+    // A second finger (or a touch on neither zone) is never a tap.
+    _tapPointer = null;
+    if (_pointersDown != 1) return;
+    if (_inDeleteZone(e.localPosition)) {
+      _tapPointer = e.pointer;
+      _tapIsDelete = true;
+      _tapDownGlobal = e.position;
+    } else if (widget.onInteriorTap != null &&
+        widget.selected &&
+        _inInterior(e.localPosition)) {
+      _tapPointer = e.pointer;
+      _tapIsDelete = false;
+      _tapDownGlobal = e.position;
     }
   }
 
   void _onPointerMove(PointerMoveEvent e) {
-    if (e.pointer == _deletePointer &&
-        (e.position - _deleteDownGlobal).distance > kTouchSlop) {
-      _deletePointer = null; // Moved: it's a drag, not a tap.
+    if (e.pointer == _tapPointer &&
+        (e.position - _tapDownGlobal).distance > kTouchSlop) {
+      _tapPointer = null; // Moved: it's a drag, not a tap.
     }
   }
 
   void _onPointerUp(PointerUpEvent e) {
     _pointersDown = math.max(0, _pointersDown - 1);
-    if (e.pointer != _deletePointer) return;
-    _deletePointer = null;
-    widget.onDelete!(widget.slotId);
+    if (e.pointer != _tapPointer) return;
+    _tapPointer = null;
+    if (_tapIsDelete) {
+      widget.onDelete!(widget.slotId);
+    } else {
+      widget.onInteriorTap!(widget.slotId);
+    }
   }
 
   void _onPointerCancel(PointerCancelEvent e) {
     _pointersDown = math.max(0, _pointersDown - 1);
-    if (e.pointer == _deletePointer) _deletePointer = null;
+    if (e.pointer == _tapPointer) _tapPointer = null;
   }
 
   /// Plain taps — but a tap on the delete zone belongs to the Listener above
@@ -1601,36 +1657,44 @@ class _SlotGesturesState extends State<_SlotGestures> {
     _baseRotation = widget.currentRotation;
     _startScale = widget.currentScale;
     _pointerCount = d.pointerCount;
-    final size = context.size;
-    _isResizing =
-        d.pointerCount == 1 &&
+    // Handle zones are one-finger only; a pinch never lands in one.
+    final size = d.pointerCount == 1 ? context.size : null;
+    final local = d.localFocalPoint;
+    // Every zone the touch falls in, with its center distance². The corner
+    // zones (floored at _kMinResizeReach) can overlap the floating rotate/
+    // delete buttons on a narrow element, and those buttons' zones overlap
+    // the bottom/top edge pills: in every overlap the closer center wins, so
+    // each visible handle stays honest however small the element gets.
+    final cornerD2 = size == null
+        ? null
+        : _cornerZoneDistSq(local, size, widget.chromeScale);
+    final rotateD2 =
+        size != null && _nearRotateZone(local, size, widget.chromeScale)
+        ? _rotateHandleDistSq(local, size, widget.chromeScale)
+        : null;
+    final deleteD2 =
         size != null &&
-        _nearCorner(d.localFocalPoint, size);
-    // Corners win outright; between an edge pill and the rotate/delete
-    // handles — whose zones overlap the bottom/top pills — the closer
-    // center wins, so every visible handle stays grabbable.
-    var edgeHit = (!_isResizing && d.pointerCount == 1 && size != null)
-        ? _edgeZoneHit(d.localFocalPoint, size)
+            widget.onDelete != null &&
+            _nearDeleteZone(local, size, widget.chromeScale)
+        ? _deleteHandleDistSq(local, size, widget.chromeScale)
+        : null;
+    _isResizing =
+        cornerD2 != null &&
+        (rotateD2 == null || cornerD2 < rotateD2) &&
+        (deleteD2 == null || cornerD2 < deleteD2);
+    var edgeHit = (!_isResizing && size != null)
+        ? _edgeZoneHit(local, size)
         : null;
     if (edgeHit != null &&
-        size != null &&
         edgeHit.$1 == SlotEdge.top &&
-        widget.onDelete != null &&
-        _nearDeleteZone(d.localFocalPoint, size, widget.chromeScale) &&
-        _deleteHandleDistSq(d.localFocalPoint, size, widget.chromeScale) <=
-            edgeHit.$2) {
+        deleteD2 != null &&
+        deleteD2 <= edgeHit.$2) {
       edgeHit = null;
     }
-    final nearRotate =
-        !_isResizing &&
-        d.pointerCount == 1 &&
-        size != null &&
-        _nearRotationHandle(d.localFocalPoint, size);
     _isRotating =
-        nearRotate &&
-        (edgeHit == null ||
-            _rotateHandleDistSq(d.localFocalPoint, size, widget.chromeScale) <=
-                edgeHit.$2);
+        !_isResizing &&
+        rotateD2 != null &&
+        (edgeHit == null || rotateD2 <= edgeHit.$2);
     _activeEdge = (!_isResizing && !_isRotating) ? edgeHit?.$1 : null;
     _gestureCenter = (_isResizing || _isRotating) ? _centerGlobal() : null;
     if (_isResizing) {
@@ -1810,13 +1874,15 @@ class _SlotGesturesState extends State<_SlotGestures> {
 
   @override
   Widget build(BuildContext context) {
-    // The Listener handles delete taps outside the gesture arena (see the
-    // fields above); it never competes with the recognizers below.
+    // The Listener handles delete and interior taps outside the gesture
+    // arena (see the fields above); it never competes with the recognizers
+    // below.
+    final listens = widget.onDelete != null || widget.onInteriorTap != null;
     return Listener(
-      onPointerDown: widget.onDelete == null ? null : _onPointerDown,
-      onPointerMove: widget.onDelete == null ? null : _onPointerMove,
-      onPointerUp: widget.onDelete == null ? null : _onPointerUp,
-      onPointerCancel: widget.onDelete == null ? null : _onPointerCancel,
+      onPointerDown: listens ? _onPointerDown : null,
+      onPointerMove: listens ? _onPointerMove : null,
+      onPointerUp: listens ? _onPointerUp : null,
+      onPointerCancel: listens ? _onPointerCancel : null,
       child: GestureDetector(
         // Opaque, not the default deferToChild: a text slot is mostly empty
         // space (glyphs only at the top) with IgnorePointer chrome, so
@@ -2898,6 +2964,13 @@ class CanvasSelectionOverlay extends StatelessWidget {
   /// Tap on the chrome's delete handle (the ✕ above the element).
   final void Function(String slotId)? onDelete;
 
+  /// Tap landing on the element's own body through the overlay. The overlay
+  /// claims the corner/edge zones — which on a small element can cover most
+  /// of the body — so the canvas' tap-to-select/edit never sees those taps;
+  /// wire this to the same handler to keep them working (text: second tap
+  /// starts inline editing).
+  final void Function(String slotId)? onTap;
+
   const CanvasSelectionOverlay({
     super.key,
     required this.link,
@@ -2916,6 +2989,7 @@ class CanvasSelectionOverlay extends StatelessWidget {
     this.onRotateChange,
     this.onEdgeResize,
     this.onDelete,
+    this.onTap,
   });
 
   @override
@@ -2948,15 +3022,19 @@ class CanvasSelectionOverlay extends StatelessWidget {
             baseSize: baseSize,
             verticalEdges: verticalEdges,
             selected: true,
-            // Plain ring taps are no-ops (the element is already selected);
-            // only the delete zone means anything, and interior taps never
-            // reach here — _RingHitRegion lets them through to the canvas.
+            // Plain ring taps are no-ops (the element is already selected):
+            // onTap stays null so no tap recognizer joins the arena. Taps
+            // that mean something ride the raw Listener instead — the delete
+            // zone, and taps on the element's body in the claimed corner/
+            // edge zones (onInteriorTap), which _RingHitRegion stops from
+            // ever reaching the canvas' own tap-to-select/edit.
             onTap: null,
             onDrag: onDrag,
             onScaleChange: onScaleChange,
             onRotateChange: onRotateChange,
             onEdgeResize: onEdgeResize,
             onDelete: onDelete,
+            onInteriorTap: onTap,
             child: SizedBox(
               width: size.width,
               height: size.height,

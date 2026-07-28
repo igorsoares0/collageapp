@@ -2037,6 +2037,11 @@ class _TemplateScreenState extends State<TemplateScreen>
                             onRotateChange: _rotateSelected,
                             onEdgeResize: _edgeResizeSelected,
                             onDelete: (id) => _deleteSelected(id),
+                            // Taps on the element's body that the overlay's
+                            // widened corner/edge zones claim (small text:
+                            // most of it) — same select/edit path as a tap
+                            // that reaches the canvas.
+                            onTap: _handleSlotTap,
                           ),
                         ),
                       ],

@@ -34,7 +34,8 @@
       "Read(//mnt/c/**)",
       "Read(//mnt/c/Program Files/Android/Android Studio/jbr/bin/**)",
       "Bash(git check-ignore *)",
-      "Bash(cmd.exe /c \"C:\\\\Users\\\\igors\\\\AppData\\\\Local\\\\Android\\\\sdk\\\\platform-tools\\\\adb.exe devices\")"
+      "Bash(cmd.exe /c \"C:\\\\Users\\\\igors\\\\AppData\\\\Local\\\\Android\\\\sdk\\\\platform-tools\\\\adb.exe devices\")",
+      "Bash(cmd.exe /c \"flutter test test\\\\selection_overlay_test.dart --concurrency=1 --plain-name \\\\\"a near-corner grab resizes instead of dragging\\\\\"\")"
     ]
   }
 }
