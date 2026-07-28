@@ -69,35 +69,29 @@ const double kChromePad = 156.0;
 /// neighboring elements.
 const double _kCornerReach = 72.0;
 
-/// Base radius of the corner/edge RESIZE touch zones — more generous than the
-/// glyph buttons because a missed grab silently degrades into an element
-/// move. Capped per element by [_resizeReach].
+/// Radius of the corner/edge RESIZE touch zones (pre-scale template px /
+/// scale) — more generous than the glyph buttons because a missed grab
+/// silently degrades into an element move. UNIFORM across every element: it
+/// used to shrink with the short side (45% of it), which on a small text made
+/// the zone smaller than the drawn corner dot, so grabbing a visible handle
+/// moved the element instead of resizing it.
+///
+/// Bounded above by two independent limits. [kChromePad] must exceed it, or
+/// the zone's outer half falls outside the touchable chrome box. And it must
+/// stay under the glyph handles' 100-unit drop/rise: the distance from any
+/// corner to a glyph center is √((w/2)² + 100²) ≥ 100, so below 100 the
+/// rotate/delete centers can never land inside a corner zone — they stay
+/// grabbable by construction, not merely by the nearest-center arbitration
+/// in _SlotGestures.
 const double _kResizeReach = 96.0;
 
-/// Floor of [_resizeReach]: the corner/edge zones never shrink below this,
-/// however small the element — it must cover the drawn corner dot (radius 30)
-/// plus a finger of slop, or grabbing a visible handle silently degrades into
-/// a move. Kept under the glyph handles' 100-unit drop/rise so the rotate and
-/// delete button CENTERS always stay outside every corner zone.
-const double _kMinResizeReach = 72.0;
-
-/// The effective resize-zone radius for an element: [_kResizeReach], but
-/// never more than 45% of the shorter side — so on a roomy element the corner
-/// and edge zones don't crowd the interior, and dragging the middle still
-/// MOVES it — and never less than [_kMinResizeReach]. On a tiny element the
-/// floor wins and the zones may swallow the interior; that is the right
-/// trade: a grab on a drawn handle must resize, moving stays available by
-/// dragging anywhere else on the canvas ([SelectionGestureSurface]), and
+/// The resize-zone radius in local units. Uniform — see [_kResizeReach]. On
+/// an element under ~136 template px in BOTH axes the four zones do meet in
+/// the middle and swallow the interior; that is the right trade, because a
+/// grab on a drawn handle must resize, while moving stays available by
+/// dragging anywhere else on the canvas ([SelectionGestureSurface]) and
 /// interior taps still select/edit (see [_SlotGestures.onInteriorTap]).
-/// Overlaps with the floating rotate/delete buttons are arbitrated by
-/// nearest center in _SlotGestures.
-double _resizeReach(Size size, double scale) {
-  final pad = kChromePad / scale;
-  final w = size.width - 2 * pad;
-  final h = size.height - 2 * pad;
-  final capped = math.min(_kResizeReach / scale, 0.45 * math.min(w, h));
-  return math.max(capped, _kMinResizeReach / scale);
-}
+double _resizeReach(double scale) => _kResizeReach / scale;
 
 /// How far below the element's bottom edge the rotation handle floats (pre-
 /// scale template px / scale). Far enough that the glyph clears the bottom
@@ -119,16 +113,24 @@ const double _kDeleteHandleRise = 100.0;
 /// half-thickness (so the glyph clears the pill it floats past).
 const double _kGlyphHandle = 100.0;
 
+/// Diameter of the four drawn corner dots (pre-scale template px / scale).
+/// Sized against the touch zone it advertises, not against the frame: at
+/// [_kResizeReach] the real target is ~57 screen px on a phone, so a dot much
+/// smaller than this reads as a precision the gesture doesn't demand and
+/// invites careful (missable) aiming. Feeds [_edgePillsFit] — grow it and the
+/// side pills correctly disappear on slightly larger elements.
+const double _kCornerDot = 80.0;
+
 /// Distance² from [local] to the nearest of the element's four corners, when
 /// [local] is inside a corner resize zone — null otherwise. [size] is the
 /// PADDED chrome box; corners are axis-aligned because every caller sits
 /// inside the rotation transforms, so [local] arrives already un-rotated.
 /// The distance is exposed (not just the bool) so _SlotGestures can arbitrate
-/// against the rotate/delete handles, whose zones can overlap the corners'
-/// on a narrow element now that the reach has a floor.
+/// against the rotate/delete handles, whose zones overlap the corners' on a
+/// narrow element (the glyph CENTERS never do — see [_kResizeReach]).
 double? _cornerZoneDistSq(Offset local, Size size, double scale) {
   final pad = kChromePad / scale;
-  final reach = _resizeReach(size, scale);
+  final reach = _resizeReach(scale);
   final w = size.width - 2 * pad;
   final h = size.height - 2 * pad;
   final corners = [
@@ -196,11 +198,15 @@ const double _kEdgePillLength = 112.0;
 const double _kEdgePillThickness = 34.0;
 
 /// Whether a side is long enough to host its edge pill without colliding with
-/// the corner dots: pill 112 + corner dot 60 is the collision-free minimum
-/// (172), plus 12 of breathing room per side, all /scale. Shared by the
+/// the corner dots: the pill spans its edge's middle [_kEdgePillLength] and
+/// each corner dot eats [_kCornerDot]/2 from either end, so their sum is the
+/// collision-free minimum — plus 12 of breathing room per side, all /scale.
+/// Derived from the two constants rather than hardcoded: it is the coupling
+/// that decides whether a drawn pill overlaps a drawn dot. Shared by the
 /// chrome (draw) and the hit zone (grab), so a visible pill is always
 /// grabbable and an absent one never steals the touch.
-bool _edgePillsFit(double sideLen, double scale) => sideLen >= 196.0 / scale;
+bool _edgePillsFit(double sideLen, double scale) =>
+    sideLen >= (_kEdgePillLength + _kCornerDot + 24.0) / scale;
 
 /// The nearest edge-pill zone within reach of [local], with its center
 /// distance² (for arbitration against the rotate/delete handles, whose zones
@@ -215,7 +221,7 @@ bool _edgePillsFit(double sideLen, double scale) => sideLen >= 196.0 / scale;
   bool vertical = true,
 }) {
   final pad = kChromePad / scale;
-  final reach = _resizeReach(size, scale);
+  final reach = _resizeReach(scale);
   final half = _kEdgePillLength / 2 / scale;
   final w = size.width - 2 * pad;
   final h = size.height - 2 * pad;
@@ -2090,7 +2096,7 @@ class _SelectionChrome extends StatelessWidget {
 
   /// One round corner handle centered at ([cx], [cy]) in the padded space.
   Widget _corner(String key, double cx, double cy) {
-    final dot = 60.0 / scale;
+    final dot = _kCornerDot / scale;
     return Positioned(
       left: cx - dot / 2,
       top: cy - dot / 2,

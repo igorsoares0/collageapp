@@ -257,19 +257,45 @@ void main() {
     expect(h.content().offsetFor('slot_1'), Offset.zero);
   });
 
-  // Edge pills: single-axis stretch anchored on the opposite edge. Element
-  // edges paint at screen: left (425,300), right (525,300), top (475,250),
-  // bottom (475,350). The factor tracks the finger's distance to the fixed
-  // opposite edge: start 100 screen px, so +50 along the axis → 1.5.
+  // Edge pills: single-axis stretch anchored on the opposite edge.
+  //
+  // These need their OWN fixture. A pill only exists on a side long enough to
+  // host it without colliding with the corner dots (_edgePillsFit) — 216
+  // template px — and the shared 200x200 element sits just under that. So
+  // this group uses a 240x240 one at the same origin: only the far edges
+  // move. It paints at screen (425,250)-(545,370), center (485,310), so the
+  // edge midpoints are left (425,310), right (545,310), top (485,250),
+  // bottom (485,370). The factor tracks the finger's distance to the fixed
+  // opposite edge: start 120 screen px, so +60 along the axis → 1.5. Growth
+  // in template px is 240 × 0.5 = 120.
+  final pillTemplate = Template.fromJson({
+    'id': 't_pills',
+    'version': 1,
+    'name': 'pill test',
+    'aspectRatio': '1:1',
+    'canvas': {'width': 400, 'height': 400},
+    'layers': [
+      {
+        'id': 'img1',
+        'type': 'image',
+        'slotId': 'slot_1',
+        'x': 250,
+        'y': 100,
+        'width': 240,
+        'height': 240,
+      },
+    ],
+  });
+
   testWidgets('right pill stretches width only, left edge stays fixed', (
     tester,
   ) async {
-    final h = await pumpHarness(tester);
+    final h = await pumpHarness(tester, withTemplate: pillTemplate);
 
-    final gesture = await tester.startGesture(const Offset(525, 300));
-    await gesture.moveBy(const Offset(25, 0));
+    final gesture = await tester.startGesture(const Offset(545, 310));
+    await gesture.moveBy(const Offset(30, 0));
     await tester.pump();
-    await gesture.moveBy(const Offset(25, 0));
+    await gesture.moveBy(const Offset(30, 0));
     await tester.pump();
     await gesture.up();
 
@@ -285,32 +311,32 @@ void main() {
   testWidgets('left pill stretches width only, right edge stays fixed', (
     tester,
   ) async {
-    final h = await pumpHarness(tester);
+    final h = await pumpHarness(tester, withTemplate: pillTemplate);
 
-    final gesture = await tester.startGesture(const Offset(425, 300));
-    await gesture.moveBy(const Offset(-25, 0));
+    final gesture = await tester.startGesture(const Offset(425, 310));
+    await gesture.moveBy(const Offset(-30, 0));
     await tester.pump();
-    await gesture.moveBy(const Offset(-25, 0));
+    await gesture.moveBy(const Offset(-30, 0));
     await tester.pump();
     await gesture.up();
 
     // Same factor as the right-pill case, but the layout box grows to the
-    // RIGHT, so the offset shifts left by the full growth (100 template px)
+    // RIGHT, so the offset shifts left by the full growth (120 template px)
     // to pin the right edge.
     expect(h.content().stretchXFor('slot_1'), closeTo(1.5, 0.05));
-    expect(h.content().offsetFor('slot_1').dx, closeTo(-100, 5));
+    expect(h.content().offsetFor('slot_1').dx, closeTo(-120, 5));
     expect(h.content().offsetFor('slot_1').dy, closeTo(0, 1));
   });
 
   testWidgets('bottom pill stretches height only, top edge stays fixed', (
     tester,
   ) async {
-    final h = await pumpHarness(tester);
+    final h = await pumpHarness(tester, withTemplate: pillTemplate);
 
-    final gesture = await tester.startGesture(const Offset(475, 350));
-    await gesture.moveBy(const Offset(0, 25));
+    final gesture = await tester.startGesture(const Offset(485, 370));
+    await gesture.moveBy(const Offset(0, 30));
     await tester.pump();
-    await gesture.moveBy(const Offset(0, 25));
+    await gesture.moveBy(const Offset(0, 30));
     await tester.pump();
     await gesture.up();
 
@@ -322,20 +348,20 @@ void main() {
 
   testWidgets('top pill stretches height, bottom edge stays fixed — and '
       'wins over the delete handle at its own center', (tester) async {
-    final h = await pumpHarness(tester);
+    final h = await pumpHarness(tester, withTemplate: pillTemplate);
 
-    final gesture = await tester.startGesture(const Offset(475, 250));
-    await gesture.moveBy(const Offset(0, -25));
+    final gesture = await tester.startGesture(const Offset(485, 250));
+    await gesture.moveBy(const Offset(0, -30));
     await tester.pump();
-    await gesture.moveBy(const Offset(0, -25));
+    await gesture.moveBy(const Offset(0, -30));
     await tester.pump();
     await gesture.up();
 
     expect(h.deleted(), isEmpty);
     expect(h.content().stretchYFor('slot_1'), closeTo(1.5, 0.05));
     // The layout box grows DOWNWARD, so the offset shifts up by the full
-    // growth (100 template px) to pin the bottom edge.
-    expect(h.content().offsetFor('slot_1').dy, closeTo(-100, 5));
+    // growth (120 template px) to pin the bottom edge.
+    expect(h.content().offsetFor('slot_1').dy, closeTo(-120, 5));
     expect(h.content().offsetFor('slot_1').dx, closeTo(0, 1));
   });
 
@@ -344,6 +370,7 @@ void main() {
   ) async {
     final h = await pumpHarness(
       tester,
+      withTemplate: pillTemplate,
       initialContent: const SlotContent(rotations: {'slot_1': 30}),
     );
 
@@ -373,18 +400,23 @@ void main() {
   testWidgets('the rotation handle still wins over the bottom pill', (
     tester,
   ) async {
-    final h = await pumpHarness(tester);
+    // Needs the pill fixture: on the shared 200x200 element there is no
+    // bottom pill to lose, so the arbitration would go untested.
+    final h = await pumpHarness(tester, withTemplate: pillTemplate);
 
-    // (475,384) is the rotation handle's center — 34 screen px below the
-    // bottom pill, inside BOTH zones; the closer center (rotate) wins.
-    final gesture = await tester.startGesture(const Offset(475, 384));
-    await gesture.moveBy(const Offset(36, -42));
+    // NOT the handle's own center: at _kRotateHandleDrop (100) beyond a
+    // reach of _kResizeReach (96), the pill zone can no longer reach it, so
+    // that point would prove nothing. (485,400) is 60 template px below the
+    // bottom edge — inside the pill's zone (60 < 96) AND the handle's
+    // (40 < _kCornerReach 72). The closer center, the handle's, must win.
+    final gesture = await tester.startGesture(const Offset(485, 400));
+    await gesture.moveBy(const Offset(45, -45));
     await tester.pump();
-    await gesture.moveBy(const Offset(36, -42));
+    await gesture.moveBy(const Offset(45, -45));
     await tester.pump();
     await gesture.up();
 
-    // The finger swung from straight below the center (475,300) to straight
+    // The finger swung from straight below the center (485,310) to straight
     // right of it: 90° → 0°, i.e. −90 degrees of user rotation.
     expect(h.content().rotationFor('slot_1'), closeTo(-90, 2));
     expect(h.content().stretchYFor('slot_1'), 1.0);
