@@ -23,13 +23,19 @@ Os mesmos arquivos carregam mais duas variáveis:
 Sobre `REVENUECAT_KEY`: `prod.json` carrega a chave `goog_` de produção desde
 2026-07-28, e a monetização está validada ponta a ponta (compra de teste
 concluída no device). Uma chave **vazia** desliga o SDK — todo mundo fica free e
-o paywall mostra "plans unavailable"; é um estado válido, mas não é mais o atual.
-Ver `docs/play-launch-checklist.md`.
+o paywall mostra "plans unavailable". Ver `docs/play-launch-checklist.md`.
 
 > ⚠️ Uma chave `test_` **crasha** qualquer build release — é a proteção do
 > RevenueCat contra publicar com chave de teste. Por isso ela mora só no
-> `dev.json`, e o default do código (usado por um `flutter run` sem `--dart-define`)
-> mantém esse comportamento de propósito.
+> `dev.json`.
+>
+> O **default do código é vazio** (`entitlements.dart`), então um `flutter run`
+> sem `--dart-define-from-file` roda com monetização desligada. É de propósito:
+> o default costumava ser a chave `test_`, e isso fazia um `flutter build
+> appbundle` sem a flag gerar um AAB que subia normalmente e morria na abertura
+> em 100% dos aparelhos. Com o default vazio, o pior que uma flag esquecida
+> causa é um app que roda free. **Para mexer no paywall em dev, passe
+> `--dart-define-from-file=env/dev.json`.**
 
 ---
 
@@ -51,7 +57,7 @@ flutter build apk --dart-define-from-file=env/prod.json
 Para o **AAB de publicação** (`appbundle`, versionCode, verificação de
 assinatura e upload no Play), ver `docs/play-launch-checklist.md` — seção
 "🚀 Gerar e subir o AAB". A flag `--dart-define-from-file` é obrigatória lá:
-sem ela o build pega a chave `test_` do default e crasha em release.
+sem ela o `API_BASE` vira `localhost:3000` e o app sobe sem monetização.
 
 > A URL fica **congelada** no APK publicado — trocar depois exige recompilar e
 > republicar. Se um dia mudar o domínio (limpar o projeto duplicado e assumir

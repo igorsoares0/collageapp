@@ -11,6 +11,24 @@ import '../api/entitlements.dart';
 import '../api/template_api.dart';
 import '../theme.dart';
 
+/// What to tell the user about a finished purchase or restore. Null means say
+/// nothing: cancelling was the user's own decision, and a snackbar about it
+/// reads as an error they caused.
+///
+/// Shared with Settings, which runs the same restore from a different screen.
+String? purchaseOutcomeMessage(PurchaseOutcome outcome) => switch (outcome) {
+  PurchaseOutcome.unlocked => 'Pro unlocked — enjoy!',
+  PurchaseOutcome.cancelled => null,
+  PurchaseOutcome.pending =>
+    'Payment pending. Pro unlocks as soon as it clears — no need to buy again.',
+  PurchaseOutcome.alreadyOwned =>
+    'This store account already has Pro. Tap "Restore purchases".',
+  PurchaseOutcome.nothingToRestore => 'No previous purchases found.',
+  PurchaseOutcome.offline =>
+    'Could not reach the store. Check your connection and try again.',
+  PurchaseOutcome.failed => 'Something went wrong. Please try again.',
+};
+
 /// Subscription paywall shown when a free user opens a premium template.
 /// Pops with `true` after a purchase/restore that unlocked pro.
 ///
@@ -65,19 +83,23 @@ class _PaywallScreenState extends State<PaywallScreen> {
     return [for (var i = 0; i < 15; i++) thumbs[i % thumbs.length]];
   }
 
-  Future<void> _finish(Future<bool> unlock) async {
+  Future<void> _finish(Future<PurchaseOutcome> attempt) async {
     setState(() => _busy = true);
-    final unlocked = await unlock;
+    final outcome = await attempt;
     if (!mounted) return;
-    if (unlocked) {
+    if (outcome == PurchaseOutcome.unlocked) {
       HapticFeedback.mediumImpact();
       Navigator.of(context).pop(true);
       return;
     }
     setState(() => _busy = false);
+    // Everything else keeps the user on the paywall, because everything else
+    // leaves something to do here — retry, restore, or just wait.
+    final message = purchaseOutcomeMessage(outcome);
+    if (message == null) return;
     ScaffoldMessenger.of(
       context,
-    ).showSnackBar(const SnackBar(content: Text('Purchase not completed.')));
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override

@@ -15,16 +15,15 @@ class SettingsScreen extends StatelessWidget {
 
   Future<void> _restore(BuildContext context) async {
     final messenger = ScaffoldMessenger.of(context);
-    final restored = await entitlements.restore();
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text(
-          restored
-              ? 'Pro restored — welcome back!'
-              : 'No previous purchases found.',
-        ),
-      ),
-    );
+    final outcome = await entitlements.restore();
+    // "Restored" beats the paywall's "unlocked" here — this user is coming
+    // back to something they already bought. Every other outcome reads the
+    // same on both screens.
+    final message = outcome == PurchaseOutcome.unlocked
+        ? 'Pro restored — welcome back!'
+        : purchaseOutcomeMessage(outcome);
+    if (message == null) return;
+    messenger.showSnackBar(SnackBar(content: Text(message)));
   }
 
   /// Opens a legal page in the browser. A failure here is not worth an error
@@ -53,9 +52,9 @@ class SettingsScreen extends StatelessWidget {
           ValueListenableBuilder<bool>(
             valueListenable: entitlements.isPro,
             builder: (context, isPro, _) => isPro
-                ? const _SettingsCard(
+                ? _SettingsCard(
                     children: [
-                      ListTile(
+                      const ListTile(
                         leading: Icon(
                           Symbols.workspace_premium_rounded,
                           color: AppColors.gold,
@@ -65,6 +64,39 @@ class SettingsScreen extends StatelessWidget {
                           'Active — all templates unlocked',
                           style: TextStyle(color: AppColors.textSecondary),
                         ),
+                      ),
+                      // Google Play expects a subscriber to be able to reach
+                      // the cancel/change-plan page from inside the app, and
+                      // RevenueCat hands over the exact store URL for this
+                      // user. It arrives with the customer info, so the row
+                      // appears a beat after the screen — hiding it until then
+                      // beats showing a link that opens nothing.
+                      ValueListenableBuilder<String?>(
+                        valueListenable: entitlements.managementUrl,
+                        builder: (context, url, _) => url == null
+                            ? const SizedBox.shrink()
+                            : Column(
+                                children: [
+                                  const Divider(height: 1, indent: 56),
+                                  ListTile(
+                                    leading: const Icon(
+                                      Symbols.settings_rounded,
+                                    ),
+                                    title: const Text('Manage subscription'),
+                                    subtitle: const Text(
+                                      'Change plan or cancel in the store',
+                                      style: TextStyle(
+                                        color: AppColors.textSecondary,
+                                      ),
+                                    ),
+                                    trailing: const Icon(
+                                      Symbols.open_in_new_rounded,
+                                      size: 18,
+                                    ),
+                                    onTap: () => _open(context, url),
+                                  ),
+                                ],
+                              ),
                       ),
                     ],
                   )

@@ -16,8 +16,11 @@ import 'package:purchases_flutter/purchases_flutter.dart';
 TextStyle testFontResolver(String family, TextStyle base) => base;
 
 /// Never touches the SDK: purchases just flip [isPro], like the Test Store
-/// would after a successful (fake) payment.
+/// would after a successful (fake) payment. Set [outcome] to replay one of the
+/// unhappy endings instead — only [PurchaseOutcome.unlocked] grants pro.
 class FakeEntitlements extends EntitlementsService {
+  PurchaseOutcome outcome = PurchaseOutcome.unlocked;
+
   @override
   Future<void> init() async {}
 
@@ -28,13 +31,15 @@ class FakeEntitlements extends EntitlementsService {
   ];
 
   @override
-  Future<bool> buy(Package package) async {
-    isPro.value = true;
-    return true;
+  Future<PurchaseOutcome> buy(Package package) async {
+    if (outcome == PurchaseOutcome.unlocked) isPro.value = true;
+    return outcome;
   }
 
   @override
-  Future<bool> restore() async => isPro.value;
+  Future<PurchaseOutcome> restore() async => isPro.value
+      ? PurchaseOutcome.unlocked
+      : PurchaseOutcome.nothingToRestore;
 
   static Package _package(
     String id,
@@ -254,6 +259,88 @@ void main() {
       );
       expect(find.byType(TemplateScreen), findsNothing);
       expect(find.byType(TemplatePreviewScreen), findsOneWidget);
+      expect(entitlements.isPro.value, isFalse);
+    });
+  });
+
+  /// Drives a free user to the paywall of the premium template and returns the
+  /// service, so a test can pick the ending the store will hand back.
+  Future<FakeEntitlements> openPaywall(WidgetTester tester) async {
+    final entitlements = await pumpGallery(tester);
+    await openPreview(tester, 'tpl_pro');
+    await tester.tap(find.text('Unlock with Pro'));
+    await pumpUntil(
+      tester,
+      () => tester.any(find.byType(PaywallScreen)),
+      reason: 'the locked button never opened the paywall',
+    );
+    return entitlements;
+  }
+
+  /// The paywall's Continue button. The preview underneath has FilledButtons
+  /// of its own, so the type alone is ambiguous.
+  Finder continueButton() => find.descendant(
+    of: find.byType(PaywallScreen),
+    matching: find.byType(FilledButton),
+  );
+
+  testWidgets('cancelling the store sheet says nothing and leaves the paywall '
+      'usable', (tester) async {
+    await tester.runAsync(() async {
+      final entitlements = await openPaywall(tester);
+      entitlements.outcome = PurchaseOutcome.cancelled;
+
+      await tester.tap(continueButton());
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      // Closing the store sheet is the user's own decision — telling them the
+      // purchase "was not completed" reads as an error they caused.
+      expect(find.byType(SnackBar), findsNothing);
+      expect(find.byType(PaywallScreen), findsOneWidget);
+      expect(find.byType(TemplateScreen), findsNothing);
+      expect(entitlements.isPro.value, isFalse);
+      // Not stuck on the spinner: they can try again right away.
+      expect(
+        tester.widget<FilledButton>(continueButton()).onPressed,
+        isNotNull,
+      );
+    });
+  });
+
+  testWidgets('a pending payment tells the user to wait, not to buy again', (
+    tester,
+  ) async {
+    await tester.runAsync(() async {
+      final entitlements = await openPaywall(tester);
+      entitlements.outcome = PurchaseOutcome.pending;
+
+      await tester.tap(continueButton());
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      // findsWidgets, not findsOneWidget: the app's single ScaffoldMessenger
+      // paints the snackbar into every Scaffold registered with it, and the
+      // gallery/preview routes are still mounted under the paywall.
+      expect(find.textContaining('Payment pending'), findsWidgets);
+      // Money is committed but pro is not active yet: no editor, no unlock.
+      expect(find.byType(PaywallScreen), findsOneWidget);
+      expect(find.byType(TemplateScreen), findsNothing);
+      expect(entitlements.isPro.value, isFalse);
+    });
+  });
+
+  testWidgets('restoring with nothing to restore reports that, not a failed '
+      'purchase', (tester) async {
+    await tester.runAsync(() async {
+      final entitlements = await openPaywall(tester);
+
+      await tester.tap(find.text('Restore purchases'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      // Several Scaffolds, one message — see the note in the pending test.
+      expect(find.text('No previous purchases found.'), findsWidgets);
       expect(entitlements.isPro.value, isFalse);
     });
   });

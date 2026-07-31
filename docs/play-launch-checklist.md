@@ -1,14 +1,14 @@
 # Checklist de lançamento — Google Play (teste fechado)
 
-Estado em **2026-07-29**, no commit `e040679`.
+Estado em **2026-07-31**, no commit `08b57fd`.
 
 Escopo: **só Android**. iOS está fora — o projeto nunca foi buildado pra iOS e
 o desenvolvimento acontece em Windows/WSL, onde nada de iOS é verificável.
 
 ## TL;DR
 
-**Não há bloqueio de código.** Reverificado em 2026-07-29: `flutter analyze`
-limpo, **250 testes passando**, nenhuma mudança real pendente (o `git status`
+**Não há bloqueio de código.** Reverificado em 2026-07-31: `flutter analyze`
+limpo, **253 testes passando**, nenhuma mudança real pendente (o `git status`
 gigante é só CRLF vs LF — `git diff --ignore-all-space` sobre `lib/`, `android/`
 e `env/` volta vazio). Assinatura de release, `targetSdk 36`/`minSdk 24` e
 monetização estão todos de pé, e as rotas `/api/templates` e `/api/assets`
@@ -38,12 +38,18 @@ publicar com chave de teste.
 `env/*.json` (`lib/src/api/entitlements.dart`), e `env/prod.json` hoje carrega a
 chave `goog_` de produção. A monetização funciona ponta a ponta.
 
-> ⚠️ **A armadilha sobreviveu à correção.** O `defaultValue` da constante em
-> `entitlements.dart:26` continua sendo a chave `test_` — de propósito, pra que
-> um `flutter run` sem flag rode em modo dev. A consequência é que **um
-> `flutter build appbundle` sem `--dart-define-from-file=env/prod.json` gera um
-> AAB que sobe normalmente no Play e crasha em 100% dos aparelhos**, antes da
-> primeira tela. Ver "🚀 Gerar e subir o AAB".
+> ✅ **A armadilha foi desarmada (2026-07-31).** O `defaultValue` da constante em
+> `entitlements.dart` era a chave `test_`, pra que um `flutter run` sem flag
+> rodasse em modo dev. A consequência era que **um `flutter build appbundle`
+> sem `--dart-define-from-file=env/prod.json` gerava um AAB que subia
+> normalmente no Play e crashava em 100% dos aparelhos**, antes da primeira
+> tela.
+>
+> O default agora é **vazio**: uma flag esquecida produz um app que roda com
+> monetização desligada, não um app que morre na abertura. A chave `test_`
+> continua existindo, só que apenas dentro do `env/dev.json` — mexer no paywall
+> em dev exige `--dart-define-from-file=env/dev.json`. Continua valendo passar a
+> flag sempre; o que mudou é o custo de esquecer. Ver "🚀 Gerar e subir o AAB".
 
 ### Onde parou em 2026-07-28
 
@@ -98,8 +104,62 @@ Feito:
 - [x] **Compra de teste concluída com sucesso no device** — monetização
       funcionando ponta a ponta
 
-**Esta seção está encerrada.** Não há mais nada a configurar em RevenueCat,
+**A configuração está encerrada.** Não há mais nada a configurar em RevenueCat,
 Google Cloud ou na parte de monetização do Play Console.
+
+### Tratamento de erro do fluxo de compra (2026-07-31)
+
+O caminho feliz já estava validado no device; o que faltava era o caminho
+infeliz, que é a maioria das interações reais com um paywall. Feito:
+
+- [x] **Cancelamento deixou de ser erro.** Todo `PlatformException` colapsava em
+      "Purchase not completed.", então quem só fechava a sheet do Google levava
+      uma mensagem de erro. Agora `PurchasesErrorHelper.getErrorCode` separa os
+      casos (é o snippet oficial da doc de *Making Purchases*) e cancelamento
+      **não diz nada**.
+- [x] **Pagamento pendente** (`paymentPendingError` — dinheiro, transferência,
+      aprovação dos pais) tem mensagem própria: o pro destrava sozinho pelo
+      listener, e o usuário precisa saber que não deve comprar de novo.
+- [x] **`productAlreadyPurchasedError`** manda restaurar em vez de recomprar;
+      **`networkError`/`offlineConnectionError`** falam em conexão.
+- [x] **Race de cold start.** `main()` dispara `init()` sem await, e o paywall
+      pedia offerings no `initState` — quem chegasse rápido batia antes do
+      `configure()` e via *"Plans are unavailable right now"* com a conta
+      perfeitamente saudável, indistinguível da offering vazia acima. Agora
+      todo acesso ao SDK espera o future do `init()`.
+- [x] **Restore sem compras** dizia "Purchase not completed." no paywall (o
+      Settings já acertava). Os dois usam a mesma tabela de mensagens agora.
+- [x] **"Manage subscription"** no Settings pra quem é Pro, via
+      `CustomerInfo.managementURL`. O Play espera caminho de cancelamento
+      dentro do app.
+- [x] `buy()` usa o `CustomerInfo` que o próprio `purchase()` devolve — um
+      round-trip a menos e sem janela de cache desatualizado.
+- [x] O listener passou a ser registrado **antes** do primeiro fetch, então um
+      primeiro run offline se corrige sozinho em vez de ficar free até o app
+      ser morto.
+
+Cobertura: 3 testes novos em `test/paywall_gate_test.dart` (cancelamento,
+pending, restore vazio). **253 testes passando**, `flutter analyze` limpo.
+
+#### Ainda em aberto na monetização
+
+Não bloqueiam o lançamento, mas estão mapeados:
+
+- **Trial / oferta introdutória não seria exibida.** O paywall mostra só
+  `storeProduct.priceString`. No dia em que um base plan ganhar trial, o card
+  vai anunciar o preço recorrente e esconder o trial — perda de conversão e
+  risco de política de preço enganoso. Os dados estão em
+  `storeProduct.defaultOption.freePhase/introPhase`. **Hoje não há trial
+  configurado, então isso vira bloqueio só quando você ligar um.**
+- **Sem botão de "tentar de novo"** na tela de "Plans are unavailable" — o único
+  caminho é voltar e reabrir.
+- **Sem links de Termos/Privacidade no próprio paywall** (existem no Settings).
+  O Play é mais tolerante que a Apple aqui.
+- **`Purchases.setLogLevel(LogLevel.debug)`** nunca é chamado. Uma linha, e
+  diagnostica em segundos exatamente as duas armadilhas desta seção.
+- **Gate 100% client-side**: `/api/templates/:id` é público, então o JSON
+  premium é baixável sem pagar. Decisão defensável (o valor está no editor, não
+  no JSON); se um dia importar, o caminho é webhook + REST API da RevenueCat.
 
 > A configuração acima é toda **server-side**: quando ficar pronta, o app já
 > instalado passa a mostrar os planos sozinho. Não precisa de novo AAB.
@@ -215,10 +275,11 @@ cd /mnt/c/allsaas/collageapp && cmd.exe /c "flutter build appbundle --dart-defin
 
 Sai em `build/app/outputs/bundle/release/app-release.aab`.
 
-⚠️ **A flag `--dart-define-from-file` não é opcional** — ver a armadilha do
-`defaultValue` na seção de monetização. Sem ela o `API_BASE` vira
-`localhost:3000` e a chave do RevenueCat vira a `test_`, que mata o app em
-release.
+⚠️ **A flag `--dart-define-from-file` não é opcional.** Sem ela o `API_BASE`
+vira `localhost:3000` (app sem catálogo) e a `REVENUECAT_KEY` fica vazia (app
+sem monetização). Desde 2026-07-31 isso não crasha mais o app — ver a seção de
+monetização —, mas gera um AAB inútil do mesmo jeito. O `grep` abaixo é a
+verificação que pega os dois casos.
 
 ### Conferir antes de subir
 
