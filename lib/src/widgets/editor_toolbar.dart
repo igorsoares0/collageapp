@@ -62,7 +62,7 @@ class EditorToolbar extends StatelessWidget {
                   ),
                   ToolButton(
                     icon: Symbols.sticker_rounded,
-                    label: 'Sticker',
+                    label: 'Assets',
                     onTap: onSticker,
                   ),
                   ToolButton(

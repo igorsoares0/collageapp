@@ -36,7 +36,8 @@
       "Bash(git check-ignore *)",
       "Bash(cmd.exe /c \"C:\\\\Users\\\\igors\\\\AppData\\\\Local\\\\Android\\\\sdk\\\\platform-tools\\\\adb.exe devices\")",
       "Bash(cmd.exe /c \"flutter test test\\\\selection_overlay_test.dart --concurrency=1 --plain-name \\\\\"a near-corner grab resizes instead of dragging\\\\\"\")",
-      "Bash(cmd.exe /c \"flutter test --concurrency=1 > test_all.log 2>&1\")"
+      "Bash(cmd.exe /c \"flutter test --concurrency=1 > test_all.log 2>&1\")",
+      "Bash(cmd.exe /c \"flutter test --concurrency=1 test/scratch_editor_test.dart\")"
     ]
   }
 }

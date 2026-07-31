@@ -1620,7 +1620,7 @@ class _TemplateScreenState extends State<TemplateScreen>
                                   : const Duration(milliseconds: 1200),
                               builder: (context, t, _) => t < 0.8
                                   ? const Icon(Symbols.check_rounded, size: 18)
-                                  : const Text('Export'),
+                                  : const Text('Share'),
                             ),
                     ),
                   ),

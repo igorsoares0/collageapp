@@ -1,22 +1,27 @@
 # Checklist de lançamento — Google Play (teste fechado)
 
-Estado em **2026-07-28**, depois do commit `964e63b` ("prepare to play").
+Estado em **2026-07-29**, no commit `e040679`.
 
 Escopo: **só Android**. iOS está fora — o projeto nunca foi buildado pra iOS e
 o desenvolvimento acontece em Windows/WSL, onde nada de iOS é verificável.
 
 ## TL;DR
 
-**Não há mais bloqueio de código.** O último era a chave de Test Store do
-RevenueCat, que crashava o app em release; ela virou variável de build e
-`env/prod.json` ship com monetização desligada, então o AAB de produção já sobe
-e abre. O que sobra é configuração de Play Console e as páginas legais no
-`collageweb`.
+**Não há bloqueio de código.** Reverificado em 2026-07-29: `flutter analyze`
+limpo, **250 testes passando**, nenhuma mudança real pendente (o `git status`
+gigante é só CRLF vs LF — `git diff --ignore-all-space` sobre `lib/`, `android/`
+e `env/` volta vazio). Assinatura de release, `targetSdk 36`/`minSdk 24` e
+monetização estão todos de pé, e as rotas `/api/templates` e `/api/assets`
+respondem 200.
+
+Sobra **um bloqueio real**: `/privacy` e `/terms` respondem **401**. Todo o
+resto é formulário de Play Console e arte de ficha.
 
 O relógio dos **12 testers / 14 dias** só começa a contar quando o primeiro AAB
-estiver na trilha de teste fechado. Calendário é o recurso escasso aqui, código
-não. Por isso a regra de bolso deste documento: **o que não impede o AAB de
-subir, sobe depois, durante a janela.**
+estiver numa trilha de **teste fechado** — a internal test onde ele está hoje
+**não conta** (ver "📋 Play Console"). Calendário é o recurso escasso aqui,
+código não. Por isso a regra de bolso deste documento: **o que não impede o AAB
+de subir, sobe depois, durante a janela.**
 
 ---
 
@@ -29,10 +34,16 @@ e a rejeição não passa pelo `try/catch` do Dart — o app morria antes de pin
 primeira tela. Não é um bug a corrigir: é a proteção do RevenueCat contra
 publicar com chave de teste.
 
-**Já mitigado:** a chave virou `REVENUECAT_KEY`, variável de build lida de
-`env/*.json` (`lib/src/api/entitlements.dart`), e `env/prod.json` ship com ela
-**vazia** — o SDK não é configurado, todo mundo fica free, o paywall mostra
-"plans unavailable" e nada crasha. **O build de produção já sobe hoje.**
+**Resolvido:** a chave virou `REVENUECAT_KEY`, variável de build lida de
+`env/*.json` (`lib/src/api/entitlements.dart`), e `env/prod.json` hoje carrega a
+chave `goog_` de produção. A monetização funciona ponta a ponta.
+
+> ⚠️ **A armadilha sobreviveu à correção.** O `defaultValue` da constante em
+> `entitlements.dart:26` continua sendo a chave `test_` — de propósito, pra que
+> um `flutter run` sem flag rode em modo dev. A consequência é que **um
+> `flutter build appbundle` sem `--dart-define-from-file=env/prod.json` gera um
+> AAB que sobe normalmente no Play e crasha em 100% dos aparelhos**, antes da
+> primeira tela. Ver "🚀 Gerar e subir o AAB".
 
 ### Onde parou em 2026-07-28
 
@@ -159,9 +170,10 @@ primeiro upload.
 - **Idioma da UI** — o app é todo em inglês ("Settings", "Get Collage Pro"). Se o
   público-alvo for BR, é uma passada única no app inteiro.
 
-> ⚠️ **Verificar antes:** trocar o binário durante a janela mexe na contagem dos
-> 14 dias? Nunca foi confirmado no Play Console. Errar aí custa 14 dias e
-> derruba o plano acima.
+> ✅ **Dúvida resolvida (2026-07-29):** trocar o binário durante a janela **não**
+> reseta a contagem. O requisito do Google é sobre os 12 testers estarem
+> *opt-in continuamente* por 14 dias corridos, não sobre o build ficar parado.
+> Subir atualização na mesma trilha é seguro, e o plano acima está de pé.
 
 ---
 
@@ -175,19 +187,94 @@ o único ganho é silenciar warning, e o risco é quebrar o build na véspera.
 
 ---
 
+## 🚀 Gerar e subir o AAB
+
+### Versão: sobe o versionCode, não o versionName
+
+No Flutter os dois vivem na mesma linha do `pubspec.yaml`:
+
+```
+version: 1.0.0+1
+         ^^^^^ ^
+   versionName  versionCode
+```
+
+O Play rejeita **versionCode** repetido; versionName repetido não é problema. O
+`1.0.0` é cosmético e pode ficar parado por vários builds. Então o próximo
+upload é `1.0.0+2` — não precisa virar `1.0.1`.
+
+> O AAB em `build/app/outputs/bundle/release/` é de 28/07 14:04 e está **dois
+> commits atrás** (`dc8830e` e `e040679`, fixes de resize, vieram às 18:13 e
+> 18:47). Rebuild antes de subir.
+
+### Build
+
+```bash
+cd /mnt/c/allsaas/collageapp && cmd.exe /c "flutter build appbundle --dart-define-from-file=env/prod.json"
+```
+
+Sai em `build/app/outputs/bundle/release/app-release.aab`.
+
+⚠️ **A flag `--dart-define-from-file` não é opcional** — ver a armadilha do
+`defaultValue` na seção de monetização. Sem ela o `API_BASE` vira
+`localhost:3000` e a chave do RevenueCat vira a `test_`, que mata o app em
+release.
+
+### Conferir antes de subir
+
+O gradle avisa quando a assinatura cai no debug key:
+
+```
+*** android/key.properties not found — signing release with the DEBUG key. ***
+```
+
+Se esse warning aparecer, **não suba**: o Play rejeita bundle debug-signed.
+
+Pra confirmar que a chave de produção entrou no binário:
+
+```bash
+unzip -p build/app/outputs/bundle/release/app-release.aab base/dex/classes.dex \
+  | strings | grep -c "goog_FJIAJJ"
+```
+
+Retorno ≥ 1 = chave correta embutida.
+
+### Upload
+
+1. **Teste → Teste fechado** — **não** a internal test (ver abaixo)
+2. Criar nova versão → upload do `.aab`
+3. Notas da versão (uma linha basta)
+4. **Revisar versão → Iniciar lançamento**
+
+O passo 4 é a armadilha que já custou uma tarde: subir o arquivo deixa o release
+em **rascunho**, e rascunho não publica nada.
+
+---
+
 ## 📋 Play Console
 
-- [ ] Conta de desenvolvedor (US$ 25, uma vez)
-- [ ] App criado — **destrava o bloqueio vermelho**
-- [ ] Produtos de assinatura ativos + license testers
-- [ ] Ficha: título, descrição curta e longa, ícone, feature graphic, screenshots
-- [ ] URL da política de privacidade (pública, ver acima)
+> ⚠️ **Internal test não conta pros 14 dias.** O AAB está hoje na *internal
+> test*, mas o requisito do Google é explicitamente **closed testing**: 12
+> testers opt-in por 14 dias corridos numa trilha *fechada*. Precisa criar a
+> trilha de teste fechado e mandar o AAB pra lá — o relógio só começa aí.
+
+Feito:
+
+- [x] Conta de desenvolvedor (US$ 25, uma vez)
+- [x] App criado — **destrava o bloqueio vermelho**
+- [x] Produtos de assinatura ativos + compra de teste validada no device
+- [x] Ícone 512×512 — `store/icon-512.png`
+
+Falta:
+
+- [ ] **Trilha de teste fechado** criada e AAB enviado (a internal não serve)
+- [ ] Ficha: título, descrição curta e longa, feature graphic, screenshots
+- [ ] URL da política de privacidade (pública — hoje 401, ver acima)
 - [ ] Formulário de Data safety — curto: sem login, só o que o RevenueCat coleta
       (histórico de compra + ID de device)
 - [ ] Classificação de conteúdo
 - [ ] Público-alvo
 - [ ] Declaração de anúncios (o app não tem)
-- [ ] Trilha de teste fechado criada e AAB enviado
 - [ ] 12 testers com opt-in, 14 dias corridos → pedir acesso à produção
 
 ---

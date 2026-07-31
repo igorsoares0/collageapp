@@ -115,7 +115,7 @@ void main() {
 
   testWidgets('asset sheet offers the bundled frames', (tester) async {
     await pumpDraft(tester);
-    await addFromToolbar(tester, 'Sticker');
+    await addFromToolbar(tester, 'Assets');
 
     // No remote catalog in tests, so no stickers — but the seed frames are
     // always available.

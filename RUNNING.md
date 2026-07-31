@@ -18,13 +18,13 @@ Os mesmos arquivos carregam mais duas variáveis:
 | Variável | `dev.json` | `prod.json` | Para quê |
 |---|---|---|---|
 | `SITE_BASE` | localhost | deploy Vercel | de onde saem `/privacy` e `/terms`, linkados no Settings |
-| `REVENUECAT_KEY` | chave `test_` | **vazia** | chave pública do RevenueCat |
+| `REVENUECAT_KEY` | chave `test_` | chave `goog_` | chave pública do RevenueCat |
 
-Sobre `REVENUECAT_KEY`: vazia significa **monetização desligada** — o SDK nunca
-é configurado, todo mundo fica no tier free e o paywall mostra "plans
-unavailable". É de propósito, é o formato do primeiro build de teste fechado.
-Quando o app existir no Play Console, cole a chave `goog_...` em `env/prod.json`
-(ver `docs/play-launch-checklist.md`).
+Sobre `REVENUECAT_KEY`: `prod.json` carrega a chave `goog_` de produção desde
+2026-07-28, e a monetização está validada ponta a ponta (compra de teste
+concluída no device). Uma chave **vazia** desliga o SDK — todo mundo fica free e
+o paywall mostra "plans unavailable"; é um estado válido, mas não é mais o atual.
+Ver `docs/play-launch-checklist.md`.
 
 > ⚠️ Uma chave `test_` **crasha** qualquer build release — é a proteção do
 > RevenueCat contra publicar com chave de teste. Por isso ela mora só no
@@ -47,6 +47,11 @@ Build de release (APK) apontando pra produção:
 ```bash
 flutter build apk --dart-define-from-file=env/prod.json
 ```
+
+Para o **AAB de publicação** (`appbundle`, versionCode, verificação de
+assinatura e upload no Play), ver `docs/play-launch-checklist.md` — seção
+"🚀 Gerar e subir o AAB". A flag `--dart-define-from-file` é obrigatória lá:
+sem ela o build pega a chave `test_` do default e crasha em release.
 
 > A URL fica **congelada** no APK publicado — trocar depois exige recompilar e
 > republicar. Se um dia mudar o domínio (limpar o projeto duplicado e assumir
