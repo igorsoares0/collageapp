@@ -224,7 +224,7 @@ class _PaywallScreenState extends State<PaywallScreen> {
         Text.rich(
           TextSpan(
             children: [
-              const TextSpan(text: 'Collage '),
+              const TextSpan(text: 'Layer '),
               TextSpan(
                 text: 'Pro',
                 style: TextStyle(color: AppColors.gold),

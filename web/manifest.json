@@ -1,6 +1,6 @@
 {
-    "name": "collageapp",
-    "short_name": "collageapp",
+    "name": "Layer",
+    "short_name": "Layer",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

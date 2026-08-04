@@ -59,7 +59,7 @@ class SettingsScreen extends StatelessWidget {
                           Symbols.workspace_premium_rounded,
                           color: AppColors.gold,
                         ),
-                        title: Text('Collage Pro'),
+                        title: Text('Layer Pro'),
                         subtitle: Text(
                           'Active — all templates unlocked',
                           style: TextStyle(color: AppColors.textSecondary),
@@ -107,7 +107,7 @@ class SettingsScreen extends StatelessWidget {
                           Symbols.workspace_premium_rounded,
                           color: AppColors.gold,
                         ),
-                        title: const Text('Get Collage Pro'),
+                        title: const Text('Get Layer Pro'),
                         subtitle: const Text(
                           'Unlock every premium template',
                           style: TextStyle(color: AppColors.textSecondary),

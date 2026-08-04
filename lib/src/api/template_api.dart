@@ -5,7 +5,7 @@ import 'package:http/http.dart' as http;
 import '../model/asset_record.dart';
 import '../model/template.dart';
 
-/// Base URL of the Collage Studio backend. Pick an environment with the
+/// Base URL of the Layer backend. Pick an environment with the
 /// bundled files instead of retyping the URL:
 ///   flutter run   --dart-define-from-file=env/dev.json    (localhost)
 ///   flutter build --dart-define-from-file=env/prod.json   (Vercel)

@@ -49,7 +49,7 @@ class FakeEntitlements extends EntitlementsService {
   ) => Package(
     id,
     type,
-    StoreProduct('pro', '', 'Collage Pro', price, priceString, 'USD'),
+    StoreProduct('pro', '', 'Layer Pro', price, priceString, 'USD'),
     const PresentedOfferingContext('default', null, null),
   );
 }

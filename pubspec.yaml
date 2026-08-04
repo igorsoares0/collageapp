@@ -1,5 +1,5 @@
 name: collageapp
-description: "Collage Studio mobile app — renders remote template JSON."
+description: "Layer mobile app — renders remote template JSON."
 publish_to: 'none'
 
 version: 1.0.0+1

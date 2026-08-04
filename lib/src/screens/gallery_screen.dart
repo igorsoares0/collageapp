@@ -182,7 +182,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
           entitlements: _entitlements,
         ) as Widget,
       ),
-      _ => ('Collage Studio', _buildTemplatesTab()),
+      _ => ('Layer', _buildTemplatesTab()),
     };
     return Scaffold(
       bottomNavigationBar: _HomeBottomBar(
