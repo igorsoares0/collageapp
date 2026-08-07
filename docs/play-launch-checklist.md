@@ -1,21 +1,46 @@
 # Checklist de lançamento — Google Play (teste fechado)
 
-Estado em **2026-07-31**, no commit `08b57fd`.
+Estado em **2026-08-07**, no commit `104e8a7`.
 
 Escopo: **só Android**. iOS está fora — o projeto nunca foi buildado pra iOS e
 o desenvolvimento acontece em Windows/WSL, onde nada de iOS é verificável.
 
 ## TL;DR
 
-**Não há bloqueio de código.** Reverificado em 2026-07-31: `flutter analyze`
-limpo, **253 testes passando**, nenhuma mudança real pendente (o `git status`
-gigante é só CRLF vs LF — `git diff --ignore-all-space` sobre `lib/`, `android/`
-e `env/` volta vazio). Assinatura de release, `targetSdk 36`/`minSdk 24` e
-monetização estão todos de pé, e as rotas `/api/templates` e `/api/assets`
-respondem 200.
+**Não há mais nenhum bloqueio técnico — nem de código, nem de site.**
+Reverificado em 2026-08-07: `flutter analyze` limpo ("No issues found"),
+**253 testes passando**, nenhuma mudança real pendente (o `git status` gigante
+é só CRLF vs LF — `git diff --ignore-all-space` sobre `lib/`, `android/` e
+`env/` volta vazio). Assinatura de release, `targetSdk 36`/`minSdk 24` (defaults do Flutter
+3.44.7, via `flutter.targetSdkVersion`) e monetização estão todos de pé.
 
-Sobra **um bloqueio real**: `/privacy` e `/terms` respondem **401**. Todo o
-resto é formulário de Play Console e arte de ficha.
+Os dois bloqueios que este documento carregava **caíram**:
+
+- **`/privacy` e `/terms` respondem 200** e servem as páginas de verdade
+  ("Privacy Policy · Layer" / "Terms of Service · Layer"), fora do Basic Auth.
+- **Domínio próprio no ar**: `env/prod.json` aponta pra `uselayer.online` e
+  `api.uselayer.online` (commit `02a80cd`), não mais pro host auto-gerado da
+  Vercel.
+
+`/api/templates` e `/api/assets` também respondem 200.
+
+Sobra **uma linha de código**: `pubspec.yaml` continua em `version: 1.0.0+1`, o
+mesmo versionCode que já está na internal test. Como o versionCode é único no
+app inteiro, o upload pro teste fechado precisa de **`1.0.0+2`** (ver "🚀 Gerar
+e subir o AAB"). Fora isso, é formulário de Play Console e arte de ficha.
+
+> **Build de release reverificado em 2026-08-07** (`flutter build appbundle
+> --dart-define-from-file=env/prod.json`): sucesso em 303s, 56,2 MB, sem o
+> warning de debug key. Conferido dentro do `.aab`:
+> - assinado com o upload keystore — `CN=Collage Studio`, SHA-256 batendo com o
+>   registrado abaixo, validade até 2053;
+> - chave `goog_` de produção e `api.uselayer.online` presentes em
+>   `libapp.so` nas 3 ABIs; a chave `test_` e o fallback `localhost:3000`
+>   **ausentes**;
+> - libs nativas alinhadas em `0x10000` (64 KB), o que satisfaz a exigência de
+>   **16 KB page size** que o Play cobra de quem tem targetSdk 35+.
+>
+> Esse AAB é buildável e assinável hoje — o que falta nele é só o versionCode.
 
 O relógio dos **12 testers / 14 dias** só começa a contar quando o primeiro AAB
 estiver numa trilha de **teste fechado** — a internal test onde ele está hoje
@@ -25,7 +50,12 @@ de subir, sobe depois, durante a janela.**
 
 ---
 
-## 🟠 Monetização — o app abre, mas ninguém consegue pagar
+## ✅ Monetização — funcionando ponta a ponta
+
+> O título desta seção era "o app abre, mas ninguém consegue pagar". Isso deixou
+> de ser verdade em 2026-07-28, quando a compra de teste passou no device. O
+> histórico abaixo fica registrado porque as armadilhas se repetem em qualquer
+> re-setup.
 
 ### Chave do RevenueCat
 
@@ -143,7 +173,9 @@ pending, restore vazio). **253 testes passando**, `flutter analyze` limpo.
 
 #### Ainda em aberto na monetização
 
-Não bloqueiam o lançamento, mas estão mapeados:
+Não bloqueiam o lançamento, mas estão mapeados. **Os cinco continuam abertos em
+2026-08-07** — reconferidos no código, nenhum commit desde `a83bd88` mexeu
+neles:
 
 - **Trial / oferta introdutória não seria exibida.** O paywall mostra só
   `storeProduct.priceString`. No dia em que um base plan ganhar trial, o card
@@ -186,27 +218,32 @@ mesmo estado de "sem planos".
 
 ## 🟡 Antes do AAB subir
 
-### Rotas legais fora do Basic Auth (`collageweb`)
+### ✅ Rotas legais fora do Basic Auth (`collageweb`) — resolvido
 
-`https://<site>/privacy` e `/terms` respondem **401** hoje — estão atrás do
-Basic Auth que protege as páginas do editor.
+`https://uselayer.online/privacy` e `/terms` respondiam **401** (estavam atrás
+do Basic Auth que protege as páginas do editor). **Verificado em 2026-08-07:
+os dois respondem 200** e servem conteúdo real — headings de política
+(o que o app processa, dados no device, com quem compartilhamos, direitos,
+crianças, segurança, contato) e de termos (10+ seções, incluindo a assinatura
+Layer Pro). Não é 200 de tela de login.
 
-Precisa das duas coisas: as páginas existirem **e** serem públicas. O Play valida
-a URL da política automaticamente (bot, sem credencial), e o link novo em
-Settings cairia numa tela de login. Trabalho no repositório `collageweb`.
+Isso destrava as duas coisas que dependiam disso: o bot do Play consegue validar
+a URL da política, e o link de Settings (`lib/src/legal.dart`, alimentado pelo
+`SITE_BASE` de `env/prod.json`) abre a página em vez de um prompt de senha.
 
-O app já aponta pra lá: `lib/src/legal.dart`, alimentado pelo `SITE_BASE` de
-`env/prod.json`.
+### ✅ Domínio próprio — resolvido
 
-### Domínio próprio
+`env/prod.json` apontava pro host auto-gerado da Vercel
+(`collageweb-iota-mu.vercel.app`), que congela dentro do APK publicado. Desde
+`02a80cd` são domínios próprios:
 
-`env/prod.json` aponta pra `collageweb-iota-mu.vercel.app` — domínio
-auto-gerado da Vercel. A URL **congela dentro do APK publicado**: se o projeto
-for renomeado ou o deploy duplicado for limpo, todo build já instalado quebra e
-só conserta com uma nova versão na loja.
+```json
+{ "API_BASE": "https://api.uselayer.online",
+  "SITE_BASE": "https://uselayer.online" }
+```
 
-`API_BASE` e `SITE_BASE` são knobs separados justamente pra isso — trocar são
-duas linhas.
+`API_BASE` e `SITE_BASE` continuam sendo knobs separados, então trocar de host
+segue sendo duas linhas.
 
 ### Assets da ficha da loja
 
@@ -227,7 +264,7 @@ primeiro upload.
 - **Firebase Analytics** — 6 eventos já mapeados, seam no padrão do
   `EntitlementsService`. Fazer *durante* a janela evita um buraco de dados no
   dia 1 da produção, que é irrecuperável.
-- **Idioma da UI** — o app é todo em inglês ("Settings", "Get Collage Pro"). Se o
+- **Idioma da UI** — o app é todo em inglês ("Settings", "Get Layer Pro"). Se o
   público-alvo for BR, é uma passada única no app inteiro.
 
 > ✅ **Dúvida resolvida (2026-07-29):** trocar o binário durante a janela **não**
@@ -263,9 +300,19 @@ O Play rejeita **versionCode** repetido; versionName repetido não é problema. 
 `1.0.0` é cosmético e pode ficar parado por vários builds. Então o próximo
 upload é `1.0.0+2` — não precisa virar `1.0.1`.
 
-> O AAB em `build/app/outputs/bundle/release/` é de 28/07 14:04 e está **dois
-> commits atrás** (`dc8830e` e `e040679`, fixes de resize, vieram às 18:13 e
-> 18:47). Rebuild antes de subir.
+> 🚧 **Isto ainda não foi feito (2026-08-07).** `pubspec.yaml` segue em
+> `1.0.0+1`, e a linha nunca mudou desde o commit inicial `108263d` — o AAB que
+> está na internal test é **versionCode 1**. O versionCode é único no app
+> inteiro, não por trilha, então mandar o mesmo `+1` pro teste fechado é
+> rejeitado no upload. **Bump antes do build final.**
+
+> O AAB em `build/app/outputs/bundle/release/` continua sendo o de **28/07
+> 14:04** e agora está **6 commits atrás**: `dc8830e`/`e040679` (resize),
+> `08b57fd` (nomes de botão/assets), `a83bd88` (tratamento de erro de compra),
+> `02a80cd` (URLs de produção) e `104e8a7` (nome do app → `Layer`). Ou seja:
+> esse binário — e o que subiu pra internal test em 28/07 — aponta pro
+> **domínio velho da Vercel** e se chama **Collage Studio**. Rebuild não é
+> opcional.
 
 ### Build
 
@@ -274,6 +321,12 @@ cd /mnt/c/allsaas/collageapp && cmd.exe /c "flutter build appbundle --dart-defin
 ```
 
 Sai em `build/app/outputs/bundle/release/app-release.aab`.
+
+> **Heap do Gradle (`02a80cd`).** `android/gradle.properties` pedia `-Xmx8G` +
+> 4G de metaspace, mais RAM do que a máquina tem, e o daemon morria no meio do
+> `assembleRelease` ("daemon disappeared unexpectedly"). Hoje é `-Xmx2G` / 1G de
+> metaspace. Se o build voltar a morrer sem erro de compilação, é aqui que se
+> olha.
 
 ⚠️ **A flag `--dart-define-from-file` não é opcional.** Sem ela o `API_BASE`
 vira `localhost:3000` (app sem catálogo) e a `REVENUECAT_KEY` fica vazia (app
@@ -291,14 +344,42 @@ O gradle avisa quando a assinatura cai no debug key:
 
 Se esse warning aparecer, **não suba**: o Play rejeita bundle debug-signed.
 
-Pra confirmar que a chave de produção entrou no binário:
+Pra confirmar que a chave de produção e as URLs entraram no binário:
 
 ```bash
-unzip -p build/app/outputs/bundle/release/app-release.aab base/dex/classes.dex \
-  | strings | grep -c "goog_FJIAJJ"
+python3 - <<'PY'
+import zipfile
+z = zipfile.ZipFile('build/app/outputs/bundle/release/app-release.aab')
+lib = z.read('base/lib/arm64-v8a/libapp.so')
+for label, needle in [
+    ('chave prod',       b'goog_FJIAJJ'),
+    ('API_BASE',         b'api.uselayer.online'),
+    ('chave de TESTE',   b'test_VzAaDR'),   # tem que dar 0
+    ('localhost',        b'localhost:3000'), # tem que dar 0
+]:
+    print(f'{label:16s} {lib.count(needle)}')
+PY
 ```
 
-Retorno ≥ 1 = chave correta embutida.
+As duas primeiras ≥ 1 e as duas últimas = 0 significa AAB de produção.
+
+> ⚠️ **O comando antigo deste bloco estava errado** e daria falso alarme. Ele
+> procurava em `base/dex/classes.dex`, mas num build de release o Dart é
+> compilado AOT: as constantes de `String.fromEnvironment` vivem em
+> **`base/lib/<abi>/libapp.so`**, não no dex. Grepar o dex retorna 0 mesmo num
+> build perfeito. Ele também usava `unzip`, que **não está instalado no WSL
+> desta máquina** (`keytool` também não) — daí a versão em `python3`.
+
+Pra confirmar a assinatura no próprio arquivo (em vez de confiar na ausência do
+warning):
+
+```bash
+python3 -c "import zipfile;open('/tmp/UPLOAD.RSA','wb').write(zipfile.ZipFile('build/app/outputs/bundle/release/app-release.aab').read('META-INF/UPLOAD.RSA'))"
+openssl pkcs7 -inform DER -in /tmp/UPLOAD.RSA -print_certs -outform PEM \
+  | openssl x509 -noout -subject -fingerprint -sha256
+```
+
+Tem que bater com o SHA-256 do upload keystore registrado em "✅ Já resolvido".
 
 ### Upload
 
@@ -313,6 +394,10 @@ em **rascunho**, e rascunho não publica nada.
 ---
 
 ## 📋 Play Console
+
+> Estado desta seção: **2026-07-31**. É a única parte do documento que não dá
+> pra reverificar a partir do repositório — o que está marcado aqui foi feito à
+> mão no console e depende de conferência lá.
 
 > ⚠️ **Internal test não conta pros 14 dias.** O AAB está hoje na *internal
 > test*, mas o requisito do Google é explicitamente **closed testing**: 12
@@ -330,7 +415,8 @@ Falta:
 
 - [ ] **Trilha de teste fechado** criada e AAB enviado (a internal não serve)
 - [ ] Ficha: título, descrição curta e longa, feature graphic, screenshots
-- [ ] URL da política de privacidade (pública — hoje 401, ver acima)
+- [ ] URL da política de privacidade: colar `https://uselayer.online/privacy`
+      no formulário (a página **já é pública**, ver acima — falta só o campo)
 - [ ] Formulário de Data safety — curto: sem login, só o que o RevenueCat coleta
       (histórico de compra + ID de device)
 - [ ] Classificação de conteúdo
@@ -347,7 +433,8 @@ Registrado pra não ser refeito por engano:
 - **Assinatura de release** — `android/app/build.gradle.kts` lê
   `android/key.properties`; sem ele cai no debug key com um `logger.warn`
   explícito (antes era silencioso). Verificado no AAB: o certificado saiu de
-  `CN=Android Debug` para `CN=Collage Studio`.
+  `CN=Android Debug` para `CN=Collage Studio` — o CN fica preso ao keystore e
+  **não acompanha o rename pra `Layer`**; é interno, ninguém vê.
 - **Upload keystore** — `android/upload-keystore.jks`, alias `upload`, PKCS12,
   validade até 2053. SHA-256:
   `E1:5E:F2:09:13:80:F5:D8:D3:31:AE:63:7A:3A:AC:EE:5A:63:E0:6B:35:F3:6E:97:AD:41:AC:A8:F1:0A:93:38`.
@@ -356,7 +443,15 @@ Registrado pra não ser refeito por engano:
   Darkroom (sem gold, que fica reservado pra sinais de Pro). 5 mipmaps legados
   para API 24-25, adaptive icon em `mipmap-anydpi-v26` com `<monochrome>` pros
   themed icons do Android 13+, e o 512×512 da ficha.
-- **Nome do app** — `android:label` de `collageapp` para `Collage Studio`.
+- **Nome do app** — `android:label` de `collageapp` para `Collage Studio`, e
+  depois para **`Layer`** (`104e8a7`, 04/08), junto com o `MaterialApp.title` e
+  a classe raiz (`CollageApp` → `LayerApp`) em `lib/main.dart`. **`Layer` é o
+  nome atual** — é ele que tem que ir no título da ficha da loja e é ele que
+  aparece na UI (`Get Layer Pro`, no Settings) e nas páginas legais
+  ("Privacy Policy · Layer"). "Collage Studio" só sobrevive em comentário de
+  código (`model/template.dart`), no CN do keystore e no ID do produto de
+  assinatura no Play (`collage_pro`) — os três imutáveis ou invisíveis pro
+  usuário.
 - **Erro da galeria** — `gallery_screen.dart` não mostra mais a exception crua;
   a mensagem virou acionável e o erro técnico vai pro `debugPrint`.
 - **Links legais** — seção "Legal" no Settings via `url_launcher`, com o intent
