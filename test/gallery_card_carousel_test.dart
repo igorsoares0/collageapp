@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:collageapp/src/api/entitlements.dart';
 import 'package:collageapp/src/api/template_api.dart';
 import 'package:collageapp/src/api/template_store.dart';
+import 'package:collageapp/src/rendering/template_canvas.dart';
 import 'package:collageapp/src/screens/gallery_screen.dart';
 import 'package:collageapp/src/screens/template_preview_screen.dart';
 import 'package:flutter/material.dart';
@@ -12,9 +13,9 @@ import 'package:http/testing.dart';
 
 TextStyle testFontResolver(String family, TextStyle base) => base;
 
-/// Home cards of multi-panel templates are mini carousels: they render every
-/// panel live and swipe sideways, instead of pinning the static first-panel
-/// thumbnail — see _CardCarousel in gallery_screen.dart.
+/// Home cards render the real template document, not the stored thumbnail —
+/// multi-panel ones as mini carousels that swipe sideways, single-panel ones
+/// as a plain canvas. See _CardCarousel in gallery_screen.dart.
 void main() {
   late Directory tmp;
 
@@ -147,23 +148,32 @@ void main() {
     });
   });
 
-  testWidgets('a single-panel card stays static', (tester) async {
+  testWidgets('a single-panel card renders live, without a carousel', (
+    tester,
+  ) async {
     await tester.runAsync(() async {
       await pumpGallery(tester);
 
-      // Give the cached-template future time to resolve, then confirm no
-      // carousel ever grew: nothing to swipe on one panel.
-      final multiPageView = find.descendant(
-        of: cardOf('tpl_multi'),
-        matching: find.byType(PageView),
+      // It renders the real document, like the preview does — the stored
+      // thumbnail is saved at 240px and a card asks for about twice that, so
+      // pinning it here is what made the home look soft next to the preview.
+      final live = find.descendant(
+        of: cardOf('tpl_single'),
+        matching: find.byType(SlideView),
       );
       await pumpUntil(
         tester,
-        () => tester.any(multiPageView),
-        reason: 'the multi-panel card never grew its carousel',
+        () => tester.any(live),
+        reason: 'the single-panel card never rendered its canvas',
       );
+
+      // But no carousel: one panel has nothing to swipe, and a PageView here
+      // would be a viewport that can never scroll.
       expect(
-        find.descendant(of: cardOf('tpl_single'), matching: find.byType(PageView)),
+        find.descendant(
+          of: cardOf('tpl_single'),
+          matching: find.byType(PageView),
+        ),
         findsNothing,
       );
     });

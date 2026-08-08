@@ -945,9 +945,12 @@ class _TemplateCard extends StatelessWidget {
   }
 }
 
-/// The card's thumbnail area. Single-panel templates keep the static index
-/// thumbnail; multi-panel ones become a mini carousel of live panel renders,
-/// so every slide of a carousel template can be seen right from the home.
+/// The card's artwork. Every card renders the real document once it has
+/// loaded — multi-panel ones as a mini carousel, so every slide of a carousel
+/// template can be seen right from the home. The stored thumbnail is only the
+/// placeholder for the frame or two before that: it is saved 240px wide and
+/// the card asks for roughly twice that, which was visible as a soft, blocky
+/// card next to a sharp preview.
 /// The template comes from the prefetch cache ([TemplateStore
 /// .loadTemplateCached]) — the grid itself never hits the network per card.
 class _CardCarousel extends StatefulWidget {
@@ -994,15 +997,39 @@ class _CardCarouselState extends State<_CardCarousel> {
       future: _template,
       builder: (context, snapshot) {
         final template = snapshot.data?.template;
-        // Loading, failed, or nothing to swipe: the static thumbnail is
-        // exactly what this card always showed.
-        if (template == null || template.panels.length < 2) {
+        // Still loading, or the load failed: the stored thumbnail stands in.
+        if (template == null) {
           return _staticThumb();
         }
         // The published template folded into the continuous model, so a
         // panorama really spans slides instead of being echoed by a bleed.
         final document = migrateToV4(template, const SlotContent()).document;
         final catalog = [...widget.catalog, ...snapshot.data!.assets];
+        // Nothing to swipe: the canvas on its own. A PageView here would hand
+        // every single-panel card in the grid a viewport it can never scroll
+        // and a dots row that counts to one.
+        //
+        // The boundary is not decoration: a card's canvas is expensive to
+        // paint and never changes once built, so without it every card
+        // repaints on every frame of a scroll. The carousel branch gets one
+        // for free — PageView wraps its children in repaint boundaries — and
+        // leaving it off here was enough to slow the gallery test's frames
+        // until the real-IO wait it polls against timed out.
+        if (document.slideCount < 2) {
+          return RepaintBoundary(
+            child: Center(
+              child: IgnorePointer(
+                child: SlideView(
+                  document: document,
+                  slideIndex: 0,
+                  fontResolver: widget.fontResolver,
+                  assetCatalog: catalog,
+                  showTemplatePhotos: true,
+                ),
+              ),
+            ),
+          );
+        }
         return Stack(
           fit: StackFit.expand,
           children: [
