@@ -41,7 +41,11 @@
       "WebFetch(domain:www.revenuecat.com)",
       "Bash(find /mnt/c/Users/igors/AppData/Local/Pub/Cache/hosted/pub.dev/purchases_flutter-10.4.1/lib -name *purchase_result*)",
       "Bash(find /mnt/c/Users/igors/AppData/Local/Pub/Cache/hosted/pub.dev/purchases_flutter-10.4.1/lib -name *.dart)",
-      "Bash(sort -t: -k2 -rn)"
+      "Bash(sort -t: -k2 -rn)",
+      "Bash(cmd.exe /c \"adb devices\")",
+      "Bash(cmd.exe /c \"if exist %LOCALAPPDATA%\\\\Android\\\\sdk\\\\platform-tools\\\\adb.exe \\(%LOCALAPPDATA%\\\\Android\\\\sdk\\\\platform-tools\\\\adb.exe devices\\) else \\(echo NOTFOUND\\)\")",
+      "Bash(cmd.exe /c \"echo %LOCALAPPDATA%\")",
+      "Bash(cmd.exe /c \"flutter build appbundle --dart-define-from-file=env/prod.json\")"
     ]
   }
 }
