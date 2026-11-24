@@ -274,13 +274,20 @@ class _TemplatePreviewScreenState extends State<TemplatePreviewScreen> {
               final aspect = template.canvasWidth / template.canvasHeight;
               final viewport = constraints.maxWidth - AppSpace.margin;
               final peek = slides > 1 ? constraints.maxWidth * 0.2 : 0.0;
-              final slideWidth = math.max(
-                40.0,
-                math.min(
-                  constraints.maxWidth - 2 * AppSpace.margin - peek,
-                  constraints.maxHeight * aspect,
-                ),
-              );
+              // Whole device pixels, so each seam lands on a pixel boundary
+              // and no background hairline shows between flush slides.
+              final dpr = MediaQuery.devicePixelRatioOf(context);
+              final slideWidth =
+                  (math.max(
+                            40.0,
+                            math.min(
+                              constraints.maxWidth - 2 * AppSpace.margin - peek,
+                              constraints.maxHeight * aspect,
+                            ),
+                          ) *
+                          dpr)
+                      .floorToDouble() /
+                  dpr;
               final fraction = (slideWidth / viewport)
                   .clamp(0.05, 1.0)
                   .toDouble();

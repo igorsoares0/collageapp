@@ -729,7 +729,15 @@ class _Featured extends StatelessWidget {
       slideH = maxH;
       slideW = slideH * aspect;
     }
-    const gap = 12.0;
+    // Whole device pixels: with a fractional width every seam lands mid-
+    // pixel, both neighbours antialias it, and the background shows through
+    // as a hairline between slides that should read as one image.
+    final dpr = MediaQuery.devicePixelRatioOf(context);
+    slideW = (slideW * dpr).floorToDouble() / dpr;
+    slideH = slideW / aspect;
+    // Flush: a carousel is one continuous image, so neighbouring slides
+    // touch and anything crossing a cut continues across it.
+    const gap = 0.0;
     final viewport = screen - AppSpace.margin;
 
     return _FolioShell(
