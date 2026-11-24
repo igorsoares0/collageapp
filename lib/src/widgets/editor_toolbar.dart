@@ -2,21 +2,18 @@ import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
 import '../theme.dart';
-
-const Color _surface = AppColors.surface;
-const Color _accent = AppColors.accent;
+import 'layer_ui.dart';
 
 /// The persistent bottom toolbar — the editor's home state, shown whenever
-/// nothing is selected. Every primary creative action lives here as a big
-/// labeled button; selecting an element swaps this bar for that element's
-/// contextual bar (see [ContextBarShell]).
+/// nothing is selected: six equal columns, a hairline icon over a word. The
+/// slide strip above it carries "+ Slide"; selecting an element swaps both
+/// for that element's contextual bar (see [ContextBarShell]).
 class EditorToolbar extends StatelessWidget {
   final VoidCallback onLayout;
   final VoidCallback onText;
   final VoidCallback onPhoto;
   final VoidCallback onSticker;
   final VoidCallback onBackground;
-  final VoidCallback onPanel;
   final VoidCallback onLayers;
 
   const EditorToolbar({
@@ -26,72 +23,64 @@ class EditorToolbar extends StatelessWidget {
     required this.onPhoto,
     required this.onSticker,
     required this.onBackground,
-    required this.onPanel,
     required this.onLayers,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: _surface,
-      child: SafeArea(
-        top: false,
-        child: SizedBox(
-          height: 76,
-          // Centered when everything fits, scrollable on narrow screens.
-          child: Center(
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: Row(
-                children: [
-                  ToolButton(
-                    icon: Symbols.grid_view_rounded,
-                    label: 'Layout',
-                    onTap: onLayout,
-                  ),
-                  ToolButton(
-                    icon: Symbols.text_fields_rounded,
-                    label: 'Text',
-                    onTap: onText,
-                  ),
-                  ToolButton(
-                    icon: Symbols.image_rounded,
-                    label: 'Photo',
-                    onTap: onPhoto,
-                  ),
-                  ToolButton(
-                    icon: Symbols.sticker_rounded,
-                    label: 'Assets',
-                    onTap: onSticker,
-                  ),
-                  ToolButton(
-                    icon: Symbols.format_color_fill_rounded,
-                    label: 'Background',
-                    onTap: onBackground,
-                  ),
-                  ToolButton(
-                    icon: Symbols.auto_awesome_mosaic_rounded,
-                    label: 'Panel',
-                    onTap: onPanel,
-                  ),
-                  ToolButton(
-                    icon: Symbols.layers_rounded,
-                    label: 'Layers',
-                    onTap: onLayers,
-                  ),
-                ],
-              ),
+    return SizedBox(
+      height: 68,
+      child: Row(
+        children: [
+          Expanded(
+            child: ToolButton(
+              icon: Symbols.title,
+              label: 'Text',
+              onTap: onText,
             ),
           ),
-        ),
+          Expanded(
+            child: ToolButton(
+              icon: Symbols.imagesmode,
+              label: 'Photo',
+              onTap: onPhoto,
+            ),
+          ),
+          Expanded(
+            child: ToolButton(
+              icon: Symbols.grid_view,
+              label: 'Layout',
+              onTap: onLayout,
+            ),
+          ),
+          Expanded(
+            child: ToolButton(
+              icon: Symbols.interests,
+              label: 'Assets',
+              onTap: onSticker,
+            ),
+          ),
+          Expanded(
+            child: ToolButton(
+              icon: Symbols.format_paint,
+              label: 'Colour',
+              onTap: onBackground,
+            ),
+          ),
+          Expanded(
+            child: ToolButton(
+              icon: Symbols.layers,
+              label: 'Layers',
+              onTap: onLayers,
+            ),
+          ),
+        ],
       ),
     );
   }
 }
 
-/// A big labeled icon button — the toolbar's building block, also reused for
-/// actions inside contextual bars (e.g. the photo bar's Replace).
+/// A labeled hairline icon — the toolbar's building block.
 class ToolButton extends StatelessWidget {
   final IconData icon;
   final String label;
@@ -108,35 +97,35 @@ class ToolButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(minWidth: 64),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 24, color: AppColors.textPrimary),
-              const SizedBox(height: 4),
-              Text(
-                label,
-                style: const TextStyle(
-                  color: AppColors.textSecondary,
-                  fontSize: 11,
-                ),
-              ),
-            ],
-          ),
+        constraints: const BoxConstraints(
+          minWidth: AppSpace.minTarget,
+          minHeight: AppSpace.minTarget,
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 24, weight: 200, color: AppColors.ink),
+            const SizedBox(height: 5),
+            Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.fade,
+              softWrap: false,
+              style: AppType.sans(11.5, weight: FontWeight.w500, height: 1.1),
+            ),
+          ],
         ),
       ),
     );
   }
 }
 
-/// Frame shared by the contextual bars: a header naming what is selected,
-/// optional Duplicate/Delete, and an explicit Done that returns to the
-/// toolbar — so the bottom bar never changes silently. [child] holds the
-/// bar's controls.
+/// Frame shared by the contextual bars: an eyebrow naming what is selected
+/// ("TEXT · TITLE"), the optional Duplicate / Delete actions and an
+/// underlined Done that returns home — so the bottom bar never changes
+/// silently. A hairline closes the header; [child] holds the controls.
 class ContextBarShell extends StatelessWidget {
   final String title;
   final VoidCallback onDone;
@@ -156,57 +145,116 @@ class ContextBarShell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: _surface,
-      child: SafeArea(
-        top: false,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 4, 0),
-              child: Row(
-                children: [
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      color: AppColors.textSecondary,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: 0.4,
+      color: AppColors.paper,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ContextBarHeader(
+            title: title,
+            onDone: onDone,
+            onDuplicate: onDuplicate,
+            onDelete: onDelete,
+          ),
+          ?child,
+        ],
+      ),
+    );
+  }
+}
+
+/// The header row of every contextual bar (see [ContextBarShell]).
+class ContextBarHeader extends StatelessWidget {
+  final String title;
+  final VoidCallback onDone;
+  final VoidCallback? onDuplicate;
+  final VoidCallback? onDelete;
+
+  const ContextBarHeader({
+    super.key,
+    required this.title,
+    required this.onDone,
+    this.onDuplicate,
+    this.onDelete,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 4, 12, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(child: Eyebrow(title, size: 11.5)),
+              if (onDuplicate != null)
+                _BarAction(label: 'Duplicate', onTap: onDuplicate!),
+              if (onDelete != null)
+                _BarAction(label: 'Delete', onTap: onDelete!),
+              _BarAction(label: 'Done', onTap: onDone, primary: true),
+            ],
+          ),
+          const Padding(padding: EdgeInsets.only(right: 8), child: Hairline()),
+        ],
+      ),
+    );
+  }
+}
+
+/// A text action in a bar header: 13/500, inkSoft; Done in ink, underlined.
+/// The tooltip doubles as the accessible name and a stable test handle.
+class _BarAction extends StatelessWidget {
+  final String label;
+  final VoidCallback onTap;
+  final bool primary;
+
+  const _BarAction({
+    required this.label,
+    required this.onTap,
+    this.primary = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final color = primary ? AppColors.ink : AppColors.inkSoft;
+    return Tooltip(
+      message: label,
+      excludeFromSemantics: true,
+      child: Semantics(
+        button: true,
+        label: label,
+        excludeSemantics: true,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onTap,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: AppSpace.minTarget),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Center(
+                widthFactor: 1,
+                child: Container(
+                  padding: const EdgeInsets.only(bottom: 2),
+                  decoration: primary
+                      ? const BoxDecoration(
+                          border: Border(
+                            bottom: BorderSide(color: AppColors.ink),
+                          ),
+                        )
+                      : null,
+                  child: Text(
+                    label,
+                    style: AppType.sans(
+                      13.5,
+                      weight: FontWeight.w500,
+                      color: color,
                     ),
                   ),
-                  const Spacer(),
-                  if (onDuplicate != null)
-                    IconButton(
-                      icon: const Icon(
-                        Symbols.content_copy_rounded,
-                        size: 18,
-                        color: AppColors.textSecondary,
-                      ),
-                      tooltip: 'Duplicate',
-                      onPressed: onDuplicate,
-                    ),
-                  if (onDelete != null)
-                    IconButton(
-                      icon: const Icon(
-                        Icons.delete_outline,
-                        size: 20,
-                        color: AppColors.textSecondary,
-                      ),
-                      tooltip: 'Delete',
-                      onPressed: onDelete,
-                    ),
-                  TextButton.icon(
-                    onPressed: onDone,
-                    icon: const Icon(Symbols.check_rounded, size: 18),
-                    label: const Text('Done'),
-                    style: TextButton.styleFrom(foregroundColor: _accent),
-                  ),
-                ],
+                ),
               ),
             ),
-            if (child != null) child!,
-          ],
+          ),
         ),
       ),
     );

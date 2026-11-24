@@ -7,7 +7,7 @@ import '../model/template.dart';
 import '../rendering/frame_assets.dart';
 import '../theme.dart';
 
-const Color _cellFill = AppColors.surfaceBright;
+const Color _cellFill = AppColors.rule;
 
 /// A grid layout the user can insert from scratch. Mirrors the classic preset
 /// catalog of the web editor (lib/template/factory.ts): fraction tracks start
@@ -109,19 +109,12 @@ Future<GridPreset?> showGridPresetSheet(BuildContext context) {
     builder: (sheetContext) => SafeArea(
       top: false,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+        padding: const EdgeInsets.fromLTRB(20, 22, 20, 24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Grid layout',
-              style: TextStyle(
-                color: AppColors.textPrimary,
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
+            Text('Grid layout', style: AppType.title(26)),
             const SizedBox(height: 12),
             Wrap(
               spacing: 16,
@@ -130,7 +123,7 @@ Future<GridPreset?> showGridPresetSheet(BuildContext context) {
                 for (final preset in kGridPresets)
                   InkWell(
                     onTap: () => Navigator.pop(sheetContext, preset),
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: BorderRadius.zero,
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -142,7 +135,7 @@ Future<GridPreset?> showGridPresetSheet(BuildContext context) {
                         Text(
                           preset.label,
                           style: const TextStyle(
-                            color: AppColors.textPrimary,
+                            color: AppColors.ink,
                             fontSize: 12,
                           ),
                         ),
@@ -173,27 +166,14 @@ Future<GridPreset?> showLayoutPickerSheet(
     builder: (sheetContext) => SafeArea(
       top: false,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+        padding: const EdgeInsets.fromLTRB(20, 22, 20, 24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Choose a layout',
-              style: TextStyle(
-                color: AppColors.textPrimary,
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              '${photos.length} photos',
-              style: const TextStyle(
-                color: AppColors.textSecondary,
-                fontSize: 12,
-              ),
-            ),
+            Text('Choose a layout', style: AppType.title(26)),
+            const SizedBox(height: 4),
+            Text('${photos.length} photos', style: AppType.caption),
             const SizedBox(height: 12),
             SizedBox(
               height: 176,
@@ -205,7 +185,7 @@ Future<GridPreset?> showLayoutPickerSheet(
                       padding: const EdgeInsets.only(right: 12),
                       child: InkWell(
                         onTap: () => Navigator.pop(sheetContext, preset),
-                        borderRadius: BorderRadius.circular(8),
+                        borderRadius: BorderRadius.zero,
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
@@ -216,7 +196,7 @@ Future<GridPreset?> showLayoutPickerSheet(
                                 child: DecoratedBox(
                                   decoration: BoxDecoration(
                                     color: Colors.white,
-                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(color: AppColors.rule),
                                   ),
                                   child: _FilledLayoutThumb(
                                     preset: preset,
@@ -229,7 +209,7 @@ Future<GridPreset?> showLayoutPickerSheet(
                             Text(
                               preset.label,
                               style: const TextStyle(
-                                color: AppColors.textPrimary,
+                                color: AppColors.ink,
                                 fontSize: 12,
                               ),
                             ),
@@ -291,7 +271,7 @@ class _FilledLayoutThumb extends StatelessWidget {
               Positioned.fromRect(
                 rect: cellRect(grid, cell),
                 child: ClipRRect(
-                  borderRadius: BorderRadius.circular(2),
+                  borderRadius: BorderRadius.zero,
                   child: Image(
                     image: photos[i % photos.length],
                     fit: BoxFit.cover,
@@ -422,14 +402,14 @@ Future<AssetChoice?> showAssetPickerSheet(
     builder: (sheetContext) => SafeArea(
       top: false,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+        padding: const EdgeInsets.fromLTRB(20, 22, 20, 24),
         child: stickers.isEmpty && frames.isEmpty
             ? const SizedBox(
                 height: 120,
                 child: Center(
                   child: Text(
                     'No assets available yet.',
-                    style: TextStyle(color: AppColors.textSecondary),
+                    style: TextStyle(color: AppColors.inkSoft),
                   ),
                 ),
               )
@@ -460,7 +440,7 @@ Future<AssetChoice?> showAssetPickerSheet(
   );
 }
 
-/// The gold "PRO" pill overlaid on a paid-only asset tile. Gold is the app's
+/// The rouge "PRO" mark on a paid-only asset tile — rouge is the app's
 /// reserved premium signal (see theme.dart); a word reads clearer than a
 /// padlock at this size.
 class _LockBadge extends StatelessWidget {
@@ -469,19 +449,11 @@ class _LockBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-      decoration: BoxDecoration(
-        color: AppColors.gold,
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: const Text(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+      color: AppColors.paper,
+      child: Text(
         'PRO',
-        style: TextStyle(
-          color: Colors.black,
-          fontSize: 8,
-          fontWeight: FontWeight.w700,
-          letterSpacing: 0.5,
-        ),
+        style: AppType.eyebrow(size: 11, color: AppColors.rouge),
       ),
     );
   }
@@ -508,7 +480,7 @@ class _AssetSection extends StatelessWidget {
         Text(
           title,
           style: const TextStyle(
-            color: AppColors.textPrimary,
+            color: AppColors.ink,
             fontSize: 16,
             fontWeight: FontWeight.w600,
           ),
@@ -521,7 +493,7 @@ class _AssetSection extends StatelessWidget {
             for (final asset in assets)
               InkWell(
                 onTap: () => onPick(asset),
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.zero,
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -555,7 +527,7 @@ class _AssetSection extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                         textAlign: TextAlign.center,
                         style: const TextStyle(
-                          color: AppColors.textSecondary,
+                          color: AppColors.inkSoft,
                           fontSize: 11,
                         ),
                       ),

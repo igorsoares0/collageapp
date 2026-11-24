@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400;1,6..72,500&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap" rel="stylesheet">
+<style>body{margin:0;background:#D9D0C2;font-family:'Instrument Sans',sans-serif;color:#1E1B17;-webkit-font-smoothing:antialiased}a{color:#1E1B17;text-decoration:underline;text-underline-offset:4px}a:hover{color:#7B2D26}</style>
+</helmet>
+<section data-screen-label="Library and account" style="padding:72px;width:max-content;display:flex;flex-direction:column;gap:48px">
+<div style="display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:24px;align-items:end;border-bottom:1px solid #1E1B17;padding-bottom:24px;width:1900px">
+<div style="grid-column:span 2;font-size:11px;letter-spacing:.18em;text-transform:uppercase;font-weight:600;display:flex;flex-direction:column;gap:6px"><span style="color:#7B2D26">Redesign — Part 3 of 3</span><span style="color:#5E564C">Archive, account, states</span></div>
+<div style="grid-column:span 6;font-family:'Newsreader',serif;font-size:72px;line-height:.95;letter-spacing:-.02em">The archive &amp; <span style="font-style:italic">the house.</span></div>
+<div style="grid-column:span 4;font-size:14px;line-height:1.55;color:#5E564C">Projects, Settings and Paywall keep exactly today's capabilities — auto-saved projects (name, updatedAt, open, delete), RevenueCat plans, restore, manage subscription, legal links.</div>
+</div>
+
+<div style="display:flex;gap:56px;align-items:flex-start">
+
+<div id="3a" style="display:flex;flex-direction:column;gap:16px;width:390px">
+<div style="display:flex;gap:10px;align-items:center"><span style="background:#1E1B17;color:#F3EEE5;font-size:11px;font-weight:600;padding:3px 7px">3a</span><span style="font-size:13px;font-weight:600;white-space:nowrap">Projects — the archive</span></div>
+<div style="width:390px;height:844px;background:#F3EEE5;border-radius:48px;overflow:hidden;position:relative;display:flex;flex-direction:column;box-shadow:0 0 0 9px #1E1B17">
+<div style="height:50px;flex:none;display:flex;align-items:center;justify-content:space-between;padding:0 32px 0 36px;font-size:15px;font-weight:600"><span>9:41</span><div style="display:flex;gap:6px;align-items:center"><span class="material-symbols-outlined" style="font-size:17px;font-variation-settings:'wght' 500">signal_cellular_alt</span><span class="material-symbols-outlined" style="font-size:17px;font-variation-settings:'wght' 500">wifi</span><span class="material-symbols-outlined" style="font-size:20px">battery_full</span></div></div>
+<div style="padding:14px 20px 0;display:flex;justify-content:space-between;align-items:flex-end;flex:none"><div style="font-family:'Newsreader',serif;font-size:46px;line-height:.95;letter-spacing:-.025em">Projects</div><div style="font-family:'Newsreader',serif;font-style:italic;font-size:30px;line-height:1;color:#6F665C">04</div></div>
+<div style="margin:12px 20px 0;border-top:1px solid #1E1B17;padding-top:8px;display:flex;justify-content:space-between;font-size:11.5px;letter-spacing:.16em;text-transform:uppercase;font-weight:600;flex:none"><span>Most recent first</span><span style="color:#5E564C">Saves itself</span></div>
+<div style="flex:1;overflow:hidden;display:flex;flex-direction:column">
+<div style="padding:22px 0 0;display:flex;flex-direction:column;gap:12px">
+<div data-pw="176" onMouseDown="{{ drag }}" style="display:flex;overflow-x:auto;scroll-snap-type:x mandatory;scroll-padding-left:20px;scrollbar-width:none;cursor:grab"><div style="flex:none;width:20px"></div><div style="position:relative;flex:none;width:880px;height:220px;display:flex"><div style="position:absolute;inset:0"><dc-import name="CarouselDoc" hint-size="880px,220px" style="width:880px;height:220px"></dc-import></div><div style="flex:none;width:176px;height:100%;scroll-snap-align:start"></div><div style="flex:none;width:176px;height:100%;scroll-snap-align:start"></div><div style="flex:none;width:176px;height:100%;scroll-snap-align:start"></div><div style="flex:none;width:176px;height:100%;scroll-snap-align:start"></div><div style="flex:none;width:176px;height:100%;scroll-snap-align:start"></div></div><div style="flex:none;width:20px"></div></div>
+<div style="padding:0 20px;display:flex;justify-content:space-between;align-items:flex-start">
+<div style="display:flex;flex-direction:column;gap:3px"><span style="font-family:'Newsreader',serif;font-size:24px;line-height:1.05">Lisbon, in June</span><span style="font-size:12px;color:#5E564C">Edited 2 hours ago · 5 slides</span></div>
+<span class="material-symbols-outlined" style="font-size:22px;font-variation-settings:'wght' 200;padding:4px 0 0 10px">more_horiz</span>
+</div>
+</div>
+<div style="margin:24px 20px 0;display:flex;flex-direction:column">
+<div style="display:grid;grid-template-columns:28px 1fr;gap:12px;padding:14px 0;border-top:1px solid #CFC5B5">
+<span style="font-family:'Newsreader',serif;font-style:italic;font-size:18px;line-height:1">02</span>
+<div style="display:flex;flex-direction:column;gap:10px">
+<div style="display:flex"><div style="width:60px;height:75px"><dc-import name="Slide" kind="cover" img="https://picsum.photos/id/91/150/190" title="Studio Notes" num="01" hint-size="60px,75px" style="width:60px;height:75px"></dc-import></div><div style="width:60px;height:75px"><dc-import name="Slide" kind="type" tone="sand" num="01" title="What I make" hint-size="60px,75px" style="width:60px;height:75px"></dc-import></div><div style="width:60px;height:75px"><dc-import name="Slide" kind="split" img="https://picsum.photos/id/26/150/190" title="Process" hint-size="60px,75px" style="width:60px;height:75px"></dc-import></div><div style="width:60px;height:75px"><dc-import name="Slide" kind="quote" tone="olive" title="Patience." hint-size="60px,75px" style="width:60px;height:75px"></dc-import></div><div style="width:30px;height:75px;overflow:hidden;opacity:.5"><div style="width:60px;height:75px"><dc-import name="Slide" kind="full" img="https://picsum.photos/id/36/150/190" hint-size="60px,75px" style="width:60px;height:75px"></dc-import></div></div></div>
+<div style="display:flex;justify-content:space-between;align-items:baseline"><span style="font-family:'Newsreader',serif;font-size:18px">Ana — studio intro</span><span style="font-size:11.5px;color:#5E564C">Yesterday · 7</span></div>
+</div>
+</div>
+<div style="display:grid;grid-template-columns:28px 1fr;gap:12px;padding:14px 0;border-top:1px solid #CFC5B5">
+<span style="font-family:'Newsreader',serif;font-style:italic;font-size:18px;line-height:1">03</span>
+<div style="display:flex;flex-direction:column;gap:10px">
+<div style="display:flex"><div style="width:42px;height:75px"><dc-import name="Slide" kind="cover" img="https://picsum.photos/id/192/120/215" title="Quiet Rooms" num="01" hint-size="42px,75px" style="width:42px;height:75px"></dc-import></div><div style="width:42px;height:75px"><dc-import name="Slide" kind="full" img="https://picsum.photos/id/201/120/215" hint-size="42px,75px" style="width:42px;height:75px"></dc-import></div><div style="width:42px;height:75px"><dc-import name="Slide" kind="quote" tone="paper" title="Less, better." hint-size="42px,75px" style="width:42px;height:75px"></dc-import></div></div>
+<div style="display:flex;justify-content:space-between;align-items:baseline"><span style="font-family:'Newsreader',serif;font-size:18px">Quiet Rooms</span><span style="font-size:11.5px;color:#5E564C">12 Nov · 3</span></div>
+</div>
+</div>
+</div>
+</div>
+<div style="border-top:1px solid #CFC5B5;height:64px;display:grid;grid-template-columns:1fr 72px 1fr;align-items:center;flex:none;background:#F3EEE5">
+<div style="display:flex;flex-direction:column;align-items:center;gap:4px;position:relative;padding-top:4px"><span class="material-symbols-outlined" style="font-size:24px;line-height:1;font-variation-settings:'wght' 200,'FILL' 0;color:#5E564C">auto_stories</span><span style="font-size:11px;font-weight:500;letter-spacing:.04em;color:#5E564C">Discover</span></div>
+<div style="width:52px;height:44px;background:#1E1B17;color:#F3EEE5;display:flex;align-items:center;justify-content:center;justify-self:center"><span class="material-symbols-outlined" style="font-size:24px;font-variation-settings:'wght' 250">add</span></div>
+<div style="display:flex;flex-direction:column;align-items:center;gap:4px;position:relative;padding-top:4px"><div style="position:absolute;top:-9px;width:18px;height:2px;background:#7B2D26"></div><span class="material-symbols-outlined" style="font-size:24px;line-height:1;font-variation-settings:'wght' 300,'FILL' 0;color:#1E1B17">photo_library</span><span style="font-size:11px;font-weight:600;letter-spacing:.04em;color:#1E1B17">Projects</span></div>
+</div>
+<div style="height:30px;flex:none;display:flex;align-items:flex-end;justify-content:center;padding-bottom:8px;box-sizing:border-box"><div style="width:134px;height:5px;border-radius:3px;background:#1E1B17"></div></div>
+</div>
+<div style="font-size:12.5px;line-height:1.55;color:#5E564C;display:flex;flex-direction:column;gap:6px">
+<div><b style="color:#1E1B17;font-weight:600">The whole document, not a thumbnail.</b> The current build already renders each project as one continuous canvas — here it's shown as what it is: a strip of pages you can drag through.</div>
+<div>The latest project leads at full size; the rest file in as catalogue entries. Name and updatedAt come from ProjectSummary. “···” opens Open / Delete.</div>
+</div>
+</div>
+
+<div id="3b" style="display:flex;flex-direction:column;gap:16px;width:390px">
+<div style="display:flex;gap:10px;align-items:center"><span style="background:#1E1B17;color:#F3EEE5;font-size:11px;font-weight:600;padding:3px 7px">3b</span><span style="font-size:13px;font-weight:600;white-space:nowrap">Projects — empty · delete sheet</span></div>
+<div style="width:390px;height:844px;background:#F3EEE5;border-radius:48px;overflow:hidden;position:relative;display:flex;flex-direction:column;box-shadow:0 0 0 9px #1E1B17">
+<div style="height:50px;flex:none;display:flex;align-items:center;justify-content:space-between;padding:0 32px 0 36px;font-size:15px;font-weight:600"><span>9:41</span><div style="display:flex;gap:6px;align-items:center"><span class="material-symbols-outlined" style="font-size:17px;font-variation-settings:'wght' 500">signal_cellular_alt</span><span class="material-symbols-outlined" style="font-size:17px;font-variation-settings:'wght' 500">wifi</span><span class="material-symbols-outlined" style="font-size:20px">battery_full</span></div></div>
+<div style="padding:14px 20px 0;display:flex;justify-content:space-between;align-items:flex-end;flex:none"><div style="font-family:'Newsreader',serif;font-size:46px;line-height:.95;letter-spacing:-.025em">Projects</div><div style="font-family:'Newsreader',serif;font-style:italic;font-size:30px;line-height:1;color:#6F665C">00</div></div>
+<div style="margin:12px 20px 0;border-top:1px solid #1E1B17;flex:none"></div>
+<div style="flex:1;display:flex;flex-direction:column;justify-content:center;padding:0 20px;gap:28px">
+<div style="display:flex;gap:6px;align-items:flex-end"><div style="width:96px;height:120px;border:1px dashed #8A8073"></div><div style="width:96px;height:120px;border:1px dashed #CFC5B5"></div><div style="width:48px;height:120px;border:1px dashed #CFC5B5;border-right:none"></div></div>
+<div style="font-family:'Newsreader',serif;font-size:36px;line-height:1;letter-spacing:-.02em">Nothing here <span style="font-style:italic">yet.</span></div>
+<div style="font-size:14px;line-height:1.55;color:#5E564C;max-width:290px;margin-top:-14px">Edit a template or start from a blank canvas — it saves itself, page by page.</div>
+<div style="display:flex;gap:22px;font-size:14px;font-weight:500"><span style="text-decoration:underline;text-underline-offset:5px;text-decoration-thickness:1px">Browse templates</span><span style="color:#5E564C">or tap +</span></div>
+</div>
+<div style="border-top:1px solid #CFC5B5;height:64px;display:grid;grid-template-columns:1fr 72px 1fr;align-items:center;flex:none">
+<div style="display:flex;flex-direction:column;align-items:center;gap:4px;position:relative;padding-top:4px"><span class="material-symbols-outlined" style="font-size:24px;line-height:1;font-variation-settings:'wght' 200,'FILL' 0;color:#5E564C">auto_stories</span><span style="font-size:11px;font-weight:500;letter-spacing:.04em;color:#5E564C">Discover</span></div>
+<div style="width:52px;height:44px;background:#1E1B17;color:#F3EEE5;display:flex;align-items:center;justify-content:center;justify-self:center"><span class="material-symbols-outlined" style="font-size:24px;font-variation-settings:'wght' 250">add</span></div>
+<div style="display:flex;flex-direction:column;align-items:center;gap:4px;position:relative;padding-top:4px"><div style="position:absolute;top:-9px;width:18px;height:2px;background:#7B2D26"></div><span class="material-symbols-outlined" style="font-size:24px;line-height:1;font-variation-settings:'wght' 300,'FILL' 0;color:#1E1B17">photo_library</span><span style="font-size:11px;font-weight:600;letter-spacing:.04em;color:#1E1B17">Projects</span></div>
+</div>
+<div style="height:30px;flex:none;display:flex;align-items:flex-end;justify-content:center;padding-bottom:8px;box-sizing:border-box"><div style="width:134px;height:5px;border-radius:3px;background:#1E1B17"></div></div>
+</div>
+<div style="background:#EAE3D7;border-top:1px solid #1E1B17;padding:18px 20px;display:flex;flex-direction:column;gap:12px">
+<div style="display:flex;justify-content:space-between;align-items:baseline"><span style="font-family:'Newsreader',serif;font-size:24px">Delete project?</span><span style="white-space:nowrap;font-size:11.5px;letter-spacing:.16em;text-transform:uppercase;font-weight:600;color:#5E564C">Close</span></div>
+<div style="font-size:13px;color:#5E564C;line-height:1.5">“Lisbon, in June” and its photos will be removed. This cannot be undone.</div>
+<div style="display:flex;gap:10px"><div style="flex:1;height:44px;border:1px solid #1E1B17;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:500">Cancel</div><div style="flex:1;height:44px;background:#7B2D26;color:#F3EEE5;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:500">Delete</div></div>
+</div>
+<div style="font-size:12.5px;line-height:1.55;color:#5E564C">Empty pages are drawn as dashed frames — the shape of what will be there. Delete confirmation reuses today's copy, as a sheet rather than a dialog.</div>
+</div>
+
+<div id="3c" style="display:flex;flex-direction:column;gap:16px;width:390px">
+<div style="display:flex;gap:10px;align-items:center"><span style="background:#1E1B17;color:#F3EEE5;font-size:11px;font-weight:600;padding:3px 7px">3c</span><span style="font-size:13px;font-weight:600;white-space:nowrap">Settings</span></div>
+<div style="width:390px;height:844px;background:#F3EEE5;border-radius:48px;overflow:hidden;position:relative;display:flex;flex-direction:column;box-shadow:0 0 0 9px #1E1B17">
+<div style="height:50px;flex:none;display:flex;align-items:center;justify-content:space-between;padding:0 32px 0 36px;font-size:15px;font-weight:600"><span>9:41</span><div style="display:flex;gap:6px;align-items:center"><span class="material-symbols-outlined" style="font-size:17px;font-variation-settings:'wght' 500">signal_cellular_alt</span><span class="material-symbols-outlined" style="font-size:17px;font-variation-settings:'wght' 500">wifi</span><span class="material-symbols-outlined" style="font-size:20px">battery_full</span></div></div>
+<div style="height:48px;display:flex;align-items:center;padding:0 10px;flex:none"><span class="material-symbols-outlined" style="font-size:24px;font-variation-settings:'wght' 200;padding:10px">arrow_back</span></div>
+<div style="padding:4px 20px 0;font-family:'Newsreader',serif;font-size:46px;line-height:.95;letter-spacing:-.025em">Settings</div>
+<div style="padding:28px 20px 0;display:flex;flex-direction:column">
+<div style="font-size:11.5px;letter-spacing:.16em;text-transform:uppercase;font-weight:600;color:#5E564C;padding-bottom:10px;border-bottom:1px solid #1E1B17">Membership</div>
+<div style="display:grid;grid-template-columns:72px 1fr;gap:14px;padding:16px 0;border-bottom:1px solid #CFC5B5;align-items:center">
+<div style="width:72px;height:90px;box-shadow:4px -4px 0 -1px #F3EEE5,4px -4px 0 0 #A89D8D;margin-top:4px"><dc-import name="Slide" kind="type" tone="rouge" num="Nº5" title="The Index" hint-size="72px,90px" style="width:72px;height:90px"></dc-import></div>
+<div style="display:flex;flex-direction:column;gap:6px"><span style="font-family:'Newsreader',serif;font-size:22px;line-height:1.05">Collage Studio <span style="font-style:italic;color:#7B2D26">Pro</span></span><span style="font-size:13px;color:#5E564C">Unlock every premium template.</span><span style="font-size:13px;font-weight:500;text-decoration:underline;text-underline-offset:4px">See plans</span></div>
+</div>
+<div style="display:flex;justify-content:space-between;align-items:center;padding:16px 0;border-bottom:1px solid #CFC5B5;font-size:15px">Restore purchases<span class="material-symbols-outlined" style="font-size:20px;font-variation-settings:'wght' 200">history</span></div>
+<div style="font-size:11.5px;letter-spacing:.16em;text-transform:uppercase;font-weight:600;color:#5E564C;padding:30px 0 10px;border-bottom:1px solid #1E1B17">Legal</div>
+<div style="display:flex;justify-content:space-between;align-items:center;padding:16px 0;border-bottom:1px solid #CFC5B5;font-size:15px">Privacy Policy<span class="material-symbols-outlined" style="font-size:20px;font-variation-settings:'wght' 200">north_east</span></div>
+<div style="display:flex;justify-content:space-between;align-items:center;padding:16px 0;border-bottom:1px solid #CFC5B5;font-size:15px">Terms of Service<span class="material-symbols-outlined" style="font-size:20px;font-variation-settings:'wght' 200">north_east</span></div>
+<div style="font-size:11.5px;letter-spacing:.16em;text-transform:uppercase;font-weight:600;color:#5E564C;padding:30px 0 10px;border-bottom:1px solid #1E1B17">About</div>
+<div style="display:flex;justify-content:space-between;align-items:center;padding:16px 0;border-bottom:1px solid #CFC5B5;font-size:15px">Version<span style="font-size:13px;color:#5E564C">1.0.0</span></div>
+</div>
+<div style="flex:1"></div>
+<div style="padding:0 20px 6px;display:flex;justify-content:space-between;align-items:baseline"><span style="font-family:'Newsreader',serif;font-size:16px">Collage <span style="font-style:italic">Studio</span></span><span style="font-size:11px;color:#5E564C">Set in Newsreader &amp; Instrument Sans</span></div>
+<div style="height:34px;flex:none;display:flex;align-items:flex-end;justify-content:center;padding-bottom:8px;box-sizing:border-box"><div style="width:134px;height:5px;border-radius:3px;background:#1E1B17"></div></div>
+</div>
+<div style="font-size:12.5px;line-height:1.55;color:#5E564C;display:flex;flex-direction:column;gap:6px">
+<div><b style="color:#1E1B17;font-weight:600">A colophon, not a control panel.</b> Same three groups and rows as today, set as a contents page. Pro members see “Pro · Active — all templates unlocked” and, once RevenueCat returns the URL, “Manage subscription ↗”.</div>
+</div>
+</div>
+
+<div id="3d" style="display:flex;flex-direction:column;gap:16px;width:390px">
+<div style="display:flex;gap:10px;align-items:center"><span style="background:#1E1B17;color:#F3EEE5;font-size:11px;font-weight:600;padding:3px 7px">3d</span><span style="font-size:13px;font-weight:600;white-space:nowrap">Paywall</span></div>
+<div style="width:390px;height:844px;background:#F3EEE5;border-radius:48px;overflow:hidden;position:relative;display:flex;flex-direction:column;box-shadow:0 0 0 9px #1E1B17">
+<div style="height:50px;flex:none;display:flex;align-items:center;justify-content:space-between;padding:0 32px 0 36px;font-size:15px;font-weight:600"><span>9:41</span><div style="display:flex;gap:6px;align-items:center"><span class="material-symbols-outlined" style="font-size:17px;font-variation-settings:'wght' 500">signal_cellular_alt</span><span class="material-symbols-outlined" style="font-size:17px;font-variation-settings:'wght' 500">wifi</span><span class="material-symbols-outlined" style="font-size:20px">battery_full</span></div></div>
+<div style="height:220px;position:relative;flex:none;margin-top:4px">
+<div style="position:absolute;left:20px;top:12px;width:150px;height:188px"><dc-import name="Slide" kind="cover" img="https://picsum.photos/id/225/400/500" title="Slow Mornings" text="Vol. 01" num="01" hint-size="150px,188px" style="width:150px;height:188px"></dc-import></div>
+<div style="position:absolute;left:182px;top:40px;width:110px;height:110px"><dc-import name="Slide" kind="type" tone="rouge" num="Nº5" title="The Index" hint-size="110px,110px" style="width:110px;height:110px"></dc-import></div>
+<div style="position:absolute;left:304px;top:44px;width:66px;height:117px"><dc-import name="Slide" kind="cover" img="https://picsum.photos/id/192/200/356" title="Quiet" num="03" hint-size="66px,117px" style="width:66px;height:117px"></dc-import></div>
+<div style="position:absolute;left:182px;top:162px;right:20px;font-size:11px;letter-spacing:.16em;text-transform:uppercase;font-weight:600;color:#5E564C;line-height:1.5">From the Pro shelf</div>
+<span class="material-symbols-outlined" style="position:absolute;right:8px;top:-10px;font-size:24px;font-variation-settings:'wght' 200;padding:10px">close</span>
+</div>
+<div style="padding:14px 20px 0;display:flex;flex-direction:column;gap:8px">
+<div style="font-size:11.5px;letter-spacing:.16em;text-transform:uppercase;font-weight:600;color:#7B2D26">Collage Studio Pro</div>
+<div style="font-family:'Newsreader',serif;font-size:40px;line-height:.98;letter-spacing:-.025em">The whole <span style="font-style:italic">collection.</span></div>
+</div>
+<div style="padding:16px 20px 0;display:flex;flex-direction:column">
+<div style="display:grid;grid-template-columns:30px 1fr;padding:9px 0;border-top:1px solid #CFC5B5;font-size:14px;align-items:baseline"><span style="font-family:'Newsreader',serif;font-style:italic;font-size:15px">01</span>Every premium template, unlocked</div>
+<div style="display:grid;grid-template-columns:30px 1fr;padding:9px 0;border-top:1px solid #CFC5B5;font-size:14px;align-items:baseline"><span style="font-family:'Newsreader',serif;font-style:italic;font-size:15px">02</span>New premium templates as they arrive</div>
+<div style="display:grid;grid-template-columns:30px 1fr;padding:9px 0;border-top:1px solid #CFC5B5;border-bottom:1px solid #CFC5B5;font-size:14px;align-items:baseline"><span style="font-family:'Newsreader',serif;font-style:italic;font-size:15px">03</span>Restore on any device with your store account</div>
+</div>
+<div style="padding:16px 20px 0;display:flex;flex-direction:column;gap:8px">
+<div style="border:1px solid #1E1B17;background:#EAE3D7;padding:13px 14px;display:flex;align-items:center;gap:12px"><div style="width:14px;height:14px;border:1px solid #1E1B17;display:flex;align-items:center;justify-content:center"><div style="width:8px;height:8px;background:#1E1B17"></div></div><div style="flex:1;display:flex;flex-direction:column;gap:2px"><span style="font-size:15px;font-weight:500">Annual</span><span style="font-size:12.5px;color:#5E564C">$29.99 / year</span></div><span style="font-family:'Newsreader',serif;font-style:italic;font-size:17px;color:#7B2D26;white-space:nowrap;flex:none">Save 50%</span></div>
+<div style="border:1px solid #CFC5B5;padding:13px 14px;display:flex;align-items:center;gap:12px"><div style="width:14px;height:14px;border:1px solid #8A8073"></div><div style="flex:1;display:flex;flex-direction:column;gap:2px"><span style="font-size:15px;font-weight:500">Monthly</span><span style="font-size:12.5px;color:#5E564C">$4.99 / month</span></div></div>
+</div>
+<div style="padding:14px 20px 0"><div style="height:52px;background:#1E1B17;color:#F3EEE5;display:flex;align-items:center;justify-content:space-between;padding:0 20px;font-size:15px;font-weight:500">Continue<span class="material-symbols-outlined" style="font-size:20px;font-variation-settings:'wght' 300">arrow_forward</span></div></div>
+<div style="padding:12px 20px 0;display:flex;justify-content:space-between;align-items:baseline;font-size:11.5px;color:#5E564C"><span style="font-size:13px;font-weight:500;color:#1E1B17;text-decoration:underline;text-underline-offset:4px">Restore purchases</span><span>Auto-renews. Cancel anytime.</span></div>
+<div style="flex:1"></div>
+<div style="height:30px;flex:none;display:flex;align-items:flex-end;justify-content:center;padding-bottom:8px;box-sizing:border-box"><div style="width:134px;height:5px;border-radius:3px;background:#1E1B17"></div></div>
+</div>
+<div style="font-size:12.5px;line-height:1.55;color:#5E564C;display:flex;flex-direction:column;gap:6px">
+<div><b style="color:#1E1B17;font-weight:600">Show the shelf, don't shout.</b> The blurred mosaic becomes a sharp spread of real Pro covers (the same catalog list the screen receives today). Benefits are today's three lines, numbered.</div>
+<div>“Save 50%” is computed from store prices, as now — set in rouge italic, not a badge. Selecting never charges; only Continue does.</div>
+</div>
+</div>
+
+</div>
+
+<div style="display:flex;gap:56px;align-items:flex-start">
+
+<div id="3e" style="display:flex;flex-direction:column;gap:16px;width:390px">
+<div style="display:flex;gap:10px;align-items:center"><span style="background:#1E1B17;color:#F3EEE5;font-size:11px;font-weight:600;padding:3px 7px">3e</span><span style="font-size:13px;font-weight:600;white-space:nowrap">Preview — Pro template, free user</span></div>
+<div style="width:390px;height:844px;background:#F3EEE5;border-radius:48px;overflow:hidden;position:relative;display:flex;flex-direction:column;box-shadow:0 0 0 9px #1E1B17">
+<div style="height:50px;flex:none;display:flex;align-items:center;justify-content:space-between;padding:0 32px 0 36px;font-size:15px;font-weight:600"><span>9:41</span><div style="display:flex;gap:6px;align-items:center"><span class="material-symbols-outlined" style="font-size:17px;font-variation-settings:'wght' 500">signal_cellular_alt</span><span class="material-symbols-outlined" style="font-size:17px;font-variation-settings:'wght' 500">wifi</span><span class="material-symbols-outlined" style="font-size:20px">battery_full</span></div></div>
+<div style="height:48px;display:flex;align-items:center;justify-content:space-between;padding:0 10px;flex:none"><span class="material-symbols-outlined" style="font-size:24px;font-variation-settings:'wght' 200;padding:10px">arrow_back</span><span style="white-space:nowrap;font-size:11.5px;letter-spacing:.16em;text-transform:uppercase;font-weight:600">Lifestyle — N° 01</span><span style="width:44px;font-size:11.5px;letter-spacing:.16em;text-transform:uppercase;font-weight:600;color:#7B2D26">Pro</span></div>
+<div style="padding:10px 20px 0;display:flex;justify-content:space-between;align-items:flex-end;flex:none"><div style="font-family:'Newsreader',serif;font-size:40px;line-height:.95;letter-spacing:-.02em">Slow<br><span style="font-style:italic">Mornings</span></div><div style="text-align:right;font-size:12px;color:#5E564C;line-height:1.45;padding-bottom:4px">Portrait 4:5<br>6 slides</div></div>
+<div style="margin-top:22px;height:375px;position:relative;overflow:hidden;flex:none">
+<div style="position:absolute;top:0;left:45px;display:flex">
+<div style="width:300px;height:375px"><dc-import name="Slide" kind="cover" img="https://picsum.photos/id/225/600/750" title="Slow Mornings" text="Vol. 01" num="01" hint-size="300px,375px" style="width:300px;height:375px"></dc-import></div>
+<div style="width:300px;height:375px;opacity:.5"><dc-import name="Slide" kind="split" img="https://picsum.photos/id/42/600/750" title="First light" num="02" hint-size="300px,375px" style="width:300px;height:375px"></dc-import></div>
+</div>
+</div>
+<div style="padding:16px 20px 0;display:flex;justify-content:space-between;align-items:center;flex:none">
+<div style="font-family:'Newsreader',serif;font-style:italic;font-size:34px;line-height:1;letter-spacing:-.02em">01<span style="font-size:18px;color:#6F665C">/06</span></div>
+<div style="display:flex;gap:6px;align-items:center"><div style="width:14px;height:3px;background:#1E1B17"></div><div style="width:14px;height:1px;background:#CFC5B5"></div><div style="width:14px;height:1px;background:#CFC5B5"></div><div style="width:14px;height:1px;background:#CFC5B5"></div><div style="width:14px;height:1px;background:#CFC5B5"></div><div style="width:14px;height:1px;background:#CFC5B5"></div></div>
+</div>
+<div style="flex:1"></div>
+<div style="padding:0 20px 10px;font-size:12.5px;color:#5E564C;display:flex;justify-content:space-between"><span>Looking is free. Editing is part of Pro.</span></div>
+<div style="padding:0 20px;flex:none"><div style="height:54px;background:#1E1B17;color:#F3EEE5;display:flex;align-items:center;justify-content:space-between;padding:0 20px;font-size:15px;font-weight:500"><span>Unlock with <span style="font-family:'Newsreader',serif;font-style:italic;font-size:17px">Pro</span></span><span class="material-symbols-outlined" style="font-size:20px;font-variation-settings:'wght' 300">arrow_forward</span></div></div>
+<div style="height:34px;flex:none;display:flex;align-items:flex-end;justify-content:center;padding-bottom:8px;box-sizing:border-box"><div style="width:134px;height:5px;border-radius:3px;background:#1E1B17"></div></div>
+</div>
+<div style="font-size:12.5px;line-height:1.55;color:#5E564C">The premium gate stays on the CTA — never on looking. On purchase the paywall pops back here and the CTA turns to “Use this template” in place.</div>
+</div>
+
+<div id="3f" style="display:flex;flex-direction:column;gap:16px;width:390px">
+<div style="display:flex;gap:10px;align-items:center"><span style="background:#1E1B17;color:#F3EEE5;font-size:11px;font-weight:600;padding:3px 7px">3f</span><span style="font-size:13px;font-weight:600;white-space:nowrap">Discover — loading · offline</span></div>
+<div style="width:390px;height:844px;background:#F3EEE5;border-radius:48px;overflow:hidden;position:relative;display:flex;flex-direction:column;box-shadow:0 0 0 9px #1E1B17">
+<div style="height:50px;flex:none;display:flex;align-items:center;justify-content:space-between;padding:0 32px 0 36px;font-size:15px;font-weight:600"><span>9:41</span><div style="display:flex;gap:6px;align-items:center"><span class="material-symbols-outlined" style="font-size:17px;font-variation-settings:'wght' 500">signal_cellular_alt</span><span class="material-symbols-outlined" style="font-size:17px;font-variation-settings:'wght' 500">wifi</span><span class="material-symbols-outlined" style="font-size:20px">battery_full</span></div></div>
+<div style="padding:6px 20px 0;display:flex;align-items:center;justify-content:space-between"><div style="font-family:'Newsreader',serif;font-size:26px;letter-spacing:-.02em;white-space:nowrap">Collage <span style="font-style:italic">Studio</span></div><span class="material-symbols-outlined" style="font-size:24px;font-variation-settings:'wght' 200;padding:10px;margin-right:-10px">settings</span></div>
+<div style="margin:10px 20px 0;border-top:1px solid #1E1B17;padding-top:8px;display:flex;justify-content:space-between;align-items:center;font-size:11.5px;letter-spacing:.16em;text-transform:uppercase;font-weight:600"><span></span><span style="color:#7B2D26;display:flex;gap:6px;align-items:center"><span class="material-symbols-outlined" style="font-size:14px;font-variation-settings:'wght' 300">cloud_off</span>Offline — saved copies</span></div>
+<div style="padding:30px 20px 0;display:flex;flex-direction:column;gap:10px"><div style="height:40px;width:84%;background:#EAE3D7"></div><div style="height:40px;width:58%;background:#EAE3D7"></div></div>
+<div style="padding:48px 20px 0;display:flex;gap:0"><div style="width:248px;height:310px;background:#EAE3D7"></div><div style="width:122px;height:310px;background:#E4DCCF"></div></div>
+<div style="padding:14px 20px 0;display:flex;justify-content:space-between"><div style="height:22px;width:52%;background:#EAE3D7"></div><div style="height:22px;width:20%;background:#EAE3D7"></div></div>
+<div style="padding:44px 20px 0;display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px"><div style="grid-column:span 4;aspect-ratio:4/5;background:#EAE3D7;box-shadow:4px -4px 0 -1px #F3EEE5,4px -4px 0 0 #CFC5B5"></div><div style="grid-column:span 2;align-self:end;display:flex;flex-direction:column;gap:8px"><div style="height:30px;width:60%;background:#EAE3D7"></div><div style="height:10px;background:#EAE3D7"></div></div></div>
+</div>
+<div style="font-size:12.5px;line-height:1.55;color:#5E564C;display:flex;flex-direction:column;gap:6px">
+<div><b style="color:#1E1B17;font-weight:600">Loading</b> keeps the final silhouette (as today's skeleton does) and breathes between Paper deep and Table at 900ms.</div>
+<div><b style="color:#1E1B17;font-weight:600">Offline</b> (index served from cache) is a state, not an alarm: one rouge line in the masthead meta row replaces the template count.</div>
+</div>
+</div>
+
+<div id="3g" style="display:flex;flex-direction:column;gap:16px;width:390px">
+<div style="display:flex;gap:10px;align-items:center"><span style="background:#1E1B17;color:#F3EEE5;font-size:11px;font-weight:600;padding:3px 7px">3g</span><span style="font-size:13px;font-weight:600;white-space:nowrap">Discover — couldn't load · message</span></div>
+<div style="width:390px;height:844px;background:#F3EEE5;border-radius:48px;overflow:hidden;position:relative;display:flex;flex-direction:column;box-shadow:0 0 0 9px #1E1B17">
+<div style="height:50px;flex:none;display:flex;align-items:center;justify-content:space-between;padding:0 32px 0 36px;font-size:15px;font-weight:600"><span>9:41</span><div style="display:flex;gap:6px;align-items:center"><span class="material-symbols-outlined" style="font-size:17px;font-variation-settings:'wght' 500">signal_cellular_alt</span><span class="material-symbols-outlined" style="font-size:17px;font-variation-settings:'wght' 500">wifi_off</span><span class="material-symbols-outlined" style="font-size:20px">battery_full</span></div></div>
+<div style="padding:6px 20px 0;display:flex;align-items:center;justify-content:space-between"><div style="font-family:'Newsreader',serif;font-size:26px;letter-spacing:-.02em;white-space:nowrap">Collage <span style="font-style:italic">Studio</span></div><span class="material-symbols-outlined" style="font-size:24px;font-variation-settings:'wght' 200;padding:10px;margin-right:-10px">settings</span></div>
+<div style="margin:10px 20px 0;border-top:1px solid #1E1B17"></div>
+<div style="flex:1;display:flex;flex-direction:column;justify-content:center;padding:0 20px;gap:22px">
+<div style="font-family:'Newsreader',serif;font-style:italic;font-size:88px;line-height:.8;color:#CFC5B5;letter-spacing:-.04em">—</div>
+<div style="font-family:'Newsreader',serif;font-size:36px;line-height:1;letter-spacing:-.02em">The collection <span style="font-style:italic">is out of reach.</span></div>
+<div style="font-size:14px;line-height:1.55;color:#5E564C;margin-top:-8px">Couldn't load templates. Check your connection and try again — your projects are still here.</div>
+<div style="display:flex;gap:22px;align-items:center"><div style="height:46px;border:1px solid #1E1B17;display:flex;align-items:center;padding:0 22px;font-size:14px;font-weight:500">Try again</div><span style="font-size:14px;font-weight:500;text-decoration:underline;text-underline-offset:5px">Open Projects</span></div>
+</div>
+<div style="margin:0 12px 10px;background:#1E1B17;color:#F3EEE5;padding:14px 16px;display:flex;justify-content:space-between;align-items:center;font-size:13px"><span>Pro unlocked — enjoy.</span><span style="white-space:nowrap;font-size:11.5px;letter-spacing:.16em;text-transform:uppercase;font-weight:600;color:#CFC5B5">OK</span></div>
+<div style="border-top:1px solid #CFC5B5;height:64px;display:grid;grid-template-columns:1fr 72px 1fr;align-items:center;flex:none">
+<div style="display:flex;flex-direction:column;align-items:center;gap:4px;position:relative;padding-top:4px"><div style="position:absolute;top:-9px;width:18px;height:2px;background:#7B2D26"></div><span class="material-symbols-outlined" style="font-size:24px;line-height:1;font-variation-settings:'wght' 300,'FILL' 0;color:#1E1B17">auto_stories</span><span style="font-size:11px;font-weight:600;letter-spacing:.04em;color:#1E1B17">Discover</span></div>
+<div style="width:52px;height:44px;background:#1E1B17;color:#F3EEE5;display:flex;align-items:center;justify-content:center;justify-self:center"><span class="material-symbols-outlined" style="font-size:24px;font-variation-settings:'wght' 250">add</span></div>
+<div style="display:flex;flex-direction:column;align-items:center;gap:4px;position:relative;padding-top:4px"><span class="material-symbols-outlined" style="font-size:24px;line-height:1;font-variation-settings:'wght' 200,'FILL' 0;color:#5E564C">photo_library</span><span style="font-size:11px;font-weight:500;letter-spacing:.04em;color:#5E564C">Projects</span></div>
+</div>
+<div style="height:30px;flex:none;display:flex;align-items:flex-end;justify-content:center;padding-bottom:8px;box-sizing:border-box"><div style="width:134px;height:5px;border-radius:3px;background:#1E1B17"></div></div>
+</div>
+<div style="font-size:12.5px;line-height:1.55;color:#5E564C">Errors speak plainly and point at what still works. Messages (snackbars today) are a flat ink strip above the nav; the purchase-outcome copy is reused verbatim.</div>
+</div>
+
+<div id="3h" style="display:flex;flex-direction:column;gap:16px;width:520px">
+<div style="display:flex;gap:10px;align-items:center"><span style="background:#1E1B17;color:#F3EEE5;font-size:11px;font-weight:600;padding:3px 7px">3h</span><span style="font-size:13px;font-weight:600;white-space:nowrap">Navigation &amp; motion</span></div>
+<div style="background:#F3EEE5;padding:36px;display:flex;flex-direction:column;gap:28px">
+<div style="display:flex;flex-direction:column;gap:12px">
+<div style="font-size:11.5px;letter-spacing:.16em;text-transform:uppercase;font-weight:600;color:#5E564C;border-bottom:1px solid #1E1B17;padding-bottom:10px">Map</div>
+<div style="font-family:'Newsreader',serif;font-size:26px;line-height:1.3">Discover <span style="font-style:italic;color:#6F665C">→</span> Preview <span style="font-style:italic;color:#6F665C">→</span> <span style="color:#7B2D26;font-style:italic">(Paywall)</span> <span style="font-style:italic;color:#6F665C">→</span> Editor <span style="font-style:italic;color:#6F665C">→</span> Export</div>
+<div style="font-size:13px;line-height:1.6;color:#5E564C">+ → Blank canvas sheet → Editor<br>Projects → Editor (reopen)<br>Masthead <span class="material-symbols-outlined" style="font-size:14px;vertical-align:-2px;font-variation-settings:'wght' 300">settings</span> → Settings → Paywall<br>Editor text font (Pro) → Paywall</div>
+</div>
+<div style="display:flex;flex-direction:column">
+<div style="font-size:11.5px;letter-spacing:.16em;text-transform:uppercase;font-weight:600;color:#5E564C;border-bottom:1px solid #1E1B17;padding-bottom:10px">Motion</div>
+<div style="display:grid;grid-template-columns:30px 1fr 84px;gap:10px;padding:12px 0;border-bottom:1px solid #CFC5B5;font-size:13px;line-height:1.45"><span style="font-family:'Newsreader',serif;font-style:italic;font-size:16px">01</span><span><b style="font-weight:600">Tap a folio.</b> Image dims 6%, caption rule draws left→right.</span><span style="color:#5E564C;text-align:right">160ms</span></div>
+<div style="display:grid;grid-template-columns:30px 1fr 84px;gap:10px;padding:12px 0;border-bottom:1px solid #CFC5B5;font-size:13px;line-height:1.45"><span style="font-family:'Newsreader',serif;font-style:italic;font-size:16px">02</span><span><b style="font-weight:600">Into Preview.</b> Cover flies to the hero (existing Hero tag); page edges unfold into neighbour slides; title rises 8px.</span><span style="color:#5E564C;text-align:right">320ms ease-out</span></div>
+<div style="display:grid;grid-template-columns:30px 1fr 84px;gap:10px;padding:12px 0;border-bottom:1px solid #CFC5B5;font-size:13px;line-height:1.45"><span style="font-family:'Newsreader',serif;font-style:italic;font-size:16px">03</span><span><b style="font-weight:600">Swipe slides.</b> Page snaps; folio numeral rolls; tick thickens.</span><span style="color:#5E564C;text-align:right">250ms cubic</span></div>
+<div style="display:grid;grid-template-columns:30px 1fr 84px;gap:10px;padding:12px 0;border-bottom:1px solid #CFC5B5;font-size:13px;line-height:1.45"><span style="font-family:'Newsreader',serif;font-style:italic;font-size:16px">04</span><span><b style="font-weight:600">Into the editor.</b> Canvas holds position; Paper fades to Table behind it; strip and tools slide up.</span><span style="color:#5E564C;text-align:right">240ms</span></div>
+<div style="display:grid;grid-template-columns:30px 1fr 84px;gap:10px;padding:12px 0;border-bottom:1px solid #CFC5B5;font-size:13px;line-height:1.45"><span style="font-family:'Newsreader',serif;font-style:italic;font-size:16px">05</span><span><b style="font-weight:600">Select / Done.</b> Bar cross-fades with a 6% rise (existing AnimatedSwitcher).</span><span style="color:#5E564C;text-align:right">200ms</span></div>
+<div style="display:grid;grid-template-columns:30px 1fr 84px;gap:10px;padding:12px 0;border-bottom:1px solid #CFC5B5;font-size:13px;line-height:1.45"><span style="font-family:'Newsreader',serif;font-style:italic;font-size:16px">06</span><span><b style="font-weight:600">Export develops.</b> Each slide fades in as rendered; on finish the headline swaps and a light haptic lands.</span><span style="color:#5E564C;text-align:right">per slide</span></div>
+<div style="display:grid;grid-template-columns:30px 1fr 84px;gap:10px;padding:12px 0;font-size:13px;line-height:1.45"><span style="font-family:'Newsreader',serif;font-style:italic;font-size:16px">07</span><span><b style="font-weight:600">Unlock.</b> Every rouge “Pro” mark fades out in place; nothing reflows.</span><span style="color:#5E564C;text-align:right">200ms</span></div>
+</div>
+<div style="font-size:12px;color:#5E564C;line-height:1.5">Reduced-motion: all of the above become instant cuts, as the current build already honours disableAnimations.</div>
+</div>
+</div>
+
+</div>
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  drag = e => {
+    if (e.button !== 0) return;
+    const el = e.currentTarget, x0 = e.clientX, s0 = el.scrollLeft, w = +el.dataset.pw || el.clientWidth;
+    e.preventDefault();
+    el.style.scrollSnapType = 'none';
+    el.style.cursor = 'grabbing';
+    const mv = ev => { el.scrollLeft = s0 - (ev.clientX - x0); };
+    const up = () => {
+      window.removeEventListener('mousemove', mv);
+      window.removeEventListener('mouseup', up);
+      el.style.cursor = 'grab';
+      const dx = el.scrollLeft - s0;
+      let i = Math.round(s0 / w) + (dx > w * 0.15 ? 1 : dx < -w * 0.15 ? -1 : 0);
+      i = Math.max(0, Math.min(i, Math.round((el.scrollWidth - el.clientWidth) / w)));
+      el.scrollTo({ left: i * w, behavior: 'smooth' });
+      setTimeout(() => { el.style.scrollSnapType = 'x mandatory'; }, 450);
+    };
+    window.addEventListener('mousemove', mv);
+    window.addEventListener('mouseup', up);
+  };
+  renderVals() { return { drag: this.drag }; }
+}
+</script>
+</body>
+</html>

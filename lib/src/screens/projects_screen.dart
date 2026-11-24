@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
@@ -5,10 +7,11 @@ import '../api/entitlements.dart';
 import '../api/project_store.dart';
 import '../rendering/template_canvas.dart';
 import '../theme.dart';
+import '../widgets/layer_ui.dart';
 import 'template_screen.dart';
 
 /// Standalone screen wrapper around [ProjectsList] — kept for direct
-/// navigation; the home screen embeds the list as its "My projects" tab.
+/// navigation; the home screen embeds the list as its Projects tab.
 class ProjectsScreen extends StatelessWidget {
   /// Injectable for tests; the app uses the default documents-dir store.
   final ProjectStore? store;
@@ -18,33 +21,38 @@ class ProjectsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Your projects')),
-      body: ProjectsList(store: store),
+      body: SafeArea(child: ProjectsList(store: store)),
     );
   }
 }
 
 /// The user's saved editing sessions, newest first — everything auto-saved by
 /// the editor (templates they edited and collages created from scratch).
-/// A grid of live thumbnails only: the collage speaks for itself, so the rows
-/// carry no name or timestamp — just the artwork and a delete affordance.
+///
+/// The archive: the latest project leads at full size as a strip of its
+/// pages; the rest file in as catalogue entries with a mini strip. Every
+/// strip is the saved document rendered live — no thumbnail files to keep in
+/// sync with edits.
 class ProjectsList extends StatefulWidget {
   /// Injectable for tests; the app uses the default documents-dir store.
   final ProjectStore? store;
 
-  /// Used by the card thumbnails' live render; tests inject a synchronous
-  /// fake.
+  /// Used by the strips' live render; tests inject a synchronous fake.
   final FontResolver fontResolver;
 
   /// Threaded into the editor so the asset picker can gate premium assets;
   /// null in tests/standalone (a fresh instance reports free).
   final EntitlementsService? entitlements;
 
+  /// The empty state's "Browse templates" link. Null hides the link.
+  final VoidCallback? onBrowseTemplates;
+
   const ProjectsList({
     super.key,
     this.store,
     this.fontResolver = googleFontsResolver,
     this.entitlements,
+    this.onBrowseTemplates,
   });
 
   @override
@@ -79,9 +87,7 @@ class _ProjectsListState extends State<ProjectsList> {
     final project = await _store.loadAsDocument(summary.id);
     if (!mounted) return;
     if (project == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not open this project.')),
-      );
+      showLayerMessage(context, 'Could not open this project.');
       return;
     }
     await Navigator.of(context).push(
@@ -96,23 +102,73 @@ class _ProjectsListState extends State<ProjectsList> {
     _reload();
   }
 
-  Future<void> _delete(ProjectSummary summary) async {
-    final confirmed = await showDialog<bool>(
+  /// The row's "…": Open or Delete.
+  Future<void> _actions(ProjectSummary summary) async {
+    final choice = await showLayerSheet<String>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Delete project?'),
-        content: Text(
-          '"${summary.name}" and its photos will be removed. '
-          'This cannot be undone.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Cancel'),
+      title: summary.name,
+      builder: (sheetContext) => Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Hairline(),
+          _SheetRow(
+            icon: Symbols.north_east,
+            label: 'Open',
+            onTap: () => Navigator.pop(sheetContext, 'open'),
           ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('Delete'),
+          const Hairline(),
+          _SheetRow(
+            icon: Symbols.delete,
+            label: 'Delete',
+            onTap: () => Navigator.pop(sheetContext, 'delete'),
+          ),
+          const Hairline(),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    switch (choice) {
+      case 'open':
+        await _open(summary);
+      case 'delete':
+        await _delete(summary);
+    }
+  }
+
+  Future<void> _delete(ProjectSummary summary) async {
+    final confirmed = await showLayerSheet<bool>(
+      context: context,
+      title: 'Delete project?',
+      deep: true,
+      builder: (sheetContext) => Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            '"${summary.name}" and its photos will be removed. '
+            'This cannot be undone.',
+            style: AppType.bodyS,
+          ),
+          const SizedBox(height: 22),
+          Row(
+            children: [
+              Expanded(
+                child: SecondaryButton(
+                  label: 'Cancel',
+                  height: 52,
+                  onPressed: () => Navigator.pop(sheetContext, false),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: PrimaryButton.destructive(
+                  label: 'Delete',
+                  height: 52,
+                  onPressed: () => Navigator.pop(sheetContext, true),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -127,174 +183,427 @@ class _ProjectsListState extends State<ProjectsList> {
     return FutureBuilder<List<ProjectSummary>>(
       future: _list,
       builder: (context, snapshot) {
-        if (snapshot.connectionState != ConnectionState.done) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        final projects = snapshot.data ?? const [];
-        if (projects.isEmpty) {
-          return const Center(
-            child: Padding(
-              padding: EdgeInsets.all(24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Symbols.space_dashboard_rounded,
-                    size: 40,
-                    color: AppColors.textSecondary,
-                  ),
-                  SizedBox(height: 12),
-                  Text(
-                    'Nothing here yet.\nEdit a template or create a collage '
-                    'from scratch — it saves itself.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: AppColors.textSecondary),
-                  ),
-                ],
-              ),
+        final loading = snapshot.connectionState != ConnectionState.done;
+        final projects = snapshot.data ?? const <ProjectSummary>[];
+        return CustomScrollView(
+          slivers: [
+            SliverToBoxAdapter(
+              child: _Header(count: loading ? null : projects.length),
             ),
-          );
-        }
-        return GridView.builder(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 2,
-            childAspectRatio: 0.72,
-            crossAxisSpacing: 12,
-            mainAxisSpacing: 12,
-          ),
-          itemCount: projects.length,
-          itemBuilder: (context, i) {
-            final summary = projects[i];
-            return _ProjectCard(
-              // Keyed by project id: after a delete the cards shift position,
-              // and a positional key would hand slot N the thumbnail state
-              // (and its cached future) of the card that used to sit there.
-              key: ValueKey('project-${summary.id}'),
-              store: _store,
-              summary: summary,
-              fontResolver: widget.fontResolver,
-              onOpen: () => _open(summary),
-              onDelete: () => _delete(summary),
-            );
-          },
+            if (loading)
+              const SliverFillRemaining(
+                hasScrollBody: false,
+                child: Center(child: LayerSpinner()),
+              )
+            else if (projects.isEmpty)
+              SliverFillRemaining(
+                hasScrollBody: false,
+                child: _EmptyArchive(onBrowse: widget.onBrowseTemplates),
+              )
+            else ...[
+              const SliverToBoxAdapter(
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(20, 14, 20, 18),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(child: Eyebrow('Most recent first')),
+                      Eyebrow('Saves itself'),
+                    ],
+                  ),
+                ),
+              ),
+              SliverList.builder(
+                itemCount: projects.length,
+                itemBuilder: (context, i) {
+                  final summary = projects[i];
+                  return _ProjectEntry(
+                    // Keyed by project id: after a delete the rows shift, and
+                    // a positional key would hand row N the strip state (and
+                    // its cached future) of the row that used to sit there.
+                    key: ValueKey('project-${summary.id}'),
+                    index: i,
+                    store: _store,
+                    summary: summary,
+                    fontResolver: widget.fontResolver,
+                    onOpen: () => _open(summary),
+                    onActions: () => _actions(summary),
+                  );
+                },
+              ),
+              const SliverToBoxAdapter(child: SizedBox(height: 32)),
+            ],
+          ],
         );
       },
     );
   }
 }
 
-/// A live miniature of the project's first panel: the saved document rendered
-/// by the same inert canvas the preview uses — no stale thumbnail files to
-/// keep in sync with edits. The whole card opens the project; the corner
-/// button deletes it.
-class _ProjectCard extends StatefulWidget {
+class _Header extends StatelessWidget {
+  final int? count;
+
+  const _Header({required this.count});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Expanded(child: Text('Projects', style: AppType.headlineL)),
+              if (count != null)
+                Text(
+                  twoDigits(count!),
+                  style: AppType.numeral(30, color: AppColors.stone),
+                ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          const Hairline(color: AppColors.ink),
+        ],
+      ),
+    );
+  }
+}
+
+class _EmptyArchive extends StatelessWidget {
+  final VoidCallback? onBrowse;
+
+  const _EmptyArchive({required this.onBrowse});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 48, 20, 32),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          // The shape of what will be there: three pages, fading out.
+          SizedBox(
+            height: 108,
+            child: Row(
+              children: [
+                for (final (i, c) in const [
+                  AppColors.inkSoft,
+                  AppColors.ruleStrong,
+                  AppColors.rule,
+                ].indexed) ...[
+                  if (i > 0) const SizedBox(width: 6),
+                  SizedBox(
+                    width: i == 2 ? 44 : 86,
+                    child: DashedBox(color: c, child: const SizedBox.expand()),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(height: 26),
+          SerifHeadline(
+            roman: 'Nothing here ',
+            italic: 'yet.',
+            style: AppType.title(34),
+          ),
+          const SizedBox(height: 14),
+          Text(
+            'Edit a template or start from a blank canvas — it saves itself, '
+            'page by page.',
+            style: AppType.body.copyWith(color: AppColors.inkSoft),
+          ),
+          if (onBrowse != null) ...[
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                TextLink('Browse templates', onTap: onBrowse, size: 15),
+                const SizedBox(width: 20),
+                Text(
+                  'or tap +',
+                  style: AppType.sans(15, color: AppColors.inkSoft),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _SheetRow extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  const _SheetRow({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) => InkWell(
+    onTap: onTap,
+    child: SizedBox(
+      height: 54,
+      child: Row(
+        children: [
+          Expanded(child: Text(label, style: AppType.label)),
+          Icon(icon, size: 20, weight: 300),
+        ],
+      ),
+    ),
+  );
+}
+
+/// One project: the latest (index 0) as a large page strip with name, edit
+/// time and an actions button; the rest as catalogue rows.
+class _ProjectEntry extends StatefulWidget {
+  final int index;
   final ProjectStore store;
   final ProjectSummary summary;
   final FontResolver fontResolver;
   final VoidCallback onOpen;
-  final VoidCallback onDelete;
+  final VoidCallback onActions;
 
-  const _ProjectCard({
+  const _ProjectEntry({
     super.key,
+    required this.index,
     required this.store,
     required this.summary,
     required this.fontResolver,
     required this.onOpen,
-    required this.onDelete,
+    required this.onActions,
   });
 
   @override
-  State<_ProjectCard> createState() => _ProjectCardState();
+  State<_ProjectEntry> createState() => _ProjectEntryState();
 }
 
-class _ProjectCardState extends State<_ProjectCard> {
+class _ProjectEntryState extends State<_ProjectEntry> {
   // Cached across rebuilds so scrolls/reloads don't re-read the file; the
-  // card's ValueKey retires this state when the id changes.
+  // entry's ValueKey retires this state when the id changes.
   // Loaded into the v4 continuous model: a v3 file is migrated on READ (the
-  // store writes nothing), so the card previews the same document the editor
-  // will eventually work in.
+  // store writes nothing), so the strip previews the same document the
+  // editor will eventually work in.
   late final Future<ContinuousProject?> _project = widget.store.loadAsDocument(
     widget.summary.id,
   );
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      margin: EdgeInsets.zero,
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: widget.onOpen,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(10),
-              child: FutureBuilder<ContinuousProject?>(
-                future: _project,
-                builder: (context, snapshot) {
-                  final project = snapshot.data;
-                  if (project == null || project.document.slideCount == 0) {
-                    // Loading, corrupt or empty — the neutral glyph covers
-                    // all three; a broken project still opens the "couldn't
-                    // open" path from the card itself.
-                    return const Center(
-                      child: Icon(
-                        Symbols.edit_note_rounded,
-                        size: 32,
-                        color: AppColors.textSecondary,
-                      ),
-                    );
-                  }
-                  // The WHOLE document in one continuous canvas (Modelo B).
-                  // This replaced a strip of one PanelCanvas per slide, each
-                  // echoing its neighbours through the bleed: with every layer
-                  // in a single coordinate space, a panorama simply spans the
-                  // slides, so the preview is the document itself rather than
-                  // an assembly of crops. It also retires the old "which panel
-                  // represents the document?" question — the ambiguity that
-                  // made this thumbnail render blank for carousels whose
-                  // content sat on a later slide.
-                  return Center(
-                    child: IgnorePointer(
-                      child: CanvasView(
-                        document: project.document,
-                        content: project.content,
-                        fontResolver: widget.fontResolver,
-                      ),
-                    ),
-                  );
-                },
+    return FutureBuilder<ContinuousProject?>(
+      future: _project,
+      builder: (context, snapshot) {
+        final project = snapshot.data;
+        final slides = project?.document.slideCount;
+        final edited = relativeTime(widget.summary.updatedAt);
+        return widget.index == 0
+            ? _latest(project, slides, edited)
+            : _row(project, slides, edited);
+      },
+    );
+  }
+
+  Widget _moreButton() => IconButton(
+    icon: const Icon(Symbols.more_horiz, size: 22),
+    tooltip: 'Project actions',
+    onPressed: widget.onActions,
+  );
+
+  Widget _latest(ContinuousProject? project, int? slides, String edited) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: widget.onOpen,
+            child: LayoutBuilder(
+              builder: (context, constraints) => _DocumentStrip(
+                project: project,
+                fontResolver: widget.fontResolver,
+                // 176×220 per 4:5 slide at a 390pt screen; scales with width.
+                height: math.min(220 * constraints.maxWidth / 350, 320),
+                maxWidth: constraints.maxWidth,
               ),
             ),
-            // Same corner-badge treatment as the gallery's lock: a quiet dark
-            // circle that stays legible over any collage.
-            Positioned(
-              top: 8,
-              right: 8,
-              child: Tooltip(
-                message: 'Delete project',
-                child: Material(
-                  color: Colors.black54,
-                  shape: const CircleBorder(),
-                  child: InkWell(
-                    customBorder: const CircleBorder(),
-                    onTap: widget.onDelete,
-                    child: const Padding(
-                      padding: EdgeInsets.all(7),
-                      child: Icon(
-                        Icons.delete_outline,
-                        size: 18,
-                        color: Colors.white,
+          ),
+          const SizedBox(height: 14),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: widget.onOpen,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(widget.summary.name, style: AppType.title(24)),
+                      const SizedBox(height: 6),
+                      Text(
+                        [
+                          'Edited $edited',
+                          if (slides != null)
+                            slides == 1 ? '1 slide' : '$slides slides',
+                        ].join(' · '),
+                        style: AppType.sans(14, color: AppColors.inkSoft),
                       ),
-                    ),
+                    ],
                   ),
                 ),
               ),
+              _moreButton(),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _row(ContinuousProject? project, int? slides, String edited) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: AppSpace.margin),
+      child: Column(
+        children: [
+          const Hairline(),
+          InkWell(
+            onTap: widget.onOpen,
+            onLongPress: widget.onActions,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(0, 14, 0, 16),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(
+                    width: 40,
+                    child: Text(
+                      twoDigits(widget.index + 1),
+                      style: AppType.numeral(22),
+                    ),
+                  ),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              child: LayoutBuilder(
+                                builder: (context, constraints) =>
+                                    _DocumentStrip(
+                                      project: project,
+                                      fontResolver: widget.fontResolver,
+                                      height: 75,
+                                      maxWidth: constraints.maxWidth,
+                                      scrollable: false,
+                                    ),
+                              ),
+                            ),
+                            _moreButton(),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Expanded(
+                              child: Text(
+                                widget.summary.name,
+                                style: AppType.title(20),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Text(
+                              [edited, ?slides?.toString()].join(' · '),
+                              style: AppType.sans(13, color: AppColors.inkSoft),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The WHOLE saved document in one continuous canvas (Modelo B), [height]
+/// tall — slides flush, anything crossing a cut continuous. Wider than
+/// [maxWidth] it scrolls sideways (the latest project) or is clipped (rows).
+class _DocumentStrip extends StatelessWidget {
+  final ContinuousProject? project;
+  final FontResolver fontResolver;
+  final double height;
+  final double maxWidth;
+  final bool scrollable;
+
+  const _DocumentStrip({
+    required this.project,
+    required this.fontResolver,
+    required this.height,
+    required this.maxWidth,
+    this.scrollable = true,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final p = project;
+    if (p == null || p.document.slideCount == 0) {
+      // Loading, corrupt or empty — a quiet page placeholder; a broken
+      // project still opens the "couldn't open" path when tapped.
+      return Align(
+        alignment: Alignment.centerLeft,
+        child: SizedBox(
+          width: height * 0.8,
+          height: height,
+          child: const ColoredBox(color: AppColors.paperDeep),
+        ),
+      );
+    }
+    final doc = p.document;
+    final scale = height / doc.slideHeight;
+    final canvas = RepaintBoundary(
+      child: IgnorePointer(
+        child: SizedBox(
+          width: doc.contentWidth * scale,
+          height: height,
+          child: CanvasView(
+            document: doc,
+            content: p.content,
+            fontResolver: fontResolver,
+          ),
         ),
       ),
+    );
+    return SizedBox(
+      height: height,
+      width: maxWidth,
+      child: scrollable
+          ? SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              physics: const ClampingScrollPhysics(),
+              child: canvas,
+            )
+          : ClipRect(
+              child: OverflowBox(
+                alignment: Alignment.centerLeft,
+                maxWidth: double.infinity,
+                child: canvas,
+              ),
+            ),
     );
   }
 }

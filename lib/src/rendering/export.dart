@@ -71,38 +71,80 @@ Future<List<Uint8List>> capturePngSlices(
   Document document, {
   double? targetSlideWidth,
 }) async {
+  final raster = await rasterDocument(
+    boundaryKey,
+    document,
+    targetSlideWidth: targetSlideWidth,
+  );
+  try {
+    return await encodeSlices(raster, document).toList();
+  } finally {
+    raster.dispose();
+  }
+}
+
+/// The whole document, rastered ONCE at export resolution — step one of
+/// [capturePngSlices], split out so the export screen can take over the
+/// slow part (cropping + PNG encoding, slide by slide, with progress) after
+/// the editor has left the screen.
+///
+/// This step needs the canvas PAINTED: call it while the editor is still the
+/// visible route. The caller owns the returned raster and must dispose it.
+class DocumentRaster {
+  final ui.Image image;
+
+  /// Captured pixels per template unit.
+  final double ratio;
+
+  const DocumentRaster(this.image, this.ratio);
+
+  void dispose() => image.dispose();
+}
+
+/// Rasters [boundaryKey] (a [CanvasView] export boundary — the whole document
+/// in template units) so each slide comes out [targetSlideWidth] px wide
+/// (default: the document's own slide width).
+Future<DocumentRaster> rasterDocument(
+  GlobalKey boundaryKey,
+  Document document, {
+  double? targetSlideWidth,
+}) async {
   final boundary =
       boundaryKey.currentContext!.findRenderObject() as RenderRepaintBoundary;
   final target = targetSlideWidth ?? document.slideWidth;
   // The boundary is the document box in template units, so capturing at the
   // per-slide ratio makes every slice exactly `target` px wide.
   final ratio = target / document.slideWidth;
-  final full = await boundary.toImage(pixelRatio: ratio);
+  return DocumentRaster(await boundary.toImage(pixelRatio: ratio), ratio);
+}
 
-  try {
-    final slices = <Uint8List>[];
-    for (var i = 0; i < document.slideCount; i++) {
-      final rect = document.slideRect(i);
-      // Crop rects live in the CAPTURED image's pixel space, so they scale by
-      // the same ratio the capture used.
-      final slice = await capturePngRegion(
-        full,
-        Rect.fromLTWH(
-          rect.left * ratio,
-          rect.top * ratio,
-          rect.width * ratio,
-          rect.height * ratio,
-        ),
-      );
-      try {
-        final bytes = await slice.toByteData(format: ui.ImageByteFormat.png);
-        slices.add(bytes!.buffer.asUint8List());
-      } finally {
-        slice.dispose();
-      }
+/// Step two: crops [raster] into one PNG per slide, in carousel order,
+/// yielding each as soon as it is encoded. Adjacent slides are neighbouring
+/// pixels of the same raster, so the seams line up by construction.
+/// Does not dispose [raster].
+Stream<Uint8List> encodeSlices(
+  DocumentRaster raster,
+  Document document,
+) async* {
+  final ratio = raster.ratio;
+  for (var i = 0; i < document.slideCount; i++) {
+    final rect = document.slideRect(i);
+    // Crop rects live in the CAPTURED image's pixel space, so they scale by
+    // the same ratio the capture used.
+    final slice = await capturePngRegion(
+      raster.image,
+      Rect.fromLTWH(
+        rect.left * ratio,
+        rect.top * ratio,
+        rect.width * ratio,
+        rect.height * ratio,
+      ),
+    );
+    try {
+      final bytes = await slice.toByteData(format: ui.ImageByteFormat.png);
+      yield bytes!.buffer.asUint8List();
+    } finally {
+      slice.dispose();
     }
-    return slices;
-  } finally {
-    full.dispose();
   }
 }

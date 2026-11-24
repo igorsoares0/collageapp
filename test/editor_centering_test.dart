@@ -47,23 +47,26 @@ void main() {
     return canvas.center.dx - viewport.center.dx;
   }
 
-  testWidgets('THE BUG: a fresh 9:16 story opens centred, not hugging the left',
-      (tester) async {
-    // Tall and narrow: the canvas is height-limited here, so the strip does
-    // NOT fill the viewport and top-left alignment becomes visible.
-    await pumpBlank(
-      tester,
-      width: 1080,
-      height: 1920,
-      screen: const Size(1200, 2000),
-    );
-    expect(
-      offCentre(tester),
-      closeTo(0, 1.0),
-      reason: 'a story canvas narrower than the viewport must be centred; '
-          'a positive gap here means it is pinned to the left padding',
-    );
-  });
+  testWidgets(
+    'THE BUG: a fresh 9:16 story opens centred, not hugging the left',
+    (tester) async {
+      // Tall and narrow: the canvas is height-limited here, so the strip does
+      // NOT fill the viewport and top-left alignment becomes visible.
+      await pumpBlank(
+        tester,
+        width: 1080,
+        height: 1920,
+        screen: const Size(1200, 2000),
+      );
+      expect(
+        offCentre(tester),
+        closeTo(0, 1.0),
+        reason:
+            'a story canvas narrower than the viewport must be centred; '
+            'a positive gap here means it is pinned to the left padding',
+      );
+    },
+  );
 
   testWidgets('the other canvas sizes stay centred too', (tester) async {
     for (final (w, h) in const [(1080.0, 1350.0), (1080.0, 1080.0)]) {
@@ -87,7 +90,7 @@ void main() {
       screen: const Size(1200, 2000),
     );
     for (var i = 0; i < 3; i++) {
-      await tester.tap(find.text('Panel'));
+      await tester.tap(find.byKey(const ValueKey('strip-add-slide')));
       await tester.pumpAndSettle();
     }
 
@@ -95,8 +98,9 @@ void main() {
     // must sit at the strip padding so the carousel reads left-to-right and
     // `_focusPanelAt`'s translations stay meaningful.
     final viewport = tester.getRect(find.byType(InteractiveViewer));
-    final first =
-        tester.getTopLeft(find.byKey(const ValueKey('slide-background-0'))).dx;
+    final first = tester
+        .getTopLeft(find.byKey(const ValueKey('slide-background-0')))
+        .dx;
     expect(first - viewport.left, closeTo(16.0, 1.0));
   });
 }

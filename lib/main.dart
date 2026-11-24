@@ -8,6 +8,8 @@ import 'src/theme.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  // Chrome faces via google_fonts. Off in widget tests (no network there).
+  AppFonts.enabled = true;
   final entitlements = EntitlementsService();
   // Fire-and-forget: the gallery renders immediately and the locks resolve
   // as soon as RevenueCat answers (or stay on when it can't).

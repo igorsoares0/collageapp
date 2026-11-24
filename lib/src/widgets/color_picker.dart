@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
 import '../theme.dart';
+import 'layer_ui.dart';
 import 'text_style_bar.dart' show kColorChoices;
 
 /// Colors the user has picked this session, most-recent first. In-memory only
@@ -31,7 +32,8 @@ Future<void> showColorPickerSheet({
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
-    backgroundColor: AppColors.surface,
+    backgroundColor: AppColors.paper,
+    barrierColor: AppColors.scrim,
     builder: (_) =>
         _ColorPickerSheet(initial: initialColor, onChanged: onChanged),
   );
@@ -54,35 +56,41 @@ class ColorTrigger extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+    return Tooltip(
+      message: 'Custom colour',
       child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
         onTap: onTap,
-        child: Container(
-          width: 36,
-          height: 36,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            // The ring reads as "spectrum"; the center shows the current color.
-            gradient: const SweepGradient(colors: _hueWheel),
-            border: Border.all(
-              color: selected ? AppColors.accent : AppColors.surfaceBright,
-              width: selected ? 3 : 1,
-            ),
-          ),
-          child: Center(
-            child: Container(
-              width: 20,
-              height: 20,
-              decoration: BoxDecoration(
-                color: color,
-                shape: BoxShape.circle,
-                border: Border.all(color: AppColors.surface, width: 2),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 7),
+          child: Container(
+            padding: const EdgeInsets.all(2),
+            decoration: BoxDecoration(
+              border: Border.all(
+                color: selected ? AppColors.ink : Colors.transparent,
               ),
-              child: Icon(
-                Symbols.colorize_rounded,
-                size: 12,
-                color: _readableInk(color),
+            ),
+            child: Container(
+              width: 28,
+              height: 28,
+              // The ring reads as "spectrum"; the centre shows the colour.
+              decoration: const BoxDecoration(
+                gradient: SweepGradient(colors: _hueWheel),
+              ),
+              child: Center(
+                child: Container(
+                  width: 16,
+                  height: 16,
+                  decoration: BoxDecoration(
+                    color: color,
+                    border: Border.all(color: AppColors.paper, width: 2),
+                  ),
+                  child: Icon(
+                    Symbols.colorize,
+                    size: 9,
+                    color: _readableInk(color),
+                  ),
+                ),
               ),
             ),
           ),
@@ -135,9 +143,7 @@ class _ColorPickerSheetState extends State<_ColorPickerSheet> {
     // HSVColor loses hue/saturation for pure greys; keep the current hue so the
     // SV thumb and hue slider don't jump when the user picks black or white.
     final hsv = HSVColor.fromColor(color);
-    final next = hsv.saturation == 0
-        ? hsv.withHue(_hsv.hue)
-        : hsv;
+    final next = hsv.saturation == 0 ? hsv.withHue(_hsv.hue) : hsv;
     _emit(next, syncHex: syncHex);
   }
 
@@ -159,6 +165,7 @@ class _ColorPickerSheetState extends State<_ColorPickerSheet> {
         padding: EdgeInsets.only(
           left: 20,
           right: 20,
+          top: 22,
           bottom: MediaQuery.of(context).viewInsets.bottom + 16,
         ),
         child: Column(
@@ -167,34 +174,20 @@ class _ColorPickerSheetState extends State<_ColorPickerSheet> {
           children: [
             Row(
               children: [
-                Text(
-                  'Color',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                const Spacer(),
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  style: TextButton.styleFrom(
-                    foregroundColor: AppColors.accent,
-                  ),
-                  child: const Text('Done'),
-                ),
+                Expanded(child: Text('Colour', style: AppType.title(26))),
+                SheetCloseButton(onTap: () => Navigator.of(context).pop()),
               ],
             ),
             const SizedBox(height: 8),
             // Saturation / value square.
-            ClipRRect(
-              borderRadius: BorderRadius.circular(14),
+            ClipRect(
               child: AspectRatio(
                 aspectRatio: 1.6,
                 child: _SVArea(hsv: _hsv, onChanged: _emit),
               ),
             ),
             const SizedBox(height: 16),
-            _HueSlider(
-              hue: _hsv.hue,
-              onChanged: (h) => _emit(_hsv.withHue(h)),
-            ),
+            _HueSlider(hue: _hsv.hue, onChanged: (h) => _emit(_hsv.withHue(h))),
             const SizedBox(height: 16),
             Row(
               children: [
@@ -203,8 +196,7 @@ class _ColorPickerSheetState extends State<_ColorPickerSheet> {
                   height: 44,
                   decoration: BoxDecoration(
                     color: color,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: AppColors.outline),
+                    border: Border.all(color: AppColors.ink),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -241,10 +233,18 @@ class _ColorPickerSheetState extends State<_ColorPickerSheet> {
         prefixText: _hexController.text.startsWith('#') ? null : '#',
         isDense: true,
         filled: true,
-        fillColor: AppColors.surfaceHigh,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-          borderSide: BorderSide.none,
+        fillColor: AppColors.paperDeep,
+        border: const OutlineInputBorder(
+          borderRadius: BorderRadius.zero,
+          borderSide: BorderSide(color: AppColors.rule),
+        ),
+        enabledBorder: const OutlineInputBorder(
+          borderRadius: BorderRadius.zero,
+          borderSide: BorderSide(color: AppColors.rule),
+        ),
+        focusedBorder: const OutlineInputBorder(
+          borderRadius: BorderRadius.zero,
+          borderSide: BorderSide(color: AppColors.ink),
         ),
       ),
       onSubmitted: _onHexSubmitted,
@@ -256,12 +256,7 @@ class _ColorPickerSheetState extends State<_ColorPickerSheet> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          label,
-          style: Theme.of(context).textTheme.labelSmall?.copyWith(
-            color: AppColors.textSecondary,
-          ),
-        ),
+        Eyebrow(label, size: 11, color: AppColors.inkSoft),
         const SizedBox(height: 8),
         SizedBox(
           height: 34,
@@ -279,12 +274,9 @@ class _ColorPickerSheetState extends State<_ColorPickerSheet> {
                   height: 34,
                   decoration: BoxDecoration(
                     color: c,
-                    shape: BoxShape.circle,
                     border: Border.all(
-                      color: isCurrent
-                          ? AppColors.accent
-                          : AppColors.surfaceBright,
-                      width: isCurrent ? 3 : 1,
+                      color: isCurrent ? AppColors.ink : AppColors.rule,
+                      width: isCurrent ? 2 : 1,
                     ),
                   ),
                 ),

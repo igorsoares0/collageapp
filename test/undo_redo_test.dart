@@ -1,13 +1,22 @@
 import 'package:collageapp/src/model/template.dart';
 import 'package:collageapp/src/screens/template_screen.dart';
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+/// Every photo-pick target on screen (empty slots, and the replace overlay on
+/// a selected photo) — keyed `pick-<slotId>` in template_canvas.dart.
+final pickTargets = find.byWidgetPredicate(
+  (w) =>
+      w.key is ValueKey<String> &&
+      (w.key! as ValueKey<String>).value.startsWith('pick-'),
+);
 
 TextStyle testFontResolver(String family, TextStyle base) => base;
 
 void main() {
-  final undoButton = find.widgetWithIcon(IconButton, Icons.undo);
-  final redoButton = find.widgetWithIcon(IconButton, Icons.redo);
+  final undoButton = find.widgetWithIcon(IconButton, Symbols.undo);
+  final redoButton = find.widgetWithIcon(IconButton, Symbols.redo);
   // Slides each carry their own background key now, so the presence of the
   // SECOND one is what 'the document has two slides' looks like.
   final secondSlide = find.byKey(const ValueKey('slide-background-1'));
@@ -43,7 +52,8 @@ void main() {
     expect(enabled(tester, undoButton), isFalse);
     expect(enabled(tester, redoButton), isFalse);
 
-    await addFromToolbar(tester, 'Panel');
+    await tester.tap(find.byKey(const ValueKey('strip-add-slide')));
+    await tester.pumpAndSettle();
     expect(secondSlide, findsOneWidget);
     expect(enabled(tester, undoButton), isTrue);
 
@@ -131,11 +141,14 @@ void main() {
     await tester.pumpAndSettle();
 
     final slot = find.byWidgetPredicate(
-      (w) => w is Container && w.color == const Color(0xFFE4E4E7),
+      // The empty photo slot's "PHOTO" label (below its pick square).
+      (w) =>
+          w.key is ValueKey<String> &&
+          (w.key! as ValueKey<String>).value.startsWith('slot-label-'),
     );
     // Select it (tapping the placeholder below the pick icon). Selecting is
     // not an edit, so there is still nothing to undo.
-    await tester.tapAt(tester.getCenter(slot) + const Offset(0, 40));
+    await tester.tapAt(tester.getCenter(slot));
     await tester.pumpAndSettle();
     expect(enabled(tester, undoButton), isFalse);
 
@@ -166,7 +179,8 @@ void main() {
 
   testWidgets('a new edit clears the redo branch', (tester) async {
     await pumpDraft(tester);
-    await addFromToolbar(tester, 'Panel');
+    await tester.tap(find.byKey(const ValueKey('strip-add-slide')));
+    await tester.pumpAndSettle();
     await tester.tap(undoButton);
     await tester.pumpAndSettle();
     expect(enabled(tester, redoButton), isTrue);
@@ -190,7 +204,7 @@ void main() {
 
     // Grid gone AND selection cleared — the bottom strip is back to the
     // toolbar, not a stale grid bar.
-    expect(find.byIcon(Icons.add_photo_alternate_outlined), findsNothing);
+    expect(pickTargets, findsNothing);
     expect(find.byType(Slider), findsNothing);
   });
 }

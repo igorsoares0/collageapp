@@ -36,26 +36,29 @@ class GridStyleBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ContextBarShell(
-      title: 'Grid',
+      title: 'Layout · Grid',
       onDuplicate: onDuplicate,
       onDelete: onDelete,
       onDone: onDone,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _LabeledSlider(
-            icon: Symbols.space_bar_rounded,
-            value: gutter.clamp(0, maxGutter),
-            max: maxGutter,
-            onChanged: onGutter,
-          ),
-          _LabeledSlider(
-            icon: Symbols.rounded_corner_rounded,
-            value: cornerRadius.clamp(0, maxCorner),
-            max: maxCorner,
-            onChanged: onCorner,
-          ),
-        ],
+      child: Padding(
+        padding: const EdgeInsets.only(top: 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _LabeledSlider(
+              icon: Symbols.space_bar,
+              value: gutter.clamp(0, maxGutter),
+              max: maxGutter,
+              onChanged: onGutter,
+            ),
+            _LabeledSlider(
+              icon: Symbols.rounded_corner,
+              value: cornerRadius.clamp(0, maxCorner),
+              max: maxCorner,
+              onChanged: onCorner,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -77,15 +80,16 @@ class _LabeledSlider extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 20),
       child: Row(
         children: [
-          Icon(icon, size: 22, color: AppColors.textSecondary),
+          Icon(icon, size: 22, weight: 200, color: AppColors.inkSoft),
+          const SizedBox(width: 12),
           Expanded(
             child: Slider(
               value: value,
               max: max <= 0 ? 1 : max,
-              activeColor: AppColors.accent,
+              activeColor: AppColors.ink,
               onChanged: max <= 0 ? null : onChanged,
             ),
           ),

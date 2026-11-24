@@ -15,6 +15,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../model/asset_record.dart';
 import '../model/slot_content.dart';
 import '../model/template.dart';
+import '../theme.dart';
 import 'frame_assets.dart';
 
 /// Resolves a template fontFamily name into a TextStyle. The default uses
@@ -401,7 +402,6 @@ class PanelCanvas extends StatelessWidget {
   final List<double> guideXs;
   final List<double> guideYs;
 
-
   const PanelCanvas({
     super.key,
     required this.panel,
@@ -445,7 +445,6 @@ class PanelCanvas extends StatelessWidget {
           if (!content.layerHidden(layer.id, layer.hidden)) layer,
     ];
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -893,11 +892,11 @@ class _CutGuidePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = const Color(0x66000000)
-      ..strokeWidth = 2
+      ..color = AppColors.inkSoft
+      ..strokeWidth = 3
       ..style = PaintingStyle.stroke;
-    const dash = 24.0;
-    const gap = 16.0;
+    const dash = 14.0;
+    const gap = 10.0;
     for (final x in xs) {
       // With a gutter the cut is a band, so mark the slide's edge — the start
       // of the next slide minus the gutter reads as where the previous ended.
@@ -1937,7 +1936,9 @@ class _SelectionChrome extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final pad = kChromePad / scale;
-    final stroke = 4.0 / scale;
+    // A hairline: ink, with a paper halo outside so it still reads on a
+    // dark photo.
+    final stroke = 3.0 / scale;
     return Stack(
       clipBehavior: Clip.none,
       children: [
@@ -1947,15 +1948,26 @@ class _SelectionChrome extends StatelessWidget {
           Padding(padding: EdgeInsets.all(pad), child: child)
         else
           const SizedBox.expand(),
+        // The ring: a paper hairline just OUTSIDE an ink hairline, so it reads
+        // on light and dark artwork alike. Both are borders (strokes only) —
+        // never a shadow or a fill, which would paint over the element.
         Positioned(
-          left: pad,
-          top: pad,
-          right: pad,
-          bottom: pad,
+          left: pad - stroke,
+          top: pad - stroke,
+          right: pad - stroke,
+          bottom: pad - stroke,
           child: IgnorePointer(
             child: DecoratedBox(
               decoration: BoxDecoration(
-                border: Border.all(color: Colors.white, width: stroke),
+                border: Border.all(color: AppColors.paper, width: stroke),
+              ),
+              child: Padding(
+                padding: EdgeInsets.all(stroke),
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    border: Border.all(color: AppColors.ink, width: stroke),
+                  ),
+                ),
               ),
             ),
           ),
@@ -1977,7 +1989,7 @@ class _SelectionChrome extends StatelessWidget {
                       top: pad + h,
                       width: stroke,
                       height: drop,
-                      child: const ColoredBox(color: Colors.white),
+                      child: const ColoredBox(color: AppColors.ink),
                     ),
                     _corner('tl', pad, pad),
                     _corner('tr', pad + w, pad),
@@ -1997,14 +2009,14 @@ class _SelectionChrome extends StatelessWidget {
                     _glyphHandle(
                       'rotate',
                       Icons.rotate_right,
-                      const Color(0xFF3F3F46),
+                      AppColors.ink,
                       pad + w / 2,
                       pad + h + drop,
                     ),
                     _glyphHandle(
                       'delete',
                       Icons.delete_outline,
-                      const Color(0xFFEF4444),
+                      AppColors.rouge,
                       pad + w / 2,
                       pad - rise,
                     ),
@@ -2039,22 +2051,11 @@ class _SelectionChrome extends StatelessWidget {
       child: Container(
         key: ValueKey('handle_$key'),
         decoration: BoxDecoration(
-          color: Colors.white,
-          shape: BoxShape.circle,
-          border: Border.all(
-            color: const Color(0xFFD4D4D8),
-            width: 1.5 / scale,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.25),
-              blurRadius: 6 / scale,
-              offset: Offset(0, 2 / scale),
-            ),
-          ],
+          color: AppColors.paper,
+          border: Border.all(color: AppColors.ink, width: 3 / scale),
         ),
-        // Two thirds of the dot — the glyph grows with its button.
-        child: Icon(icon, size: dot * 2 / 3, color: color),
+        // Two thirds of the square — the glyph grows with its button.
+        child: Icon(icon, size: dot * 0.6, weight: 300, color: color),
       ),
     );
   }
@@ -2076,27 +2077,17 @@ class _SelectionChrome extends StatelessWidget {
       child: Container(
         key: ValueKey('handle_edge_$key'),
         decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(thick / 2),
-          border: Border.all(
-            color: const Color(0xFFD4D4D8),
-            width: 1.5 / scale,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.25),
-              blurRadius: 6 / scale,
-              offset: Offset(0, 2 / scale),
-            ),
-          ],
+          color: AppColors.paper,
+          border: Border.all(color: AppColors.ink, width: 3 / scale),
         ),
       ),
     );
   }
 
-  /// One round corner handle centered at ([cx], [cy]) in the padded space.
+  /// One square corner handle centered at ([cx], [cy]) in the padded space.
+  /// Drawn small (≈8px); the grab zone around it is much larger.
   Widget _corner(String key, double cx, double cy) {
-    final dot = _kCornerDot / scale;
+    final dot = _kCornerDot * 0.32 / scale;
     return Positioned(
       left: cx - dot / 2,
       top: cy - dot / 2,
@@ -2105,19 +2096,8 @@ class _SelectionChrome extends StatelessWidget {
       child: Container(
         key: ValueKey('handle_$key'),
         decoration: BoxDecoration(
-          color: Colors.white,
-          shape: BoxShape.circle,
-          border: Border.all(
-            color: const Color(0xFFD4D4D8),
-            width: 1.5 / scale,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.25),
-              blurRadius: 6 / scale,
-              offset: Offset(0, 2 / scale),
-            ),
-          ],
+          color: AppColors.paper,
+          border: Border.all(color: AppColors.ink, width: 3 / scale),
         ),
       ),
     );
@@ -2224,28 +2204,19 @@ class _ImageSlot extends StatelessWidget {
           // selected); a tap anywhere else just moves it.
           if (selected && pick != null)
             Positioned.fill(
-              child: Center(child: _PickIcon(onTap: pick)),
+              child: Center(
+                child: _PickIcon(slotId: layer.slotId, onTap: pick),
+              ),
             ),
         ],
       );
     }
-    return Container(
+    // Tapping the pick target opens the gallery; tapping the rest of the
+    // placeholder falls through to select the slot.
+    return SizedBox(
       width: w,
       height: h,
-      color: const Color(0xFFE4E4E7),
-      alignment: Alignment.center,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Tapping the icon opens the gallery; tapping the rest of the
-          // placeholder falls through to select the slot.
-          if (pick != null) _PickIcon(onTap: pick),
-          Text(
-            layer.slotId,
-            style: const TextStyle(color: Color(0xFF71717A), fontSize: 40),
-          ),
-        ],
-      ),
+      child: _SlotPlaceholder(slotId: layer.slotId, onPick: pick),
     );
   }
 }
@@ -2637,68 +2608,209 @@ class _GridCell extends StatelessWidget {
           ),
         ),
         // Replace overlay (only when selected).
-        if (selected && pick != null) Center(child: _PickIcon(onTap: pick)),
+        if (selected && pick != null)
+          Center(
+            child: _PickIcon(slotId: slotId, onTap: pick),
+          ),
       ],
     );
   }
 
   Widget _empty(VoidCallback? pick) {
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        // Background + label are non-hittable so a drag falls through to move
-        // the grid; only the pick icon is a real touch target.
-        IgnorePointer(
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(radius),
-            child: const ColoredBox(color: Color(0xFFE4E4E7)),
-          ),
-        ),
-        Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (pick != null) _PickIcon(onTap: pick),
-              IgnorePointer(
-                child: Text(
-                  slotId,
-                  style: const TextStyle(
-                    color: Color(0xFF71717A),
-                    fontSize: 32,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(radius),
+      child: _SlotPlaceholder(slotId: slotId, onPick: pick),
     );
   }
 }
 
-/// The photo-picker affordance: a round, padded "add photo" icon that is its
-/// own tap target so only it — not the whole slot — opens the gallery.
-class _PickIcon extends StatelessWidget {
-  final VoidCallback onTap;
+/// Editor hints for empty photo slots, provided above the editor's canvas:
+/// each slot's FILL NUMBER (the order "Add N photos" fills them) and which
+/// slots carry light text over them (their placeholder reads dark so that
+/// text stays legible). Absent elsewhere (preview, thumbnails, goldens),
+/// where placeholders stay plain.
+class PhotoSlotHints extends InheritedWidget {
+  final Map<String, int> numbers;
+  final Set<String> dark;
 
-  const _PickIcon({required this.onTap});
+  const PhotoSlotHints({
+    super.key,
+    required this.numbers,
+    required this.dark,
+    required super.child,
+  });
+
+  static PhotoSlotHints? maybeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<PhotoSlotHints>();
+
+  @override
+  bool updateShouldNotify(PhotoSlotHints old) =>
+      !_mapEquals(old.numbers, numbers) || !_setEquals(old.dark, dark);
+
+  static bool _mapEquals(Map<String, int> a, Map<String, int> b) =>
+      a.length == b.length && a.entries.every((e) => b[e.key] == e.value);
+
+  static bool _setEquals(Set<String> a, Set<String> b) =>
+      a.length == b.length && a.containsAll(b);
+}
+
+/// An empty photo slot: paperDeep (or a dark stock under light text) with an
+/// inset dashed hairline. In the editor it carries a numbered square — the
+/// pick target, in fill order — and a "PHOTO n" eyebrow.
+///
+/// Sizes are in template units (the canvas is ~1080 wide), so they scale
+/// with the canvas: ~3 units is one screen hairline at the editor's fit.
+class _SlotPlaceholder extends StatelessWidget {
+  final String slotId;
+  final VoidCallback? onPick;
+
+  const _SlotPlaceholder({required this.slotId, required this.onPick});
+
+  @override
+  Widget build(BuildContext context) {
+    final hints = PhotoSlotHints.maybeOf(context);
+    final number = hints?.numbers[slotId];
+    final dark = hints?.dark.contains(slotId) ?? false;
+    final fill = dark ? AppColors.inkMuted : AppColors.paperDeep;
+    final ink = dark ? AppColors.paper : AppColors.ink;
+    final dash = dark
+        ? AppColors.paper.withValues(alpha: .6)
+        : AppColors.inkSoft;
+    return CustomPaint(
+      key: ValueKey('slot-placeholder-$slotId'),
+      painter: _PlaceholderPainter(fill: fill, dash: dash),
+      child: Center(
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Padding(
+            padding: const EdgeInsets.all(36),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (onPick != null)
+                  _PickIcon(
+                    slotId: slotId,
+                    onTap: onPick!,
+                    number: number,
+                    color: ink,
+                    transparent: true,
+                  ),
+                const SizedBox(height: 22),
+                Text(
+                  number == null ? 'PHOTO' : 'PHOTO $number',
+                  key: ValueKey('slot-label-$slotId'),
+                  style: AppFonts.sans(
+                    TextStyle(
+                      color: ink,
+                      fontSize: 32,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 32 * .16,
+                      height: 1,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PlaceholderPainter extends CustomPainter {
+  final Color fill;
+  final Color dash;
+
+  const _PlaceholderPainter({required this.fill, required this.dash});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    canvas.drawRect(Offset.zero & size, Paint()..color = fill);
+    const inset = 36.0;
+    final r = (Offset.zero & size).deflate(inset);
+    if (r.width <= 0 || r.height <= 0) return;
+    final paint = Paint()
+      ..color = dash
+      ..strokeWidth = 3
+      ..style = PaintingStyle.stroke;
+    const on = 14.0, off = 10.0;
+    void line(Offset a, Offset b) {
+      final total = (b - a).distance;
+      final dir = (b - a) / total;
+      for (var t = 0.0; t < total; t += on + off) {
+        canvas.drawLine(a + dir * t, a + dir * math.min(t + on, total), paint);
+      }
+    }
+
+    line(r.topLeft, r.topRight);
+    line(r.topRight, r.bottomRight);
+    line(r.bottomRight, r.bottomLeft);
+    line(r.bottomLeft, r.topLeft);
+  }
+
+  @override
+  bool shouldRepaint(_PlaceholderPainter old) =>
+      old.fill != fill || old.dash != dash;
+}
+
+/// The photo-picker affordance: a square hairline frame that is its own tap
+/// target, so only it — not the whole slot — opens the gallery. On an empty
+/// slot in the editor it shows the slot's fill number; otherwise a photo
+/// glyph (also the "replace" overlay on a selected, filled slot).
+///
+/// Keyed `pick-<slotId>`: a stable handle for every pick target.
+class _PickIcon extends StatelessWidget {
+  final String slotId;
+  final VoidCallback onTap;
+  final int? number;
+  final Color color;
+  final bool transparent;
+
+  const _PickIcon({
+    required this.slotId,
+    required this.onTap,
+    this.number,
+    this.color = AppColors.ink,
+    this.transparent = false,
+  });
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
+      key: ValueKey('pick-$slotId'),
       onTap: onTap,
-      // Opaque so the padding around the glyph is part of the tap target.
+      // Opaque so the padding around the square is part of the tap target.
       behavior: HitTestBehavior.opaque,
-      child: Container(
+      child: Padding(
         padding: const EdgeInsets.all(24),
-        decoration: const BoxDecoration(
-          color: Colors.black54,
-          shape: BoxShape.circle,
-        ),
-        child: const Icon(
-          Icons.add_photo_alternate_outlined,
-          size: 96,
-          color: Colors.white,
+        child: Container(
+          width: 150,
+          height: 150,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: transparent
+                ? Colors.transparent
+                : AppColors.paper.withValues(alpha: .9),
+            border: Border.all(color: color, width: 3),
+          ),
+          child: number != null
+              ? Text(
+                  '$number',
+                  style: AppFonts.serif(
+                    TextStyle(
+                      color: color,
+                      fontSize: 96,
+                      fontStyle: FontStyle.italic,
+                      height: 1,
+                    ),
+                  ),
+                )
+              : Icon(
+                  Icons.add_photo_alternate_outlined,
+                  size: 84,
+                  color: color,
+                ),
         ),
       ),
     );

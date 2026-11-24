@@ -37,9 +37,8 @@ class FakeEntitlements extends EntitlementsService {
   }
 
   @override
-  Future<PurchaseOutcome> restore() async => isPro.value
-      ? PurchaseOutcome.unlocked
-      : PurchaseOutcome.nothingToRestore;
+  Future<PurchaseOutcome> restore() async =>
+      isPro.value ? PurchaseOutcome.unlocked : PurchaseOutcome.nothingToRestore;
 
   static Package _package(
     String id,
@@ -143,6 +142,9 @@ void main() {
 
   /// Taps a gallery card (by template id) and waits for its read-only preview.
   Future<void> openPreview(WidgetTester tester, String id) async {
+    // The collection runs below the featured folio; bring it into view.
+    await tester.ensureVisible(cardOf(id));
+    await tester.pump();
     await tester.tap(cardOf(id));
     await pumpUntil(
       tester,
@@ -244,12 +246,17 @@ void main() {
         reason: 'the locked button never opened the paywall',
       );
 
-      // The preview's app bar (route below) also has a BackButton — scope to
-      // the paywall's.
+      // Let the route finish arriving: the close button sits at the right
+      // edge, which is still off-screen mid-transition.
+      for (var i = 0; i < 4; i++) {
+        await tester.pump(const Duration(milliseconds: 300));
+      }
+      // Scope to the paywall's own close button (the preview below has a
+      // back button of its own).
       await tester.tap(
         find.descendant(
           of: find.byType(PaywallScreen),
-          matching: find.byType(BackButton),
+          matching: find.byTooltip('Close'),
         ),
       );
       await pumpUntil(

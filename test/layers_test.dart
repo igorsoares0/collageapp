@@ -373,7 +373,10 @@ void main() {
       );
       // The revealed red shape now paints (its ColoredBox/Container exists).
       // Simply assert the render didn't throw and the slot labels still show.
-      expect(find.text('hero_image'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('slot-label-hero_image')),
+        findsOneWidget,
+      );
     });
   });
 

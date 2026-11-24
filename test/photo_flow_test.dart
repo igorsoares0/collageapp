@@ -4,8 +4,17 @@ import 'package:collageapp/src/model/template.dart';
 import 'package:collageapp/src/screens/template_screen.dart';
 import 'package:collageapp/src/widgets/insert_sheets.dart';
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image_picker_platform_interface/image_picker_platform_interface.dart';
+
+/// Every photo-pick target on screen (empty slots, and the replace overlay on
+/// a selected photo) — keyed `pick-<slotId>` in template_canvas.dart.
+final pickTargets = find.byWidgetPredicate(
+  (w) =>
+      w.key is ValueKey<String> &&
+      (w.key! as ValueKey<String>).value.startsWith('pick-'),
+);
 
 TextStyle testFontResolver(String family, TextStyle base) => base;
 
@@ -38,7 +47,7 @@ void main() {
     ImagePickerPlatform.instance = picker;
   });
 
-  final undoButton = find.widgetWithIcon(IconButton, Icons.undo);
+  final undoButton = find.widgetWithIcon(IconButton, Symbols.undo);
 
   Future<void> pumpDraft(WidgetTester tester) async {
     tester.view.physicalSize = const Size(540, 960);
@@ -75,7 +84,7 @@ void main() {
 
     // The grid landed with every cell already filled (no empty pick icons)
     // and nothing selected (no grid bar) — the toolbar is back.
-    expect(find.byIcon(Icons.add_photo_alternate_outlined), findsNothing);
+    expect(pickTargets, findsNothing);
     expect(find.byType(Slider), findsNothing);
     expect(find.text('Layout'), findsOneWidget);
 
@@ -106,10 +115,10 @@ void main() {
     // The element arrived selected WITH its photo: the photo contextual bar
     // is up. After Done, no pick icon anywhere — a selected slot shows the
     // replace overlay (same glyph), so deselect before asserting.
-    expect(find.text('Replace'), findsOneWidget);
+    expect(find.text('Replace photo'), findsOneWidget);
     await tester.tap(find.text('Done'));
     await tester.pumpAndSettle();
-    expect(find.byIcon(Icons.add_photo_alternate_outlined), findsNothing);
+    expect(pickTargets, findsNothing);
     expect(find.byType(Image), findsOneWidget);
   });
 

@@ -5,17 +5,15 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show HapticFeedback;
-import 'package:gal/gal.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:material_symbols_icons/symbols.dart';
-import 'package:share_plus/share_plus.dart';
 
 import '../api/entitlements.dart';
-import '../api/gallery_saver.dart';
 import '../api/project_store.dart';
 import '../api/template_store.dart';
 import '../model/asset_record.dart';
 import '../model/migrate_v4.dart';
+import '../model/photo_slots.dart';
 import '../model/slide_aware.dart';
 import '../model/slide_ops.dart';
 import '../model/slot_content.dart';
@@ -24,11 +22,14 @@ import '../rendering/export.dart';
 import '../rendering/snap.dart';
 import '../rendering/template_canvas.dart';
 import '../theme.dart';
+import 'export_screen.dart';
 import 'paywall_screen.dart';
 import '../widgets/editor_toolbar.dart';
 import '../widgets/grid_style_bar.dart';
 import '../widgets/insert_sheets.dart';
+import '../widgets/layer_ui.dart';
 import '../widgets/layers_sheet.dart';
+import '../widgets/slide_strip.dart';
 import '../widgets/text_style_bar.dart';
 
 /// Renders one template and lets the user fill its slots (spec §12),
@@ -65,6 +66,10 @@ class TemplateScreen extends StatefulWidget {
   /// default (a real pro user always arrives with the initialized instance).
   final EntitlementsService? entitlements;
 
+  /// Where [id] loads from; the preview hands over its own (shared cache).
+  /// Null = a fresh default store.
+  final TemplateStore? store;
+
   const TemplateScreen({
     super.key,
     this.id,
@@ -73,6 +78,7 @@ class TemplateScreen extends StatefulWidget {
     this.projects,
     this.fontResolver = googleFontsResolver,
     this.entitlements,
+    this.store,
   }) : assert(
          (id != null ? 1 : 0) +
                  (draft != null ? 1 : 0) +
@@ -89,7 +95,12 @@ class TemplateScreen extends StatefulWidget {
 /// inset is added at build time). Sized to the TALLEST bar (the text styling
 /// bar) and reserved in EVERY state, so the canvas area — and thus the canvas
 /// size — never changes when a different bar shows or a slot is selected.
-const double _kBottomBarHeight = 196;
+const double _kBottomBarHeight = 216;
+
+/// The bar strip's height while the first-open "Make it yours" panel shows —
+/// taller than the toolbar; it eases back to [_kBottomBarHeight] once photos
+/// land (or the panel is skipped).
+const double _kFirstOpenBarHeight = 292;
 
 /// One point in edit history. Both halves of the document travel together:
 /// the continuous [Document] (structure) and the [SlotContent] overlay
@@ -99,7 +110,7 @@ typedef _Snapshot = ({Document doc, SlotContent content});
 
 class _TemplateScreenState extends State<TemplateScreen>
     with WidgetsBindingObserver {
-  final _store = TemplateStore();
+  late final TemplateStore _store = widget.store ?? TemplateStore();
   final _picker = ImagePicker();
   // Gates premium frames/stickers in the asset picker. A fresh fallback reports
   // free (locked), which is safe: the real pro user always arrives with main()'s
@@ -120,6 +131,7 @@ class _TemplateScreenState extends State<TemplateScreen>
   // panels without drifting up/down); when zoomed in, panning goes free so you
   // can reach every corner of the magnified panel.
   bool _isZoomed = false;
+
   /// Resolves the document to edit: a saved project arrives already continuous,
   /// a template (draft or fetched) is migrated to v4 on the way in.
   late Future<Document> _documentLoad;
@@ -145,10 +157,15 @@ class _TemplateScreenState extends State<TemplateScreen>
   // user can hop between slides while recoloring.
   bool _backgroundMode = false;
   bool _exporting = false;
-  bool _saving = false;
 
-  // Bumped after each successful export; keys the button's one-shot ✓ flash.
-  int _exportCount = 0;
+  // The first-open panel was skipped ("Skip — edit text first").
+  bool _firstOpenSkipped = false;
+
+  // Canvas geometry from the last layout, for the slide strip's navigation
+  // (the strip lives outside the canvas's LayoutBuilder).
+  double _panelWidth = 0;
+  double _viewportWidth = 0;
+
   // Screen-space selection overlay (CanvasSelectionOverlay): the leader link
   // the selected element's chrome box publishes inside its PanelCanvas, and
   // that box's measured size keyed by the gesture target id — the size lands
@@ -271,9 +288,7 @@ class _TemplateScreenState extends State<TemplateScreen>
       _dirty = true;
       if (mounted && !_saveErrorShown) {
         _saveErrorShown = true;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not save your project.')),
-        );
+        showLayerMessage(context, 'Could not save your project.');
       }
     });
   }
@@ -417,10 +432,9 @@ class _TemplateScreenState extends State<TemplateScreen>
     _dragOriginX = _doc.slideRect(slide).left;
     final toLocal = Offset(-_dragOriginX, 0);
     _dragBox = box.shift(toLocal);
-    _dragTargets = SnapTargets.around(
-      Size(_doc.slideWidth, _doc.slideHeight),
-      [for (final r in _snapTargets(slotId, slide)) r.shift(toLocal)],
-    );
+    _dragTargets = SnapTargets.around(Size(_doc.slideWidth, _doc.slideHeight), [
+      for (final r in _snapTargets(slotId, slide)) r.shift(toLocal),
+    ]);
     _dragThreshold = _kSnapReachPx * _screenToTemplate();
   }
 
@@ -550,10 +564,7 @@ class _TemplateScreenState extends State<TemplateScreen>
   /// A slot/layer id not already in the document, so a new element never
   /// collides with an existing slot's overrides.
   String _uniqueToken(String base) {
-    final used = {
-      for (final l in _allLayers) l.id,
-      ..._doc.slotIds,
-    };
+    final used = {for (final l in _allLayers) l.id, ..._doc.slotIds};
     var n = 1;
     while (used.contains('${base}_$n')) {
       n++;
@@ -635,10 +646,7 @@ class _TemplateScreenState extends State<TemplateScreen>
   /// A grid id and its cell slot ids unused by the template or anything the
   /// user added, checked as a set so none can collide with existing slots.
   (String, List<String>) _uniqueGridIds(int cellCount) {
-    final used = {
-      for (final l in _allLayers) l.id,
-      ..._doc.slotIds,
-    };
+    final used = {for (final l in _allLayers) l.id, ..._doc.slotIds};
     var n = 1;
     String gridId;
     List<String> cellIds;
@@ -651,7 +659,8 @@ class _TemplateScreenState extends State<TemplateScreen>
   }
 
   /// A GridLayer in [preset]'s layout, inset from the canvas edges.
-  GridLayer _buildGridLayer(GridPreset preset,
+  GridLayer _buildGridLayer(
+    GridPreset preset,
     String gridId,
     List<String> cellIds,
   ) {
@@ -702,9 +711,7 @@ class _TemplateScreenState extends State<TemplateScreen>
   /// Adds [preset] with [images] already in its cells (in pick order) as ONE
   /// undo step — the photos-first flow's landing point. Nothing ends up
   /// selected: the result is the collage itself, ready to fine-tune.
-  void _insertFilledGrid(GridPreset preset,
-    List<ImageProvider> images,
-  ) {
+  void _insertFilledGrid(GridPreset preset, List<ImageProvider> images) {
     final slide = _focusedSlide;
     final (gridId, cellIds) = _uniqueGridIds(preset.cells.length);
     final layer = _buildGridLayer(preset, gridId, cellIds);
@@ -764,51 +771,81 @@ class _TemplateScreenState extends State<TemplateScreen>
   Future<void> _showSlideActions(int index) async {
     final count = _doc.slideCount;
     if (count <= 1) return;
-    final action = await showModalBottomSheet<String>(
-      context: context,
-      builder: (sheetContext) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
+    Widget row(
+      Key key,
+      String label,
+      IconData icon,
+      String value,
+      BuildContext sheetContext, {
+      Color color = AppColors.ink,
+    }) => InkWell(
+      key: key,
+      onTap: () => Navigator.pop(sheetContext, value),
+      child: Container(
+        height: 54,
+        decoration: const BoxDecoration(
+          border: Border(bottom: BorderSide(color: AppColors.rule)),
+        ),
+        child: Row(
           children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  'Slide ${index + 1} of $count',
-                  style: const TextStyle(
-                    color: AppColors.textSecondary,
-                    fontSize: 12,
-                  ),
-                ),
-              ),
+            Expanded(
+              child: Text(label, style: AppType.label.copyWith(color: color)),
             ),
-            if (index > 0)
-              ListTile(
-                key: const ValueKey('slide-move-left'),
-                leading: const Icon(Symbols.arrow_back_rounded),
-                title: const Text('Move left'),
-                onTap: () => Navigator.pop(sheetContext, 'left'),
-              ),
-            if (index < count - 1)
-              ListTile(
-                key: const ValueKey('slide-move-right'),
-                leading: const Icon(Symbols.arrow_forward_rounded),
-                title: const Text('Move right'),
-                onTap: () => Navigator.pop(sheetContext, 'right'),
-              ),
-            ListTile(
-              key: const ValueKey('slide-delete'),
-              leading: const Icon(Symbols.delete_rounded, color: Colors.red),
-              title: const Text(
-                'Delete slide',
-                style: TextStyle(color: Colors.red),
-              ),
-              subtitle: const Text('Its elements are deleted with it'),
-              onTap: () => Navigator.pop(sheetContext, 'delete'),
+            Icon(icon, size: 20, weight: 300, color: color),
+          ],
+        ),
+      ),
+    );
+    final action = await showLayerSheet<String>(
+      context: context,
+      titleWidget: Text.rich(
+        TextSpan(
+          children: [
+            const TextSpan(text: 'Slide '),
+            TextSpan(
+              text: twoDigits(index + 1),
+              style: const TextStyle(fontStyle: FontStyle.italic),
+            ),
+            TextSpan(
+              text: ' of ${twoDigits(count)}',
+              style: const TextStyle(color: AppColors.inkMuted),
             ),
           ],
         ),
+        style: AppType.title(26),
+      ),
+      builder: (sheetContext) => Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Hairline(),
+          if (index > 0)
+            row(
+              const ValueKey('slide-move-left'),
+              'Move left',
+              Symbols.arrow_back,
+              'left',
+              sheetContext,
+            ),
+          if (index < count - 1)
+            row(
+              const ValueKey('slide-move-right'),
+              'Move right',
+              Symbols.arrow_forward,
+              'right',
+              sheetContext,
+            ),
+          row(
+            const ValueKey('slide-delete'),
+            'Delete slide',
+            Symbols.delete,
+            'delete',
+            sheetContext,
+            color: AppColors.rouge,
+          ),
+          const SizedBox(height: 10),
+          Text('Its elements are deleted with it.', style: AppType.caption),
+        ],
       ),
     );
     if (action == null || !mounted) return;
@@ -847,9 +884,7 @@ class _TemplateScreenState extends State<TemplateScreen>
       _editingSlot = null;
     });
     if (crossing && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Elements crossing slides were kept.')),
-      );
+      showLayerMessage(context, 'Elements crossing slides were kept.');
     }
   }
 
@@ -961,10 +996,7 @@ class _TemplateScreenState extends State<TemplateScreen>
       }
     }
     if (source == null) return;
-    final nudge = Offset(
-      _doc.slideWidth * 0.04,
-      _doc.slideWidth * 0.04,
-    );
+    final nudge = Offset(_doc.slideWidth * 0.04, _doc.slideWidth * 0.04);
 
     final String selectKey;
     // Snapshot BEFORE the switch: it already writes _document, so recording
@@ -1433,116 +1465,51 @@ class _TemplateScreenState extends State<TemplateScreen>
     );
   }
 
-  /// Renders every panel to a full-resolution PNG, in carousel order. Shared
-  /// by Export (share sheet) and Save (photo gallery). Deselects first: the
-  /// handles (and the inline editor's cursor) are widgets inside the
-  /// RepaintBoundary and would otherwise end up in the PNG.
-  Future<List<Uint8List>> _capturePanels() async {
-    if (_selectedSlot != null || _editingSlot != null) {
-      setState(() {
-        _selectedSlot = null;
-        _editingSlot = null;
-      });
-      await WidgetsBinding.instance.endOfFrame;
-    }
-    // ONE raster of the continuous canvas, sliced per slide: the seams line up
-    // by construction instead of being two independently exported canvases.
-    return capturePngSlices(_canvasKey, _doc, targetSlideWidth: _doc.slideWidth);
-  }
-
-  Future<void> _exportPng() async {
+  /// Export: raster the whole document NOW (the canvas must be painted, and
+  /// a route under another one isn't), then hand the raster to the export
+  /// screen, which cuts and encodes the slides with progress and offers
+  /// Share / Save to Photos. Deselects first: the handles (and the inline
+  /// editor's cursor) live inside the boundary and would end up in the PNG.
+  Future<void> _openExport() async {
+    if (_exporting) return;
     setState(() => _exporting = true);
+    DocumentRaster? raster;
     try {
-      // One PNG per panel (added panels included), in carousel order — ready
-      // to post as a carousel.
-      final shots = await _capturePanels();
-      final files = <XFile>[];
-      final names = <String>[];
-      for (var i = 0; i < shots.length; i++) {
-        files.add(XFile.fromData(shots[i], mimeType: 'image/png'));
-        names.add(
-          shots.length == 1
-              ? '${_doc.id}.png'
-              : '${_doc.id}_${i + 1}.png',
-        );
+      if (_selectedSlot != null || _editingSlot != null) {
+        setState(() {
+          _selectedSlot = null;
+          _editingSlot = null;
+        });
       }
-      // fileNameOverrides is REQUIRED with XFile.fromData: cross_file drops
-      // the name off-web, share_plus then invents one whose uuid-v1 slice is
-      // identical across a burst, and Android flattens the temp files into
-      // one cache folder by basename — every panel after the first would
-      // overwrite it and the sheet would share the same PNG N times.
-      await Share.shareXFiles(files, fileNameOverrides: names);
-      HapticFeedback.mediumImpact();
-      // Drives the Export button's brief ✓ (see the AppBar's
-      // TweenAnimationBuilder) — a new key per export restarts it.
-      if (mounted) setState(() => _exportCount++);
+      await WidgetsBinding.instance.endOfFrame;
+      // ONE raster of the continuous canvas, sliced per slide later: the
+      // seams line up by construction.
+      raster = await rasterDocument(
+        _canvasKey,
+        _doc,
+        targetSlideWidth: _doc.slideWidth,
+      );
     } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Export failed: $e')));
+      if (mounted) showLayerMessage(context, 'Export failed: $e');
+      return;
     } finally {
       if (mounted) setState(() => _exporting = false);
     }
-  }
-
-  /// Writes each panel straight into the device photo gallery (gal), in
-  /// carousel order — the quick path that skips the share sheet. On Android
-  /// 10+ this needs no runtime permission; older Androids and iOS get a
-  /// one-time prompt via [Gal.requestAccess].
-  Future<void> _saveToGallery() async {
-    setState(() => _saving = true);
-    try {
-      if (!await Gal.requestAccess()) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Allow gallery access to save your collage.'),
-          ),
-        );
-        return;
-      }
-      final shots = await _capturePanels();
-      // Gallery apps order photos by time, NOT filename, and default to
-      // newest-first (Google Photos, the Instagram picker). Two catches:
-      // Android forces DATE_ADDED to the write instant (our explicit value is
-      // ignored), and when times tie it breaks by insertion order, newest row
-      // first. So write the panels in REVERSE — panel 1 goes LAST, giving it
-      // the highest row id, the newest DATE_ADDED, and (via GallerySaver) the
-      // newest DATE_TAKEN. All three sort keys then agree and the carousel
-      // reads 1→2→3, with no wall-clock spacing.
-      final base = DateTime.now();
-      for (var i = shots.length - 1; i >= 0; i--) {
-        await GallerySaver.save(
-          shots[i],
-          name: shots.length == 1 ? _doc.id : '${_doc.id}_${i + 1}',
-          dateTaken: base.subtract(Duration(seconds: i)),
-        );
-      }
-      HapticFeedback.mediumImpact();
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            shots.length == 1
-                ? 'Saved to gallery'
-                : '${shots.length} images saved to gallery',
-          ),
-        ),
-      );
-    } on GalException catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Save failed: ${e.type.message}')));
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Save failed: $e')));
-    } finally {
-      if (mounted) setState(() => _saving = false);
+    if (!mounted) {
+      raster.dispose();
+      return;
     }
+    // Whatever is on screen is what gets saved: the footnote promises it.
+    _saveProject();
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ExportScreen(
+          raster: raster!,
+          document: _doc,
+          projectSaved: widget.projects != null,
+        ),
+      ),
+    );
   }
 
   @override
@@ -1560,68 +1527,63 @@ class _TemplateScreenState extends State<TemplateScreen>
         final safeBottom = media.viewPadding.bottom;
         return Scaffold(
           appBar: AppBar(
+            toolbarHeight: 60,
+            titleSpacing: 0,
+            centerTitle: false,
+            leading: const BackButton(),
+            shape: const Border(bottom: BorderSide(color: AppColors.rule)),
+            title: document == null
+                ? null
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        _doc.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppType.serif(17, height: 1.15),
+                      ),
+                      const SizedBox(height: 2),
+                      Eyebrow(
+                        _statusLine(),
+                        size: 11,
+                        color: AppColors.inkSoft,
+                      ),
+                    ],
+                  ),
             actions: [
               if (document != null) ...[
                 IconButton(
-                  icon: const Icon(Icons.undo),
+                  icon: const Icon(Symbols.undo),
                   tooltip: 'Undo',
-                  onPressed: _undoStack.isEmpty
-                      ? null
-                      : () => _undoEdit(),
+                  onPressed: _undoStack.isEmpty ? null : () => _undoEdit(),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.redo),
+                  icon: const Icon(Symbols.redo),
                   tooltip: 'Redo',
-                  onPressed: _redoStack.isEmpty
-                      ? null
-                      : () => _redoEdit(),
-                ),
-                // Quick path: write the panels straight to the photo gallery,
-                // no share sheet. Sits beside Export (the share finish line).
-                IconButton(
-                  icon: _saving
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Symbols.download_rounded),
-                  tooltip: 'Save to gallery',
-                  onPressed: (_saving || _exporting)
-                      ? null
-                      : () => _saveToGallery(),
+                  onPressed: _redoStack.isEmpty ? null : () => _redoEdit(),
                 ),
                 // Export is the flow's finish line — a labeled button, not
-                // one more icon. Inserting/layers live in the bottom toolbar.
-                Center(
-                  child: Padding(
-                    padding: const EdgeInsets.only(left: 4, right: 12),
-                    child: FilledButton(
-                      onPressed: (_exporting || _saving)
+                // one more icon.
+                Padding(
+                  padding: const EdgeInsets.only(left: 4, right: 12),
+                  child: Center(
+                    child: CompactButton(
+                      label: 'Export',
+                      onPressed: (_exporting || _awaitingPhotos)
                           ? null
-                          : () => _exportPng(),
+                          : () => _openExport(),
                       child: _exporting
                           ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          // A one-shot ✓ right after a successful export,
-                          // then back to the label. Animation-driven (no
-                          // Timer), so tests can settle it deterministically.
-                          : TweenAnimationBuilder<double>(
-                              key: ValueKey(_exportCount),
-                              tween: Tween(
-                                begin: _exportCount == 0 ? 1.0 : 0.0,
-                                end: 1.0,
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 1.5,
+                                color: AppColors.inkSoft,
                               ),
-                              duration: MediaQuery.disableAnimationsOf(context)
-                                  ? Duration.zero
-                                  : const Duration(milliseconds: 1200),
-                              builder: (context, t, _) => t < 0.8
-                                  ? const Icon(Symbols.check_rounded, size: 18)
-                                  : const Text('Share'),
-                            ),
+                            )
+                          : null,
                     ),
                   ),
                 ),
@@ -1635,7 +1597,13 @@ class _TemplateScreenState extends State<TemplateScreen>
                 textAlign: TextAlign.center,
               ),
             ),
-            ConnectionState.done => _buildBody(keyboardInset, safeBottom),
+            // Empty photo slots show their fill number (and read dark under
+            // light text) — editor-only hints, see PhotoSlotHints.
+            ConnectionState.done => PhotoSlotHints(
+              numbers: fillNumbers(_doc),
+              dark: slotsUnderLightText(_doc),
+              child: _buildBody(keyboardInset, safeBottom),
+            ),
             _ => const Center(child: CircularProgressIndicator()),
           },
         );
@@ -1779,7 +1747,9 @@ class _TemplateScreenState extends State<TemplateScreen>
     final bottomBar = _buildBottomBar();
     // Constant height for the bar strip (incl. the home-indicator inset), so
     // the canvas area is a fixed size regardless of which bar shows.
-    final barArea = _kBottomBarHeight + safeBottom;
+    final barArea =
+        (_showFirstOpen ? _kFirstOpenBarHeight : _kBottomBarHeight) +
+        safeBottom;
 
     return Listener(
       // End of any touch on the canvas/bars ends the current coalescing run
@@ -1793,7 +1763,7 @@ class _TemplateScreenState extends State<TemplateScreen>
         children: [
           Expanded(
             child: ColoredBox(
-              color: AppColors.ink,
+              color: AppColors.table,
               child: LayoutBuilder(
                 builder: (context, constraints) {
                   // resizeToAvoidBottomInset shrinks this viewport by exactly the
@@ -1827,6 +1797,10 @@ class _TemplateScreenState extends State<TemplateScreen>
                   // phone. Portrait and square fill the width and look fine
                   // either way, which is exactly why this kept regressing.
                   final contentWidth = panelWidth * slideCount;
+                  // The slide strip (outside this builder) navigates with the
+                  // same geometry; remember it for its taps.
+                  _panelWidth = panelWidth;
+                  _viewportWidth = constraints.maxWidth;
                   final hPad = math.max(
                     16.0,
                     (constraints.maxWidth - contentWidth) / 2,
@@ -1986,9 +1960,7 @@ class _TemplateScreenState extends State<TemplateScreen>
                               : PanAxis.horizontal,
                           minScale: minZoom,
                           maxScale: 4,
-                          boundaryMargin: EdgeInsets.all(
-                            math.max(64, margin),
-                          ),
+                          boundaryMargin: EdgeInsets.all(math.max(64, margin)),
                           child: strip,
                         );
                   final scroll = SingleChildScrollView(
@@ -2063,56 +2035,6 @@ class _TemplateScreenState extends State<TemplateScreen>
                       child: body,
                     );
                   }
-                  if (slideCount > 1) {
-                    // Carousel dots: which panel is focused, out of how many.
-                    // Tapping one focuses that panel and slides it into view.
-                    body = Stack(
-                      children: [
-                        Positioned.fill(child: body),
-                        Positioned(
-                          left: 0,
-                          right: 0,
-                          bottom: 6,
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              for (var i = 0; i < slideCount; i++)
-                                GestureDetector(
-                                  key: ValueKey('panel-dot-$i'),
-                                  behavior: HitTestBehavior.opaque,
-                                  onTap: () => _focusPanelAt(
-                                    i,
-                                    slideCount,
-                                    panelWidth,
-                                    constraints.maxWidth,
-                                  ),
-                                  // Long-press: reorder or delete this slide.
-                                  onLongPress: () => _showSlideActions(i),
-                                  child: Padding(
-                                    padding: const EdgeInsets.all(6),
-                                    child: AnimatedContainer(
-                                      duration: const Duration(
-                                        milliseconds: 150,
-                                      ),
-                                      width: i == _focusedSlide
-                                          ? 18
-                                          : 8,
-                                      height: 8,
-                                      decoration: BoxDecoration(
-                                        color: i == _focusedSlide
-                                            ? AppColors.accent
-                                            : Colors.white38,
-                                        borderRadius: BorderRadius.circular(4),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    );
-                  }
                   return body;
                 },
               ),
@@ -2120,36 +2042,48 @@ class _TemplateScreenState extends State<TemplateScreen>
           ),
           // The bar strip: fixed height (so the canvas area never changes) and
           // bottom-aligned, sitting just above the keyboard when it's open
-          // (resizeToAvoidBottomInset pushes it up).
+          // (resizeToAvoidBottomInset pushes it up). Shorter bars leave the
+          // table showing above them.
           ColoredBox(
-            color: AppColors.ink,
-            child: SizedBox(
+            color: AppColors.table,
+            child: AnimatedContainer(
+              duration: MediaQuery.disableAnimationsOf(context)
+                  ? Duration.zero
+                  : const Duration(milliseconds: 280),
+              curve: Curves.easeOutCubic,
               height: barArea,
               width: double.infinity,
-              // Keyed per bar (see _buildBottomBar), so swapping selection
-              // cross-fades bars while slider drags inside one bar never
-              // re-animate. The strip's fixed height keeps the canvas still.
-              child: AnimatedSwitcher(
-                duration: MediaQuery.disableAnimationsOf(context)
-                    ? Duration.zero
-                    : const Duration(milliseconds: 200),
-                switchInCurve: Curves.easeOutCubic,
-                switchOutCurve: Curves.easeInCubic,
-                transitionBuilder: (child, animation) => FadeTransition(
-                  opacity: animation,
-                  child: SlideTransition(
-                    position: Tween(
-                      begin: const Offset(0, 0.06),
-                      end: Offset.zero,
-                    ).animate(animation),
-                    child: child,
+              child: Column(
+                children: [
+                  Expanded(
+                    // Keyed per bar (see _buildBottomBar), so swapping
+                    // selection cross-fades bars while slider drags inside one
+                    // bar never re-animate.
+                    child: AnimatedSwitcher(
+                      duration: MediaQuery.disableAnimationsOf(context)
+                          ? Duration.zero
+                          : const Duration(milliseconds: 200),
+                      switchInCurve: Curves.easeOutCubic,
+                      switchOutCurve: Curves.easeInCubic,
+                      transitionBuilder: (child, animation) => FadeTransition(
+                        opacity: animation,
+                        child: SlideTransition(
+                          position: Tween(
+                            begin: const Offset(0, 0.06),
+                            end: Offset.zero,
+                          ).animate(animation),
+                          child: child,
+                        ),
+                      ),
+                      layoutBuilder: (current, previous) => Stack(
+                        alignment: Alignment.bottomCenter,
+                        children: [...previous, ?current],
+                      ),
+                      child: bottomBar,
+                    ),
                   ),
-                ),
-                layoutBuilder: (current, previous) => Stack(
-                  alignment: Alignment.bottomCenter,
-                  children: [...previous, if (current != null) current],
-                ),
-                child: bottomBar,
+                  Container(height: safeBottom, color: AppColors.paper),
+                ],
               ),
             ),
           ),
@@ -2158,12 +2092,93 @@ class _TemplateScreenState extends State<TemplateScreen>
     );
   }
 
+  /// Photo slots still waiting for a photo, in fill order.
+  List<PhotoSlot> _emptyPhotoSlots() => [
+    for (final slot in imageSlotsInFillOrder(_doc))
+      if (_content.imageFor(slot.slotId) == null) slot,
+  ];
+
+  /// A template session that has photo frames and not one photo yet: the
+  /// editor opens on its numbered placeholders, Export waits for a photo.
+  /// (Blank canvases and resumed projects are never held back.)
+  bool get _awaitingPhotos {
+    if (widget.id == null) return false;
+    final slots = imageSlotsInFillOrder(_doc);
+    return slots.isNotEmpty &&
+        slots.every((s) => _content.imageFor(s.slotId) == null);
+  }
+
+  /// The "Make it yours" panel replaces the strip + toolbar on first open.
+  bool get _showFirstOpen =>
+      _awaitingPhotos &&
+      !_firstOpenSkipped &&
+      _selectedSlot == null &&
+      _editingSlot == null &&
+      !_backgroundMode;
+
+  /// "Add N photos": one multi-pick that fills the empty frames in fill order
+  /// (the numbers on the placeholders) — one undo step for all of them.
+  Future<void> _fillPhotosInOrder() async {
+    final empty = _emptyPhotoSlots();
+    if (empty.isEmpty) return;
+    final List<XFile> files;
+    if (empty.length == 1) {
+      final file = await _picker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 2160,
+      );
+      files = file == null ? const [] : [file];
+    } else {
+      files = await _picker.pickMultiImage(maxWidth: 2160, limit: empty.length);
+    }
+    if (files.isEmpty || !mounted) return;
+    var next = _content;
+    for (var i = 0; i < files.length && i < empty.length; i++) {
+      final image = await _persistImage(await files[i].readAsBytes());
+      next = next.withImage(empty[i].slotId, image);
+    }
+    if (!mounted) return;
+    HapticFeedback.selectionClick();
+    _edit(next);
+  }
+
+  /// The top bar's eyebrow: where you are and that the work is safe.
+  String _statusLine() {
+    if (_awaitingPhotos) {
+      final total = imageSlotsInFillOrder(_doc).length;
+      return '0 of $total ${total == 1 ? 'photo' : 'photos'}';
+    }
+    final count = _doc.slideCount;
+    final where =
+        'Slide ${twoDigits(_focusedSlide + 1)} of ${twoDigits(count)}';
+    return widget.projects != null && _projectId != null
+        ? '$where · Saved'
+        : where;
+  }
+
+  /// A slot id as a label: "hero_image" → "hero image". Auto-generated ids
+  /// (text_1712…) read as plain "text".
+  static String _humanize(String slotId) {
+    final words = slotId.replaceAll(RegExp(r'[_-]+'), ' ').trim();
+    final generated = RegExp(r'^(text|image|grid|sticker) ?\d{6,}');
+    if (generated.hasMatch(words)) return words.split(' ').first;
+    return words;
+  }
+
   /// The bar strip under the canvas. Home state is the [EditorToolbar]
   /// (insert/layers/background); a selected element swaps in its own
   /// contextual bar with an explicit title and Done, so the strip never
   /// changes silently: text styling, grid spacing/corners, photo actions,
   /// sticker actions — and background colors while [_backgroundMode] is on.
   Widget _buildBottomBar() {
+    if (_showFirstOpen) {
+      return _MakeItYours(
+        key: const ValueKey('bar-first-open'),
+        count: imageSlotsInFillOrder(_doc).length,
+        onAdd: _fillPhotosInOrder,
+        onSkip: () => setState(() => _firstOpenSkipped = true),
+      );
+    }
     final textLayer = _selectedTextLayer();
     if (textLayer != null) {
       final weight =
@@ -2207,6 +2222,7 @@ class _TemplateScreenState extends State<TemplateScreen>
         onDuplicate: () => _duplicateSelected(textLayer.slotId),
         onDelete: () => _deleteSelected(textLayer.slotId),
         onDone: _closeContextBar,
+        slotLabel: _humanize(textLayer.slotId),
       );
     }
     final gridLayer = _selectedGridLayer();
@@ -2233,21 +2249,48 @@ class _TemplateScreenState extends State<TemplateScreen>
     }
     final imageLayer = _selectedImageLayer();
     if (imageLayer != null) {
+      final number = fillNumbers(_doc)[imageLayer.slotId];
+      final photo = _content.imageFor(imageLayer.slotId);
       return ContextBarShell(
         key: ValueKey('bar-photo-${imageLayer.slotId}'),
-        title: 'Photo',
+        title: number == null ? 'Photo' : 'Photo · Slot $number',
         onDuplicate: () => _duplicateSelected(imageLayer.slotId),
         onDelete: () => _deleteSelected(imageLayer.slotId),
         onDone: _closeContextBar,
-        child: Align(
-          alignment: Alignment.centerLeft,
-          child: Padding(
-            padding: const EdgeInsets.only(left: 8),
-            child: ToolButton(
-              icon: Symbols.photo_library_rounded,
-              label: 'Replace',
-              onTap: () => _pickImage(imageLayer.slotId),
-            ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 14, 20, 14),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // What will change: the photo in the slot now.
+              Container(
+                width: 64,
+                height: 80,
+                color: AppColors.paperDeep,
+                child: photo == null
+                    ? null
+                    : Image(image: photo, fit: BoxFit.cover),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SecondaryButton(
+                      label: 'Replace photo',
+                      icon: Symbols.photo_library,
+                      height: 48,
+                      onPressed: () => _pickImage(imageLayer.slotId),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      'Drag to move · pinch to resize · twist to rotate',
+                      style: AppType.sans(12.5, color: AppColors.inkSoft),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
       );
@@ -2260,14 +2303,11 @@ class _TemplateScreenState extends State<TemplateScreen>
         onDuplicate: () => _duplicateSelected(stickerLayer.id),
         onDelete: () => _deleteSelected(stickerLayer.id),
         onDone: _closeContextBar,
-        child: const Padding(
-          padding: EdgeInsets.fromLTRB(16, 0, 16, 12),
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: Text(
-              'Drag to move · pinch to resize · twist to rotate',
-              style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
-            ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 14, 20, 16),
+          child: Text(
+            'Drag to move · pinch to resize · twist to rotate',
+            style: AppType.sans(12.5, color: AppColors.inkSoft),
           ),
         ),
       );
@@ -2276,6 +2316,7 @@ class _TemplateScreenState extends State<TemplateScreen>
       final slide = _focusedSlide;
       return BackgroundColorBar(
         key: const ValueKey('bar-background'),
+        slideLabel: 'Slide ${twoDigits(slide + 1)}',
         currentColor: _doc.backgroundFor(slide),
         // Per-slide backgrounds are the one naturally per-slide datum, so this
         // is a structural edit on the document rather than an overlay override.
@@ -2286,15 +2327,120 @@ class _TemplateScreenState extends State<TemplateScreen>
         onDone: _closeContextBar,
       );
     }
-    return EditorToolbar(
+    final slideCount = _doc.slideCount;
+    return Material(
       key: const ValueKey('bar-toolbar'),
-      onLayout: () => _insertGrid(),
-      onText: () => _addTextLayer(),
-      onPhoto: () => _insertPhotos(),
-      onSticker: () => _insertAsset(),
-      onBackground: () => setState(() => _backgroundMode = true),
-      onPanel: () => _addPanel(),
-      onLayers: () => _showLayersSheet(),
+      color: AppColors.paper,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // The whole document in miniature: tap a slide to focus it, long-
+          // press for its actions, "+ Slide" at the end. Keys stay
+          // `panel-dot-$i` — the handle the carousel dots this replaced had.
+          SizedBox(
+            height: 96,
+            child: Padding(
+              padding: const EdgeInsets.only(top: 10),
+              child: SlideStrip(
+                document: _doc,
+                content: _content,
+                fontResolver: widget.fontResolver,
+                assetCatalog: _catalog,
+                slideHeight: 55,
+                active: _focusedSlide,
+                numerals: true,
+                keyPrefix: 'panel-dot-',
+                onSelect: (i) =>
+                    _focusPanelAt(i, slideCount, _panelWidth, _viewportWidth),
+                // One slide has nothing to reorder and can't be deleted.
+                onLongPress: slideCount > 1 ? _showSlideActions : null,
+                onAdd: _addPanel,
+              ),
+            ),
+          ),
+          const Hairline(),
+          EditorToolbar(
+            onLayout: () => _insertGrid(),
+            onText: () => _addTextLayer(),
+            onPhoto: () => _insertPhotos(),
+            onSticker: () => _insertAsset(),
+            onBackground: () => setState(() => _backgroundMode = true),
+            onLayers: () => _showLayersSheet(),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The editor's first-open state for a template with photo frames: the
+/// placeholders are numbered in fill order, and one action — the gallery
+/// multi-pick — fills them 1→N. Skip goes straight to the toolbar.
+class _MakeItYours extends StatelessWidget {
+  final int count;
+  final VoidCallback onAdd;
+  final VoidCallback onSkip;
+
+  const _MakeItYours({
+    super.key,
+    required this.count,
+    required this.onAdd,
+    required this.onSkip,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final one = count == 1;
+    // Clipped, not squeezed: while the bar eases down to the toolbar's
+    // height this panel is on its way out, and must not overflow meanwhile.
+    return ClipRect(
+      child: OverflowBox(
+        alignment: Alignment.bottomCenter,
+        minHeight: 0,
+        maxHeight: double.infinity,
+        child: _panel(one),
+      ),
+    );
+  }
+
+  Widget _panel(bool one) {
+    return Container(
+      decoration: const BoxDecoration(
+        color: AppColors.paper,
+        border: Border(top: BorderSide(color: AppColors.ink)),
+      ),
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 4),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Eyebrow('Make it yours', color: AppColors.rouge),
+          const SizedBox(height: 8),
+          SerifHeadline(
+            roman: 'Start with ',
+            italic: 'your photos.',
+            style: AppType.title(30),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            one
+                ? 'Pick 1 from your library — it fills the numbered frame. '
+                      'You can swap or move it after.'
+                : 'Pick $count from your library — they fill the numbered '
+                      'frames in order. You can swap or move any of them '
+                      'after.',
+            style: AppType.bodyS,
+          ),
+          const SizedBox(height: 14),
+          PrimaryButton(
+            label: one ? 'Add 1 photo' : 'Add $count photos',
+            icon: Symbols.photo_library,
+            onPressed: onAdd,
+          ),
+          Center(child: TextLink('Skip — edit text first', onTap: onSkip)),
+        ],
+      ),
     );
   }
 }

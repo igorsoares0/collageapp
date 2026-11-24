@@ -32,7 +32,7 @@ void main() {
   }
 
   Future<void> addSlide(WidgetTester tester) async {
-    await tester.tap(find.text('Panel'));
+    await tester.tap(find.byKey(const ValueKey('strip-add-slide')));
     await tester.pumpAndSettle();
   }
 
@@ -76,8 +76,9 @@ void main() {
     await tapDot(tester, 3);
 
     final viewportWidth = tester.getSize(find.byType(InteractiveViewer)).width;
-    final right =
-        tester.getTopRight(find.byKey(const ValueKey('slide-background-3'))).dx;
+    final right = tester
+        .getTopRight(find.byKey(const ValueKey('slide-background-3')))
+        .dx;
     expect(
       right,
       greaterThanOrEqualTo(viewportWidth - _stripPadding - 1.0),

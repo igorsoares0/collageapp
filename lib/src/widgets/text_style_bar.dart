@@ -4,7 +4,7 @@ import 'package:material_symbols_icons/symbols.dart';
 import '../rendering/template_canvas.dart' show googleFontsResolver;
 import '../theme.dart';
 import 'color_picker.dart';
-import 'editor_toolbar.dart' show ContextBarShell;
+import 'editor_toolbar.dart' show ContextBarHeader, ContextBarShell;
 
 /// Typefaces offered for text slots. Mirrors the editor's EDITOR_FONTS so a
 /// template's original font is always among the choices (and the current
@@ -73,22 +73,18 @@ const List<Color> kColorChoices = [
   Color(0xFFEC4899),
 ];
 
-const Color _accent = AppColors.accent;
-
-/// Contextual bar shown while a text slot is selected: alignment/bold, a
-/// size slider (driving the slot's scale override — same thing the pinch
-/// does, but discoverable), plus typeface and color for that slot. Every
-/// choice is a per-slot override stored in SlotContent, never a mutation of
-/// the template. Duplicate/Delete/Done live in the first row (a separate
-/// header would push the bar past the fixed strip height), so this bar
-/// builds its own frame instead of [ContextBarShell].
+/// Contextual bar shown while a text slot is selected: the shared header
+/// (eyebrow, Duplicate, Delete, Done), then alignment / bold / size on one
+/// row, typeface specimens, and colour chips. Every choice is a per-slot
+/// override stored in SlotContent, never a mutation of the template.
 class TextStyleBar extends StatelessWidget {
   final String currentFont;
   final Color currentColor;
   final String currentAlignment;
   final bool isBold;
   final double scale;
-  /// Whether the user owns pro — drives the "PRO" badge on paid fonts. The
+
+  /// Whether the user owns pro — drives the rouge "Pro" on paid fonts. The
   /// actual gate lives in [onFont]'s handler (template_screen).
   final bool isPro;
   final ValueChanged<String> onFont;
@@ -99,6 +95,9 @@ class TextStyleBar extends StatelessWidget {
   final VoidCallback onDuplicate;
   final VoidCallback onDelete;
   final VoidCallback onDone;
+
+  /// The eyebrow's second half — what is selected ("TEXT · TITLE").
+  final String? slotLabel;
 
   const TextStyleBar({
     super.key,
@@ -116,6 +115,7 @@ class TextStyleBar extends StatelessWidget {
     required this.onDuplicate,
     required this.onDelete,
     required this.onDone,
+    this.slotLabel,
   });
 
   @override
@@ -123,113 +123,71 @@ class TextStyleBar extends StatelessWidget {
     // Keep the active font selectable even if it's outside the curated list.
     final fonts = {currentFont, ...kFontChoices}.toList();
     return Material(
-      color: AppColors.surface,
-      child: SafeArea(
-        top: false,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Row(
-              children: [
-                const SizedBox(width: 8),
-                _IconToggle(
-                  icon: Symbols.format_align_left_rounded,
-                  selected: currentAlignment == 'left',
-                  onTap: () => onAlignment('left'),
-                ),
-                _IconToggle(
-                  icon: Symbols.format_align_center_rounded,
-                  selected: currentAlignment == 'center',
-                  onTap: () => onAlignment('center'),
-                ),
-                _IconToggle(
-                  icon: Symbols.format_align_right_rounded,
-                  selected: currentAlignment == 'right',
-                  onTap: () => onAlignment('right'),
-                ),
-                _IconToggle(
-                  icon: Symbols.format_bold_rounded,
-                  selected: isBold,
-                  onTap: onBoldToggle,
-                ),
-                const Spacer(),
-                IconButton(
-                  icon: const Icon(
-                    Symbols.content_copy_rounded,
-                    size: 18,
-                    color: AppColors.textSecondary,
-                  ),
-                  tooltip: 'Duplicate',
-                  onPressed: onDuplicate,
-                ),
-                IconButton(
-                  icon: const Icon(
-                    Icons.delete_outline,
-                    size: 20,
-                    color: AppColors.textSecondary,
-                  ),
-                  tooltip: 'Delete',
-                  onPressed: onDelete,
-                ),
-                // Label-only (no check icon): this row is the tightest of all
-                // the bars on narrow screens.
-                TextButton(
-                  onPressed: onDone,
-                  style: TextButton.styleFrom(foregroundColor: _accent),
-                  child: const Text('Done'),
-                ),
-                const SizedBox(width: 4),
-              ],
-            ),
-            SizedBox(
+      color: AppColors.paper,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ContextBarHeader(
+            title: slotLabel == null ? 'Text' : 'Text · $slotLabel',
+            onDuplicate: onDuplicate,
+            onDelete: onDelete,
+            onDone: onDone,
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
+            child: SizedBox(
               height: 40,
               child: Row(
                 children: [
-                  const SizedBox(width: 16),
-                  const Icon(
-                    Symbols.format_size_rounded,
-                    size: 20,
-                    color: AppColors.textSecondary,
+                  _AlignSegment(
+                    current: currentAlignment,
+                    onAlignment: onAlignment,
                   ),
+                  const SizedBox(width: 12),
+                  _BoldToggle(selected: isBold, onTap: onBoldToggle),
+                  const SizedBox(width: 14),
+                  Text('A', style: AppType.serif(13)),
                   Expanded(
                     child: Slider(
                       value: scale.clamp(0.25, 3),
                       min: 0.25,
                       max: 3,
-                      activeColor: _accent,
+                      activeColor: AppColors.ink,
+                      inactiveColor: AppColors.ink,
                       onChanged: onScale,
                     ),
                   ),
-                  const SizedBox(width: 8),
+                  Text('A', style: AppType.serif(22)),
                 ],
               ),
             ),
-            SizedBox(
-              height: 56,
-              child: ListView(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                children: [
-                  for (final font in fonts)
-                    _FontChip(
-                      font: font,
-                      selected: font == currentFont,
-                      locked: kPremiumFonts.contains(font) && !isPro,
-                      onTap: () => onFont(font),
-                    ),
-                ],
-              ),
+          ),
+          SizedBox(
+            height: 64,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              children: [
+                for (final font in fonts)
+                  _FontSpecimen(
+                    font: font,
+                    selected: font == currentFont,
+                    locked: kPremiumFonts.contains(font) && !isPro,
+                    onTap: () => onFont(font),
+                  ),
+              ],
             ),
-            _ColorRow(currentColor: currentColor, onColor: onColor),
-          ],
-        ),
+          ),
+          _ColorRow(currentColor: currentColor, onColor: onColor),
+        ],
       ),
     );
   }
 }
 
-/// Curated color dots followed by the custom-picker trigger. Shared by the
-/// text and background bars so both offer the same "any color" affordance.
+/// Square colour chips followed by the custom-picker trigger. Shared by the
+/// text and background bars so both offer the same "any colour" affordance.
 class _ColorRow extends StatelessWidget {
   final Color currentColor;
   final ValueChanged<Color> onColor;
@@ -238,19 +196,19 @@ class _ColorRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // The trigger is "selected" whenever the active color is off the palette —
-    // it's the only swatch representing that color.
+    // The trigger is "selected" whenever the active colour is off the palette
+    // — it's the only swatch representing that colour.
     final onPalette = kColorChoices.any(
       (c) => c.toARGB32() == currentColor.toARGB32(),
     );
     return SizedBox(
-      height: 52,
+      height: 48,
       child: ListView(
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 16),
         children: [
           for (final color in kColorChoices)
-            _ColorDot(
+            _ColorChip(
               color: color,
               selected: color.toARGB32() == currentColor.toARGB32(),
               onTap: () => onColor(color),
@@ -271,74 +229,127 @@ class _ColorRow extends StatelessWidget {
   }
 }
 
-class _IconToggle extends StatelessWidget {
-  final IconData icon;
-  final bool selected;
-  final VoidCallback onTap;
+/// Left / centre / right in one 1px-ink box; the selected cell is ink-filled.
+class _AlignSegment extends StatelessWidget {
+  final String current;
+  final ValueChanged<String> onAlignment;
 
-  const _IconToggle({
-    required this.icon,
-    required this.selected,
-    required this.onTap,
-  });
+  const _AlignSegment({required this.current, required this.onAlignment});
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(8),
-        child: Container(
-          width: 44,
-          height: 40,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(8),
-            color: selected ? _accent.withValues(alpha: 0.2) : null,
-            border: Border.all(
-              color: selected ? _accent : AppColors.outline,
-              width: selected ? 2 : 1,
+    Widget cell(String value, IconData icon, String label) {
+      final selected = current == value;
+      return Tooltip(
+        message: label,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => onAlignment(value),
+          child: Container(
+            width: 40,
+            height: 38,
+            color: selected ? AppColors.ink : Colors.transparent,
+            child: Icon(
+              icon,
+              size: 20,
+              weight: selected ? 300 : 200,
+              color: selected ? AppColors.onInk : AppColors.ink,
             ),
           ),
-          child: Icon(icon, size: 22, color: AppColors.textPrimary),
+        ),
+      );
+    }
+
+    return Container(
+      decoration: BoxDecoration(border: Border.all(color: AppColors.ink)),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          cell('left', Symbols.format_align_left, 'Align left'),
+          Container(width: 1, height: 38, color: AppColors.ink),
+          cell('center', Symbols.format_align_center, 'Align centre'),
+          Container(width: 1, height: 38, color: AppColors.ink),
+          cell('right', Symbols.format_align_right, 'Align right'),
+        ],
+      ),
+    );
+  }
+}
+
+/// A 40×40 square with a Newsreader "B"; ink-filled when bold is on.
+class _BoldToggle extends StatelessWidget {
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _BoldToggle({required this.selected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: 'Bold',
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: Container(
+          width: 40,
+          height: 40,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: selected ? AppColors.ink : Colors.transparent,
+            border: Border.all(color: AppColors.ink),
+          ),
+          child: Text(
+            'B',
+            style: AppType.serif(
+              20,
+              color: selected ? AppColors.onInk : AppColors.ink,
+            ),
+          ),
         ),
       ),
     );
   }
 }
 
-/// Contextual bar for the toolbar's Background action: recolor the focused
-/// panel's background (a user override of the template's background, included
-/// in the export).
+/// Contextual bar for the toolbar's Colour action: recolour the focused
+/// slide's background (a user override of the template's background,
+/// included in the export).
 class BackgroundColorBar extends StatelessWidget {
   final Color currentColor;
   final ValueChanged<Color> onColor;
   final VoidCallback onDone;
+  final String? slideLabel;
 
   const BackgroundColorBar({
     super.key,
     required this.currentColor,
     required this.onColor,
     required this.onDone,
+    this.slideLabel,
   });
 
   @override
   Widget build(BuildContext context) {
     return ContextBarShell(
-      title: 'Background',
+      title: slideLabel == null ? 'Background' : 'Background · $slideLabel',
       onDone: onDone,
-      child: _ColorRow(currentColor: currentColor, onColor: onColor),
+      child: Padding(
+        padding: const EdgeInsets.only(top: 12),
+        child: _ColorRow(currentColor: currentColor, onColor: onColor),
+      ),
     );
   }
 }
 
-class _FontChip extends StatelessWidget {
+/// A typeface specimen: "Aa" in that face over its name; the selected one
+/// carries a 2px ink underline; paid faces show a rouge "Pro".
+class _FontSpecimen extends StatelessWidget {
   final String font;
   final bool selected;
   final bool locked;
   final VoidCallback onTap;
 
-  const _FontChip({
+  const _FontSpecimen({
     required this.font,
     required this.selected,
     required this.locked,
@@ -347,70 +358,69 @@ class _FontChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Render each chip's label in its own typeface. Resolved through the
-    // cached googleFontsResolver (which also falls back to the plain label
-    // on failure): the bar rebuilds on every frame of a drag, and 20
-    // uncached GoogleFonts.getFont calls per frame drag it down.
-    final label = googleFontsResolver(
+    // Resolved through the cached googleFontsResolver (which also falls back
+    // to the plain style on failure): the bar rebuilds on every frame of a
+    // drag, and 20 uncached GoogleFonts.getFont calls per frame drag it down.
+    final specimen = googleFontsResolver(
       font,
-      const TextStyle(color: Colors.white, fontSize: 18),
+      const TextStyle(color: AppColors.ink, fontSize: 24, height: 1.1),
     );
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-      child: InkWell(
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: locked ? '$font, Pro' : font,
+      excludeSemantics: true,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
         onTap: onTap,
-        borderRadius: BorderRadius.circular(8),
-        // The badge overflows the chip's top-right corner, so it can't clip.
-        child: Stack(
-          clipBehavior: Clip.none,
-          children: [
-            Container(
-              alignment: Alignment.center,
-              padding: const EdgeInsets.symmetric(horizontal: 14),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: selected ? _accent : AppColors.outline,
-                  width: selected ? 2 : 1,
-                ),
+        child: Container(
+          width: 66,
+          margin: const EdgeInsets.symmetric(horizontal: 3),
+          padding: const EdgeInsets.only(top: 6),
+          decoration: BoxDecoration(
+            border: Border(
+              bottom: BorderSide(
+                color: selected ? AppColors.ink : Colors.transparent,
+                width: 2,
               ),
-              child: Text(font, style: label, maxLines: 1),
             ),
-            if (locked)
-              Positioned(
-                right: -4,
-                top: -4,
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                  decoration: BoxDecoration(
-                    color: AppColors.gold,
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: const Text(
-                    'PRO',
-                    style: TextStyle(
-                      color: Colors.black,
-                      fontSize: 8,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 0.5,
-                    ),
-                  ),
+          ),
+          child: Column(
+            children: [
+              Text('Aa', style: specimen, maxLines: 1),
+              const SizedBox(height: 4),
+              Text.rich(
+                TextSpan(
+                  children: [
+                    TextSpan(text: font.split(' ').first),
+                    if (locked)
+                      const TextSpan(
+                        text: ' Pro',
+                        style: TextStyle(color: AppColors.rouge),
+                      ),
+                  ],
                 ),
+                maxLines: 1,
+                overflow: TextOverflow.fade,
+                softWrap: false,
+                style: AppType.sans(11, color: AppColors.inkSoft),
               ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
-class _ColorDot extends StatelessWidget {
+/// A 28×28 square colour chip; the selected one gets a 1px ink outline at a
+/// 2px offset.
+class _ColorChip extends StatelessWidget {
   final Color color;
   final bool selected;
   final VoidCallback onTap;
 
-  const _ColorDot({
+  const _ColorChip({
     required this.color,
     required this.selected,
     required this.onTap,
@@ -418,19 +428,24 @@ class _ColorDot extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-      child: GestureDetector(
-        onTap: onTap,
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 7),
         child: Container(
-          width: 36,
-          height: 36,
+          padding: const EdgeInsets.all(2),
           decoration: BoxDecoration(
-            color: color,
-            shape: BoxShape.circle,
             border: Border.all(
-              color: selected ? _accent : AppColors.surfaceBright,
-              width: selected ? 3 : 1,
+              color: selected ? AppColors.ink : Colors.transparent,
+            ),
+          ),
+          child: Container(
+            width: 28,
+            height: 28,
+            decoration: BoxDecoration(
+              color: color,
+              border: Border.all(color: AppColors.rule),
             ),
           ),
         ),

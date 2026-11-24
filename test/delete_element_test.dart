@@ -1,7 +1,16 @@
 import 'package:collageapp/src/model/template.dart';
 import 'package:collageapp/src/screens/template_screen.dart';
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+/// Every photo-pick target on screen (empty slots, and the replace overlay on
+/// a selected photo) — keyed `pick-<slotId>` in template_canvas.dart.
+final pickTargets = find.byWidgetPredicate(
+  (w) =>
+      w.key is ValueKey<String> &&
+      (w.key! as ValueKey<String>).value.startsWith('pick-'),
+);
 
 TextStyle testFontResolver(String family, TextStyle base) => base;
 
@@ -61,7 +70,7 @@ void main() {
     expect(deleteHandle, findsNothing);
 
     // One undo step brings the element (and its text) back.
-    await tester.tap(find.byIcon(Icons.undo));
+    await tester.tap(find.byIcon(Symbols.undo));
     await tester.pumpAndSettle();
     expect(find.text('Hello'), findsOneWidget);
   });
@@ -88,7 +97,7 @@ void main() {
       ],
     });
     await pumpEditor(tester, template);
-    expect(find.byIcon(Icons.add_photo_alternate_outlined), findsOneWidget);
+    expect(pickTargets, findsOneWidget);
 
     // Tap inside the slot but away from its centered pick icon (which would
     // open the gallery): the slot spans template x 340..740, y 660..1060.
@@ -104,11 +113,11 @@ void main() {
 
     await tapDelete(tester);
     // Hidden, not gone from the template: the canvas no longer renders it.
-    expect(find.byIcon(Icons.add_photo_alternate_outlined), findsNothing);
+    expect(pickTargets, findsNothing);
 
-    await tester.tap(find.byIcon(Icons.undo));
+    await tester.tap(find.byIcon(Symbols.undo));
     await tester.pumpAndSettle();
-    expect(find.byIcon(Icons.add_photo_alternate_outlined), findsOneWidget);
+    expect(pickTargets, findsOneWidget);
   });
 
   testWidgets('the ✕ handle on a grid cell deletes the whole grid', (
@@ -118,10 +127,10 @@ void main() {
     await addFromToolbar(tester, 'Layout');
     await tester.tap(find.text('2 × 2'));
     await tester.pumpAndSettle();
-    expect(find.byIcon(Icons.add_photo_alternate_outlined), findsNWidgets(4));
+    expect(pickTargets, findsNWidgets(4));
     expect(deleteHandle, findsOneWidget);
 
     await tapDelete(tester);
-    expect(find.byIcon(Icons.add_photo_alternate_outlined), findsNothing);
+    expect(pickTargets, findsNothing);
   });
 }

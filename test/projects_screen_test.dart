@@ -61,6 +61,17 @@ void main() {
     );
   }
 
+  /// Opens a project's "…" actions sheet.
+  Future<void> openActions(WidgetTester tester, String id) async {
+    await tester.tap(
+      find.descendant(
+        of: find.byKey(ValueKey('project-$id')),
+        matching: find.byTooltip('Project actions'),
+      ),
+    );
+    await tester.pumpAndSettle();
+  }
+
   Future<void> seedProject(String id, String name) => store.save(
     Project(
       id: id,
@@ -90,23 +101,21 @@ void main() {
       await seedProject('p_2', 'Birthday');
       await pumpScreen(tester);
 
-      // Thumbnail-only cards: no names in the list, so target them by key.
+      // The archive names each project under its page strip.
       expect(find.byKey(const ValueKey('project-p_1')), findsOneWidget);
       expect(find.byKey(const ValueKey('project-p_2')), findsOneWidget);
-      expect(find.text('Beach trip'), findsNothing);
+      expect(find.text('Beach trip'), findsOneWidget);
 
-      // Delete 'Beach trip': its corner bin, then the dialog's confirm.
-      await tester.tap(
-        find.descendant(
-          of: find.byKey(const ValueKey('project-p_1')),
-          matching: find.byIcon(Icons.delete_outline),
-        ),
-      );
+      // Delete 'Beach trip': its "…" actions, Delete, then the confirm sheet.
+      await openActions(tester, 'p_1');
+      await tester.tap(find.text('Delete'));
       await tester.pumpAndSettle();
       expect(find.text('Delete project?'), findsOneWidget);
-      // The confirmation still names the project even though the card
-      // doesn't.
-      expect(find.textContaining('Beach trip'), findsOneWidget);
+      // The confirmation names the project.
+      expect(
+        find.textContaining('"Beach trip" and its photos'),
+        findsOneWidget,
+      );
       await tester.tap(find.text('Delete'));
       await pumpUntil(
         tester,
@@ -342,18 +351,19 @@ void main() {
     });
   });
 
-  testWidgets('cancelling the dialog keeps the project', (tester) async {
+  testWidgets('cancelling the confirmation keeps the project', (tester) async {
     await tester.runAsync(() async {
       await seedProject('p_1', 'Beach trip');
       await pumpScreen(tester);
 
-      await tester.tap(find.byIcon(Icons.delete_outline));
+      await openActions(tester, 'p_1');
+      await tester.tap(find.text('Delete'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Cancel'));
       await pumpUntil(
         tester,
         () => !tester.any(find.text('Delete project?')),
-        reason: 'the dialog never closed',
+        reason: 'the confirmation never closed',
       );
 
       expect(find.byKey(const ValueKey('project-p_1')), findsOneWidget);

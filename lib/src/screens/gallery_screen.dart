@@ -1,9 +1,7 @@
 import 'dart:convert';
 import 'dart:math' as math;
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
 import '../api/entitlements.dart';
@@ -16,10 +14,14 @@ import '../model/slot_content.dart';
 import '../model/template.dart';
 import '../rendering/template_canvas.dart';
 import '../theme.dart';
+import '../widgets/layer_ui.dart';
+import '../widgets/template_meta.dart';
 import 'projects_screen.dart';
 import 'settings_screen.dart';
 import 'template_preview_screen.dart';
 import 'template_screen.dart';
+
+export '../widgets/template_meta.dart' show aspectRatioOf;
 
 class GalleryScreen extends StatefulWidget {
   /// Both are owned by `main()` in production; tests inject fakes.
@@ -44,21 +46,19 @@ class _GalleryScreenState extends State<GalleryScreen> {
   late final _entitlements = widget.entitlements ?? EntitlementsService();
   late final _store = widget.store ?? TemplateStore();
   // Handed to every editor session so it auto-saves as a project; the
-  // projects themselves are listed on ProjectsScreen, not here.
+  // projects themselves are listed on the Projects tab.
   final _projects = ProjectStore();
   late Future<IndexResult> _index;
 
-  // Frames/stickers for the cards' live panel renders (multi-panel templates
-  // swipe through real canvases, not the static thumbnail).
+  // Frames/stickers for the folios' live renders.
   List<AssetRecord> _assets = const [];
 
-  // Category filter chip selection; null = All. Cleared implicitly when the
-  // selected category disappears from a refreshed index (see the guard in
-  // _buildTemplatesTab).
+  // Category index selection; null = All. A stale selection (category gone
+  // after a refresh) reads as All — see the guard in [_buildDiscover].
   String? _category;
 
-  // Bottom-bar destination: 0 templates, 1 projects, 2 settings. The create
-  // button in the bar is an action, not a destination — it never lands here.
+  // Bottom-bar destination: 0 Discover, 1 Projects. The create button in the
+  // bar is an action, not a destination — it never lands here.
   int _tab = 0;
 
   @override
@@ -68,7 +68,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
     _loadAssets();
   }
 
-  /// Best-effort, like the preview screen: offline (or on error) the cards
+  /// Best-effort, like the preview screen: offline (or on error) the folios
   /// simply render without catalog frames/stickers.
   Future<void> _loadAssets() async {
     try {
@@ -86,17 +86,21 @@ class _GalleryScreenState extends State<GalleryScreen> {
     setState(() {
       _index = next;
     });
-    await next;
+    try {
+      await next;
+    } catch (_) {
+      // The FutureBuilder renders the error state.
+    }
   }
 
   Future<void> _openTemplate(TemplateSummary summary) async {
-    // The loaded index rides along for the paywall's template mosaic; a card
+    // The loaded index rides along for the paywall's cover spread; a folio
     // is only tappable once _index resolved, so this await is immediate.
     var catalog = const <TemplateSummary>[];
     try {
       catalog = (await _index).templates;
     } catch (_) {
-      // No index, no mosaic — the paywall falls back to its gradient.
+      // No index, no spread — the paywall falls back to plain paper.
     }
     if (!mounted) return;
     // Always lands on the read-only preview — looking is free for everyone;
@@ -115,41 +119,17 @@ class _GalleryScreenState extends State<GalleryScreen> {
     );
   }
 
-  /// Create-from-scratch entry: pick a canvas size, then open the editor on a
-  /// blank draft — everything (text, images, grids, assets, panels) is built
-  /// there with the bottom toolbar.
+  /// Create-from-scratch entry: pick a format, then open the editor on a
+  /// blank draft — everything is built there with the bottom toolbar.
   Future<void> _createFromScratch() async {
-    final canvas = await showModalBottomSheet<(String, double, double)>(
+    final canvas = await showLayerSheet<(String, double, double)>(
       context: context,
-      builder: (sheetContext) => SafeArea(
-        top: false,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Padding(
-              padding: EdgeInsets.fromLTRB(16, 12, 16, 4),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  'Canvas size',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                ),
-              ),
-            ),
-            for (final (label, aspect, w, h) in const [
-              ('Story', '9:16', 1080.0, 1920.0),
-              ('Portrait', '4:5', 1080.0, 1350.0),
-              ('Square', '1:1', 1080.0, 1080.0),
-            ])
-              ListTile(
-                leading: const Icon(Symbols.crop_free_rounded),
-                title: Text(label),
-                subtitle: Text('$aspect · ${w.toInt()}×${h.toInt()}'),
-                onTap: () => Navigator.pop(sheetContext, (aspect, w, h)),
-              ),
-          ],
-        ),
+      titleWidget: SerifHeadline(
+        roman: 'A blank ',
+        italic: 'canvas',
+        style: AppType.title(28),
       ),
+      builder: (sheetContext) => const _BlankCanvasSheet(),
     );
     if (canvas == null || !mounted) return;
     await Navigator.of(context).push(
@@ -168,22 +148,26 @@ class _GalleryScreenState extends State<GalleryScreen> {
     );
   }
 
+  Future<void> _openSettings() async {
+    var catalog = const <TemplateSummary>[];
+    try {
+      catalog = (await _index).templates;
+    } catch (_) {
+      // Settings works without the index; only its Pro cover goes plain.
+    }
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) =>
+            SettingsScreen(entitlements: _entitlements, catalog: catalog),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    // Two bottom-bar destinations around the center create button; settings
-    // lives behind the gear in the header. The switch rebuilds the destination
-    // on every visit, so the projects tab always lists fresh saves.
-    final (title, body) = switch (_tab) {
-      1 => (
-        'My projects',
-        ProjectsList(
-          store: _projects,
-          fontResolver: widget.fontResolver,
-          entitlements: _entitlements,
-        ) as Widget,
-      ),
-      _ => ('Layer', _buildTemplatesTab()),
-    };
+    // The switch rebuilds the destination on every visit, so the projects
+    // tab always lists fresh saves.
     return Scaffold(
       bottomNavigationBar: _HomeBottomBar(
         current: _tab,
@@ -191,252 +175,482 @@ class _GalleryScreenState extends State<GalleryScreen> {
         onCreate: _createFromScratch,
       ),
       body: SafeArea(
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 16, 12, 14),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      title,
-                      style: Theme.of(context).textTheme.headlineMedium,
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(
-                      Symbols.settings_rounded,
-                      color: AppColors.textSecondary,
-                    ),
-                    tooltip: 'Settings',
-                    onPressed: () => Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) =>
-                            SettingsScreen(entitlements: _entitlements),
-                      ),
-                    ),
-                  ),
-                ],
+        bottom: false,
+        child: _tab == 1
+            ? ProjectsList(
+                store: _projects,
+                fontResolver: widget.fontResolver,
+                entitlements: _entitlements,
+                onBrowseTemplates: () => setState(() => _tab = 0),
+              )
+            : _buildDiscover(),
+      ),
+    );
+  }
+
+  Widget _buildDiscover() {
+    return FutureBuilder<IndexResult>(
+      future: _index,
+      builder: (context, snapshot) {
+        final loading = snapshot.connectionState != ConnectionState.done;
+        final failed = !loading && snapshot.hasError;
+        final result = (loading || failed) ? null : snapshot.data!;
+
+        final slivers = <Widget>[
+          SliverToBoxAdapter(
+            child: _Masthead(
+              offline: result?.fromCache ?? false,
+              onSettings: _openSettings,
+            ),
+          ),
+        ];
+
+        if (failed) {
+          // The exception itself is developer material — a socket error or a
+          // status code tells the user nothing and reads as a broken app. It
+          // goes to the log; the screen offers the one thing that can help.
+          debugPrint('Template index failed: ${snapshot.error}');
+          slivers.add(
+            SliverFillRemaining(
+              hasScrollBody: false,
+              child: _OutOfReach(
+                onRetry: _refresh,
+                onProjects: () => setState(() => _tab = 1),
               ),
             ),
-            Expanded(child: body),
+          );
+        } else {
+          slivers.add(const SliverToBoxAdapter(child: _Headline()));
+          if (result == null) {
+            // Ghost folios where the real ones will land.
+            slivers.add(const SliverToBoxAdapter(child: _SkeletonFolios()));
+          } else {
+            slivers.addAll(_collectionSlivers(result.templates));
+          }
+        }
+
+        return RefreshIndicator(
+          onRefresh: _refresh,
+          color: AppColors.ink,
+          backgroundColor: AppColors.paper,
+          // Rebuilds when a purchase lands so every "Pro" fades out in place.
+          child: ValueListenableBuilder<bool>(
+            valueListenable: _entitlements.isPro,
+            builder: (context, _, _) => CustomScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              slivers: slivers,
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  List<Widget> _collectionSlivers(List<TemplateSummary> templates) {
+    if (templates.isEmpty) {
+      return [
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 24, 20, 48),
+            child: Text('No templates published yet.', style: AppType.bodyS),
+          ),
+        ),
+      ];
+    }
+    final counts = <String, int>{};
+    for (final t in templates) {
+      final c = t.category;
+      if (c != null) counts[c] = (counts[c] ?? 0) + 1;
+    }
+    final categories = counts.keys.toList()..sort();
+    final active = categories.contains(_category) ? _category : null;
+    final visible = active == null
+        ? templates
+        : [
+            for (final t in templates)
+              if (t.category == active) t,
+          ];
+
+    final ctx = _FolioContext(
+      store: _store,
+      fontResolver: widget.fontResolver,
+      catalog: _assets,
+      isPro: _entitlements.isPro.value,
+      onOpen: _openTemplate,
+    );
+    final rows = _rhythm(visible.skip(1).toList());
+
+    return [
+      if (categories.isNotEmpty)
+        SliverPersistentHeader(
+          pinned: true,
+          delegate: _CategoryIndexDelegate(
+            total: templates.length,
+            categories: categories,
+            counts: counts,
+            active: active,
+            onSelect: (c) => setState(() => _category = c),
+          ),
+        ),
+      SliverToBoxAdapter(
+        child: _AppearFromBelow(
+          key: ValueKey('featured-${active ?? ''}-${visible.first.id}'),
+          order: 0,
+          child: _Featured(summary: visible.first, ctx: ctx),
+        ),
+      ),
+      SliverList.builder(
+        itemCount: rows.length,
+        itemBuilder: (context, i) => _AppearFromBelow(
+          // Re-keyed per filter so switching sections replays the entrance.
+          key: ValueKey('row-${active ?? ''}-${rows[i].first.$2.id}'),
+          order: i + 1,
+          child: Padding(
+            padding: const EdgeInsets.only(top: 48),
+            child: _RhythmRow(row: rows[i], ctx: ctx),
+          ),
+        ),
+      ),
+      const SliverToBoxAdapter(child: _EndNote()),
+    ];
+  }
+}
+
+// ── Rhythm ────────────────────────────────────────────────────────────────
+
+/// The collection's row kinds, in the order they cycle: a wide folio with its
+/// caption beside it, a staggered pair, a full-bleed sequence, a wide folio
+/// with the caption on the left, and a centred folio.
+enum _RowKind { wideLeft, pair, sequence, wideRight, centered }
+
+const _kRhythm = _RowKind.values;
+
+/// One row: its kind and its folios as (collection number, template).
+typedef _Row = ({_RowKind kind, List<(int, TemplateSummary)> folios});
+
+extension on _Row {
+  (int, TemplateSummary) get first => folios.first;
+}
+
+/// Lays [rest] (the collection after the featured template) into rows. Numbers
+/// continue from the featured N° 01.
+List<_Row> _rhythm(List<TemplateSummary> rest) {
+  final rows = <_Row>[];
+  var i = 0;
+  var k = 0;
+  while (i < rest.length) {
+    final kind = _kRhythm[k % _kRhythm.length];
+    final take = kind == _RowKind.pair ? math.min(2, rest.length - i) : 1;
+    rows.add((
+      kind: take == 1 && kind == _RowKind.pair ? _RowKind.centered : kind,
+      folios: [for (var j = 0; j < take; j++) (i + j + 2, rest[i + j])],
+    ));
+    i += take;
+    k++;
+  }
+  return rows;
+}
+
+/// Width of [span] columns of the 6-column grid inside [width].
+double _span(double width, int span) {
+  const gutter = AppSpace.gutter;
+  final col = (width - 5 * gutter) / 6;
+  return span * col + (span - 1) * gutter;
+}
+
+class _FolioContext {
+  final TemplateStore store;
+  final FontResolver fontResolver;
+  final List<AssetRecord> catalog;
+  final bool isPro;
+  final ValueChanged<TemplateSummary> onOpen;
+
+  const _FolioContext({
+    required this.store,
+    required this.fontResolver,
+    required this.catalog,
+    required this.isPro,
+    required this.onOpen,
+  });
+}
+
+class _RhythmRow extends StatelessWidget {
+  final _Row row;
+  final _FolioContext ctx;
+
+  const _RhythmRow({required this.row, required this.ctx});
+
+  @override
+  Widget build(BuildContext context) {
+    return switch (row.kind) {
+      _RowKind.sequence => _SequenceFolio(
+        number: row.first.$1,
+        summary: row.first.$2,
+        ctx: ctx,
+      ),
+      _ => Padding(
+        padding: const EdgeInsets.symmetric(horizontal: AppSpace.margin),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final w = constraints.maxWidth;
+            switch (row.kind) {
+              case _RowKind.wideLeft:
+              case _RowKind.wideRight:
+                return _WideFolio(
+                  number: row.first.$1,
+                  summary: row.first.$2,
+                  ctx: ctx,
+                  width: w,
+                  captionLeft: row.kind == _RowKind.wideRight,
+                );
+              case _RowKind.pair:
+                final (n1, a) = row.folios[0];
+                final (n2, b) = row.folios[1];
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Staggered: the left folio sits lower.
+                    Padding(
+                      padding: const EdgeInsets.only(top: 56),
+                      child: _StackedFolio(
+                        number: n1,
+                        summary: a,
+                        ctx: ctx,
+                        width: _span(w, 3),
+                      ),
+                    ),
+                    const SizedBox(width: AppSpace.gutter),
+                    _StackedFolio(
+                      number: n2,
+                      summary: b,
+                      ctx: ctx,
+                      width: _span(w, 3),
+                    ),
+                  ],
+                );
+              default:
+                final cw = _span(w, 4);
+                return Padding(
+                  padding: EdgeInsets.only(left: (w - cw) / 2),
+                  child: _StackedFolio(
+                    number: row.first.$1,
+                    summary: row.first.$2,
+                    ctx: ctx,
+                    width: cw,
+                    pageable: true,
+                    showNumber: false,
+                  ),
+                );
+            }
+          },
+        ),
+      ),
+    };
+  }
+}
+
+// ── Folio plumbing ───────────────────────────────────────────────────────
+
+/// What a folio knows once its template has loaded from the prefetch cache.
+class _FolioData {
+  final Template template;
+  final Document document;
+  final List<AssetRecord> catalog;
+
+  const _FolioData(this.template, this.document, this.catalog);
+
+  int get slideCount => document.slideCount;
+}
+
+/// Loads a template once (from the prefetch cache — the collection never hits
+/// the network per folio) and hands its document to [builder], together with
+/// the folio's page index and its press animation.
+///
+/// Also owns the folio's tap: the image dims 6% and the caption rule draws
+/// left to right over 160ms, then the preview opens.
+class _FolioShell extends StatefulWidget {
+  final TemplateSummary summary;
+  final _FolioContext ctx;
+  final Widget Function(
+    BuildContext context,
+    _FolioData? data,
+    ValueNotifier<int> page,
+    Animation<double> press,
+  )
+  builder;
+
+  const _FolioShell({
+    super.key,
+    required this.summary,
+    required this.ctx,
+    required this.builder,
+  });
+
+  @override
+  State<_FolioShell> createState() => _FolioShellState();
+}
+
+class _FolioShellState extends State<_FolioShell>
+    with SingleTickerProviderStateMixin {
+  late final Future<TemplateResult> _template = widget.ctx.store
+      .loadTemplateCached(widget.summary.id);
+
+  /// Ticks only — a page change repaints the ticks row, never the canvases.
+  final _page = ValueNotifier<int>(0);
+
+  late final AnimationController _press = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 160),
+  );
+
+  bool _opening = false;
+
+  @override
+  void dispose() {
+    _page.dispose();
+    _press.dispose();
+    super.dispose();
+  }
+
+  Future<void> _onTap() async {
+    if (_opening) return;
+    _opening = true;
+    try {
+      if (!MediaQuery.disableAnimationsOf(context)) {
+        await _press.forward(from: 0);
+      }
+      if (!mounted) return;
+      widget.ctx.onOpen(widget.summary);
+    } finally {
+      _opening = false;
+      // Undo the press once the preview has covered the folio.
+      Future<void>.delayed(const Duration(milliseconds: 400), () {
+        if (mounted) _press.value = 0;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: widget.summary.name,
+      child: GestureDetector(
+        // Opaque: the whole folio (cover AND caption) opens the preview. The
+        // cover's PageView keeps horizontal drags; taps reach here.
+        behavior: HitTestBehavior.opaque,
+        onTap: _onTap,
+        child: FutureBuilder<TemplateResult>(
+          future: _template,
+          builder: (context, snapshot) {
+            final result = snapshot.data;
+            _FolioData? data;
+            if (result != null) {
+              // The published template folded into the continuous model, so
+              // a panorama really spans slides instead of being echoed.
+              final document = migrateToV4(
+                result.template,
+                const SlotContent(),
+              ).document;
+              data = _FolioData(result.template, document, [
+                ...widget.ctx.catalog,
+                ...result.assets,
+              ]);
+            }
+            return widget.builder(context, data, _page, _press);
+          },
+        ),
+      ),
+    );
+  }
+}
+
+/// A folio's cover: slide 1 (or every slide, pageable) at the template's own
+/// aspect, with the page edges behind and the press dim on top.
+class _Cover extends StatelessWidget {
+  final TemplateSummary summary;
+  final _FolioContext ctx;
+  final _FolioData? data;
+  final double width;
+  final bool pageable;
+  final ValueNotifier<int> page;
+  final Animation<double> press;
+
+  const _Cover({
+    required this.summary,
+    required this.ctx,
+    required this.data,
+    required this.width,
+    required this.pageable,
+    required this.page,
+    required this.press,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final height = width / aspectRatioOf(summary.aspectRatio);
+    return SizedBox(
+      key: ValueKey('template-cover-${summary.id}'),
+      width: width,
+      height: height,
+      child: PageEdges(
+        slides: data?.slideCount ?? 1,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            // Shared with the preview's canvas: the cover flies into place.
+            Hero(
+              tag: 'template-${summary.id}',
+              child: ColoredBox(color: AppColors.paperDeep, child: _artwork()),
+            ),
+            IgnorePointer(
+              child: AnimatedBuilder(
+                animation: press,
+                builder: (context, _) => ColoredBox(
+                  color: AppColors.ink.withValues(alpha: 0.06 * press.value),
+                ),
+              ),
+            ),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildTemplatesTab() {
-    return FutureBuilder<IndexResult>(
-      future: _index,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState != ConnectionState.done) {
-          // Ghost cards where the real ones will land — the layout doesn't
-          // jump when the index arrives.
-          return const _SkeletonGrid();
-        }
-        if (snapshot.hasError) {
-          // The exception itself is developer material — a socket error or a
-          // status code tells the user nothing and reads as a broken app. It
-          // goes to the log; the screen offers the one thing that can help.
-          debugPrint('Template index failed: ${snapshot.error}');
-          return Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(
-                    Symbols.cloud_off_rounded,
-                    size: 40,
-                    color: AppColors.textSecondary,
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    "Couldn't load templates",
-                    style: Theme.of(context).textTheme.titleMedium,
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 6),
-                  const Text(
-                    'Check your connection and try again.',
-                    style: TextStyle(color: AppColors.textSecondary),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 16),
-                  FilledButton(onPressed: _refresh, child: const Text('Retry')),
-                ],
-              ),
+  Widget _artwork() {
+    final d = data;
+    if (d == null) return _staticThumb(summary);
+    if (!pageable || d.slideCount < 2) {
+      // The boundary is not decoration: a cover is expensive to paint and
+      // never changes once built, so without it every folio repaints on
+      // every frame of a scroll.
+      return RepaintBoundary(
+        child: Center(
+          child: IgnorePointer(
+            child: SlideView(
+              document: d.document,
+              slideIndex: 0,
+              fontResolver: ctx.fontResolver,
+              assetCatalog: d.catalog,
+              showTemplatePhotos: true,
             ),
-          );
-        }
-        final result = snapshot.data!;
-        final templates = result.templates;
-        final categories = <String>{
-          for (final t in templates)
-            if (t.category != null) t.category!,
-        }.toList()..sort();
-        // A stale selection (category gone after a refresh) reads as All.
-        final active = categories.contains(_category) ? _category : null;
-        final visible = active == null
-            ? templates
-            : [
-                for (final t in templates)
-                  if (t.category == active) t,
-              ];
-        return Column(
-          children: [
-            if (result.fromCache)
-              // A quiet status pill, not an alarm strip: offline is a state,
-              // not an error.
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Center(
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: AppColors.surfaceHigh,
-                      borderRadius: BorderRadius.circular(999),
-                      border: Border.all(color: AppColors.outline),
-                    ),
-                    child: const Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Symbols.cloud_off_rounded,
-                          size: 14,
-                          color: AppColors.textSecondary,
-                        ),
-                        SizedBox(width: 6),
-                        Text(
-                          'Offline — showing downloaded templates',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: AppColors.textSecondary,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            if (categories.isNotEmpty)
-              SizedBox(
-                height: 44,
-                child: ListView(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
-                  children: [
-                    _FilterChip(
-                      label: 'All',
-                      selected: active == null,
-                      onTap: () => setState(() => _category = null),
-                    ),
-                    for (final category in categories)
-                      _FilterChip(
-                        label: category,
-                        selected: active == category,
-                        onTap: () => setState(() => _category = category),
-                      ),
-                  ],
-                ),
-              ),
-            Expanded(
-              child: templates.isEmpty
-                  ? const _EmptyTab(
-                      icon: Symbols.grid_view_rounded,
-                      message: 'No templates published yet.',
-                    )
-                  : RefreshIndicator(
-                      onRefresh: _refresh,
-                      // Rebuilds when a purchase lands so the locks vanish.
-                      child: ValueListenableBuilder<bool>(
-                        valueListenable: _entitlements.isPro,
-                        builder: (context, isPro, _) => GridView.builder(
-                          padding: const EdgeInsets.all(_kGridGap),
-                          gridDelegate: _MasonryGridDelegate(
-                            aspects: [
-                              for (final t in visible)
-                                aspectRatioOf(t.aspectRatio),
-                            ],
-                          ),
-                          itemCount: visible.length,
-                          itemBuilder: (context, i) => _AppearFromBelow(
-                            // Re-keyed per template so switching category
-                            // filters replays the entrance on the new set.
-                            key: ValueKey(visible[i].id),
-                            order: i,
-                            child: _TemplateCard(
-                              summary: visible[i],
-                              locked: visible[i].premium && !isPro,
-                              store: _store,
-                              fontResolver: widget.fontResolver,
-                              catalog: _assets,
-                              onTap: () => _openTemplate(visible[i]),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-            ),
-          ],
-        );
-      },
-    );
-  }
-}
-
-/// The home's bottom bar: templates and projects flanking the create button,
-/// which sits dead-center, accent-filled because creating is THE action of
-/// the app — the destinations stay quiet.
-class _HomeBottomBar extends StatelessWidget {
-  final int current;
-  final ValueChanged<int> onSelect;
-  final VoidCallback onCreate;
-
-  const _HomeBottomBar({
-    required this.current,
-    required this.onSelect,
-    required this.onCreate,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: const BoxDecoration(
-        color: AppColors.surface,
-        border: Border(top: BorderSide(color: AppColors.outline)),
-      ),
-      child: SafeArea(
-        top: false,
-        child: SizedBox(
-          height: 64,
-          child: Row(
-            children: [
-              Expanded(
-                child: _NavItem(
-                  icon: Symbols.grid_view_rounded,
-                  label: 'Templates',
-                  selected: current == 0,
-                  onTap: () => onSelect(0),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                child: _CreateButton(onTap: onCreate),
-              ),
-              Expanded(
-                child: _NavItem(
-                  icon: Symbols.space_dashboard_rounded,
-                  label: 'Projects',
-                  selected: current == 1,
-                  onTap: () => onSelect(1),
-                ),
-              ),
-            ],
+          ),
+        ),
+      );
+    }
+    return PageView.builder(
+      itemCount: d.slideCount,
+      onPageChanged: (i) => page.value = i,
+      itemBuilder: (context, i) => Center(
+        // Inert: the folio's GestureDetector keeps the tap, the PageView
+        // keeps the horizontal drag.
+        child: IgnorePointer(
+          child: SlideView(
+            document: d.document,
+            slideIndex: i,
+            fontResolver: ctx.fontResolver,
+            assetCatalog: d.catalog,
+            showTemplatePhotos: true,
           ),
         ),
       ),
@@ -444,36 +658,147 @@ class _HomeBottomBar extends StatelessWidget {
   }
 }
 
-class _NavItem extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
+Widget _staticThumb(TemplateSummary summary) {
+  final thumb = summary.thumbnailDataUrl;
+  return thumb != null && thumb.contains(',')
+      ? Image.memory(base64Decode(thumb.split(',').last), fit: BoxFit.cover)
+      : const SizedBox.expand();
+}
 
-  const _NavItem({
-    required this.icon,
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
+/// The caption's top rule: 1px ink, with a heavier stroke drawing left to
+/// right while the folio is pressed.
+class _CaptionRule extends StatelessWidget {
+  final Animation<double> press;
+
+  const _CaptionRule({required this.press});
 
   @override
   Widget build(BuildContext context) {
-    final color = selected ? AppColors.textPrimary : AppColors.textSecondary;
-    return InkResponse(
-      onTap: onTap,
-      radius: 40,
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
+    return SizedBox(
+      height: 2,
+      child: AnimatedBuilder(
+        animation: press,
+        builder: (context, _) => Stack(
+          children: [
+            const Positioned(
+              left: 0,
+              right: 0,
+              top: 0,
+              child: Hairline(color: AppColors.ink),
+            ),
+            FractionallySizedBox(
+              widthFactor: press.value,
+              child: Container(height: 2, color: AppColors.ink),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+Widget _ticksFor(_FolioData? data, ValueNotifier<int> page) {
+  final n = data?.slideCount ?? 0;
+  if (n < 2) return const SizedBox(height: 3);
+  return ValueListenableBuilder<int>(
+    valueListenable: page,
+    builder: (context, p, _) => Ticks(count: n, active: p),
+  );
+}
+
+// ── Folio layouts ────────────────────────────────────────────────────────
+
+/// The featured strip: eyebrow, the template's slides at 4:5-ish size paging
+/// sideways (bleeding off the right edge), ticks, name and meta.
+class _Featured extends StatelessWidget {
+  final TemplateSummary summary;
+  final _FolioContext ctx;
+
+  const _Featured({required this.summary, required this.ctx});
+
+  @override
+  Widget build(BuildContext context) {
+    final screen = MediaQuery.sizeOf(context).width;
+    final content = screen - 2 * AppSpace.margin;
+    final aspect = aspectRatioOf(summary.aspectRatio);
+    var slideW = content * 0.71;
+    var slideH = slideW / aspect;
+    // Tall formats would fill the screen; cap the height instead.
+    final maxH = content * 1.12;
+    if (slideH > maxH) {
+      slideH = maxH;
+      slideW = slideH * aspect;
+    }
+    const gap = 12.0;
+    final viewport = screen - AppSpace.margin;
+
+    return _FolioShell(
+      key: ValueKey('template-card-${summary.id}'),
+      summary: summary,
+      ctx: ctx,
+      builder: (context, data, page, press) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, size: 24, fill: selected ? 1 : 0, color: color),
-          const SizedBox(height: 2),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-              color: color,
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 28, 20, 16),
+            child: Row(
+              children: [
+                const Expanded(child: Eyebrow('N° 01 — Featured')),
+                ProMark(visible: summary.premium && !ctx.isPro),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.only(left: AppSpace.margin),
+            child: SizedBox(
+              height: slideH,
+              child: Hero(
+                tag: 'template-${summary.id}',
+                child: data == null
+                    ? Align(
+                        alignment: Alignment.centerLeft,
+                        child: SizedBox(
+                          key: ValueKey('template-cover-${summary.id}'),
+                          width: slideW,
+                          child: _staticThumb(summary),
+                        ),
+                      )
+                    : _FeaturedPages(
+                        coverKey: ValueKey('template-cover-${summary.id}'),
+                        data: data,
+                        ctx: ctx,
+                        page: page,
+                        press: press,
+                        fraction: ((slideW + gap) / viewport).clamp(0.1, 1.0),
+                        slideWidth: slideW,
+                        gap: gap,
+                      ),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
+            child: _ticksFor(data, page),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Expanded(child: Text(summary.name, style: AppType.title(30))),
+                const SizedBox(width: 12),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    if (summary.category != null)
+                      Text(summary.category!, style: AppType.caption),
+                    Text(
+                      metaLabel(summary.aspectRatio, data?.slideCount),
+                      style: AppType.caption,
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
         ],
@@ -482,29 +807,456 @@ class _NavItem extends StatelessWidget {
   }
 }
 
-/// Create-from-scratch: an action styled like the FAB it replaces.
-class _CreateButton extends StatelessWidget {
-  final VoidCallback onTap;
+class _FeaturedPages extends StatelessWidget {
+  final Key coverKey;
+  final _FolioData data;
+  final _FolioContext ctx;
+  final ValueNotifier<int> page;
+  final Animation<double> press;
+  final double fraction;
+  final double slideWidth;
+  final double gap;
 
-  const _CreateButton({required this.onTap});
+  const _FeaturedPages({
+    required this.coverKey,
+    required this.data,
+    required this.ctx,
+    required this.page,
+    required this.press,
+    required this.fraction,
+    required this.slideWidth,
+    required this.gap,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: AppColors.accent,
-      borderRadius: BorderRadius.circular(16),
-      elevation: 2,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
-        child: const SizedBox(
-          width: 52,
-          height: 44,
-          child: Icon(
-            Symbols.add_rounded,
-            size: 26,
-            color: AppColors.onAccent,
-            semanticLabel: 'Create from scratch',
+    Widget slide(int i) => Padding(
+      padding: EdgeInsets.only(right: gap),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: SizedBox(
+          // The first slide stands for the cover (tests measure its aspect).
+          key: i == 0 ? coverKey : null,
+          width: slideWidth,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              ColoredBox(
+                color: AppColors.paperDeep,
+                child: IgnorePointer(
+                  child: Center(
+                    child: SlideView(
+                      document: data.document,
+                      slideIndex: i,
+                      fontResolver: ctx.fontResolver,
+                      assetCatalog: data.catalog,
+                      showTemplatePhotos: true,
+                    ),
+                  ),
+                ),
+              ),
+              IgnorePointer(
+                child: AnimatedBuilder(
+                  animation: press,
+                  builder: (context, _) => ColoredBox(
+                    color: AppColors.ink.withValues(alpha: .06 * press.value),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (data.slideCount < 2) return slide(0);
+    return _FractionPageView(
+      fraction: fraction,
+      count: data.slideCount,
+      onPage: (i) => page.value = i,
+      builder: slide,
+    );
+  }
+}
+
+/// A PageView whose pages are [fraction] of the viewport, left-aligned, so
+/// the next slide peeks in from the right edge.
+class _FractionPageView extends StatefulWidget {
+  final double fraction;
+  final int count;
+  final ValueChanged<int> onPage;
+  final Widget Function(int) builder;
+
+  const _FractionPageView({
+    required this.fraction,
+    required this.count,
+    required this.onPage,
+    required this.builder,
+  });
+
+  @override
+  State<_FractionPageView> createState() => _FractionPageViewState();
+}
+
+class _FractionPageViewState extends State<_FractionPageView> {
+  late PageController _controller = PageController(
+    viewportFraction: widget.fraction,
+  );
+
+  @override
+  void didUpdateWidget(_FractionPageView old) {
+    super.didUpdateWidget(old);
+    if ((old.fraction - widget.fraction).abs() > 0.001) {
+      final page = _controller.hasClients ? _controller.page?.round() ?? 0 : 0;
+      _controller.dispose();
+      _controller = PageController(
+        viewportFraction: widget.fraction,
+        initialPage: page,
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => PageView.builder(
+    controller: _controller,
+    padEnds: false,
+    itemCount: widget.count,
+    onPageChanged: widget.onPage,
+    itemBuilder: (context, i) => widget.builder(i),
+  );
+}
+
+/// A wide (4-column) folio with its caption in the remaining 2 columns,
+/// bottom-aligned: ticks, a big italic number, rule, category, name, meta.
+class _WideFolio extends StatelessWidget {
+  final int number;
+  final TemplateSummary summary;
+  final _FolioContext ctx;
+  final double width;
+  final bool captionLeft;
+
+  const _WideFolio({
+    required this.number,
+    required this.summary,
+    required this.ctx,
+    required this.width,
+    required this.captionLeft,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final coverW = _span(width, 4);
+    final captionW = _span(width, 2);
+    return _FolioShell(
+      key: ValueKey('template-card-${summary.id}'),
+      summary: summary,
+      ctx: ctx,
+      builder: (context, data, page, press) {
+        final cover = _Cover(
+          summary: summary,
+          ctx: ctx,
+          data: data,
+          width: coverW,
+          pageable: true,
+          page: page,
+          press: press,
+        );
+        final caption = SizedBox(
+          width: captionW,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (!captionLeft) ...[
+                _ticksFor(data, page),
+                const SizedBox(height: 18),
+              ],
+              Text(twoDigits(number), style: AppType.numeral(40)),
+              const SizedBox(height: 10),
+              _CaptionRule(press: press),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  if (summary.category != null)
+                    Expanded(child: Eyebrow(summary.category!, size: 11))
+                  else
+                    const Spacer(),
+                  ProMark(visible: summary.premium && !ctx.isPro, size: 11),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Text(summary.name, style: AppType.captionTitle),
+              const SizedBox(height: 6),
+              Text(
+                metaLabel(summary.aspectRatio, data?.slideCount),
+                style: AppType.caption,
+              ),
+              if (captionLeft) ...[
+                const SizedBox(height: 14),
+                _ticksFor(data, page),
+              ],
+            ],
+          ),
+        );
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: captionLeft
+              ? [caption, const SizedBox(width: AppSpace.gutter), cover]
+              : [cover, const SizedBox(width: AppSpace.gutter), caption],
+        );
+      },
+    );
+  }
+}
+
+/// A folio with its caption underneath: rule, category + number/Pro, name,
+/// meta. Narrow (3-column) folios are static and open on tap; the centred
+/// 4-column one pages.
+class _StackedFolio extends StatelessWidget {
+  final int number;
+  final TemplateSummary summary;
+  final _FolioContext ctx;
+  final double width;
+  final bool pageable;
+  final bool showNumber;
+
+  const _StackedFolio({
+    required this.number,
+    required this.summary,
+    required this.ctx,
+    required this.width,
+    this.pageable = false,
+    this.showNumber = true,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return _FolioShell(
+      key: ValueKey('template-card-${summary.id}'),
+      summary: summary,
+      ctx: ctx,
+      builder: (context, data, page, press) => SizedBox(
+        width: width,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _Cover(
+              summary: summary,
+              ctx: ctx,
+              data: data,
+              width: width,
+              pageable: pageable,
+              page: page,
+              press: press,
+            ),
+            if (pageable) ...[
+              const SizedBox(height: 12),
+              _ticksFor(data, page),
+            ],
+            const SizedBox(height: 12),
+            _CaptionRule(press: press),
+            const SizedBox(height: 10),
+            if (showNumber) ...[
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Expanded(
+                    child: summary.category == null
+                        ? const SizedBox.shrink()
+                        : Eyebrow(summary.category!, size: 11),
+                  ),
+                  ProMark(visible: summary.premium && !ctx.isPro, size: 11),
+                  const SizedBox(width: 8),
+                  Text(twoDigits(number), style: AppType.numeral(18)),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Text(summary.name, style: AppType.captionTitle),
+              const SizedBox(height: 6),
+              Text(
+                [
+                  formatNameOf(summary.aspectRatio),
+                  metaLabel(summary.aspectRatio, data?.slideCount),
+                ].join(' '),
+                style: AppType.caption,
+              ),
+            ] else
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(child: Text(summary.name, style: AppType.title(22))),
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        ProMark(
+                          visible: summary.premium && !ctx.isPro,
+                          size: 11,
+                        ),
+                        Text(
+                          [
+                            ?summary.category,
+                            if (data != null) slidesLabel(data.slideCount),
+                          ].join(' · '),
+                          textAlign: TextAlign.end,
+                          style: AppType.caption,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The full-bleed sequence: the template's whole continuous document as one
+/// strip running off the right edge — "read as a sequence".
+class _SequenceFolio extends StatelessWidget {
+  final int number;
+  final TemplateSummary summary;
+  final _FolioContext ctx;
+
+  const _SequenceFolio({
+    required this.number,
+    required this.summary,
+    required this.ctx,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final screen = MediaQuery.sizeOf(context).width;
+    final content = screen - 2 * AppSpace.margin;
+    final aspect = aspectRatioOf(summary.aspectRatio);
+    final height = math.min(content * 0.47, 240.0);
+    final slideW = height * aspect;
+    return _FolioShell(
+      key: ValueKey('template-card-${summary.id}'),
+      summary: summary,
+      ctx: ctx,
+      builder: (context, data, page, press) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 14),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Eyebrow(
+                    'N° ${twoDigits(number)} — Read as a sequence',
+                  ),
+                ),
+                ProMark(visible: summary.premium && !ctx.isPro),
+                if (data != null) ...[
+                  const SizedBox(width: 10),
+                  Text(slidesLabel(data.slideCount), style: AppType.caption),
+                ],
+              ],
+            ),
+          ),
+          SizedBox(
+            key: ValueKey('template-cover-${summary.id}'),
+            height: height,
+            child: Stack(
+              children: [
+                data == null
+                    ? Padding(
+                        padding: const EdgeInsets.only(left: AppSpace.margin),
+                        child: SizedBox(
+                          width: slideW,
+                          height: height,
+                          child: _staticThumb(summary),
+                        ),
+                      )
+                    : SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppSpace.margin,
+                        ),
+                        child: Hero(
+                          tag: 'template-${summary.id}',
+                          child: _DocumentStrip(
+                            data: data,
+                            ctx: ctx,
+                            height: height,
+                          ),
+                        ),
+                      ),
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: AnimatedBuilder(
+                      animation: press,
+                      builder: (context, _) => ColoredBox(
+                        color: AppColors.ink.withValues(
+                          alpha: 0.06 * press.value,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Expanded(child: Text(summary.name, style: AppType.title(26))),
+                const SizedBox(width: 12),
+                Text(
+                  [
+                    ?summary.category,
+                    ratioLabelOf(summary.aspectRatio),
+                  ].join(' · '),
+                  style: AppType.caption,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A template's whole continuous document at [height] — one canvas, so the
+/// slides sit flush and anything crossing a cut continues unbroken.
+class _DocumentStrip extends StatelessWidget {
+  final _FolioData data;
+  final _FolioContext ctx;
+  final double height;
+
+  const _DocumentStrip({
+    required this.data,
+    required this.ctx,
+    required this.height,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final doc = data.document;
+    final scale = height / doc.slideHeight;
+    return RepaintBoundary(
+      child: IgnorePointer(
+        child: SizedBox(
+          width: doc.contentWidth * scale,
+          height: height,
+          child: CanvasView(
+            document: doc,
+            content: const SlotContent(),
+            fontResolver: ctx.fontResolver,
+            assetCatalog: data.catalog,
+            showTemplatePhotos: true,
           ),
         ),
       ),
@@ -512,147 +1264,276 @@ class _CreateButton extends StatelessWidget {
   }
 }
 
-/// Gap between cards, both axes. Also the grid's outer padding.
-const double _kGridGap = 12;
+// ── Discover chrome ──────────────────────────────────────────────────────
 
-const int _kGridColumns = 2;
+class _Masthead extends StatelessWidget {
+  final bool offline;
+  final VoidCallback onSettings;
 
-/// The card's shape IS the template's shape, so the artwork fills it edge to
-/// edge with nothing left over to letterbox. That makes the grid ragged, which
-/// is the point: format is the first thing someone picks by, and a wall of
-/// identical rectangles hides it.
-///
-/// [TemplateSummary.aspectRatio] is a published contract — either a named
-/// preset or a plain `W:H` — so the tile is sized before any template loads.
-/// A name nobody recognises falls back to the dominant format rather than
-/// guessing: an unknown template renders as a story and, at worst, letterboxes
-/// the way every card used to.
-double aspectRatioOf(String value) {
-  const presets = {
-    'story': 9 / 16,
-    'reel': 9 / 16,
-    'portrait': 4 / 5,
-    'post': 4 / 5,
-    'square': 1.0,
-    'landscape': 16 / 9,
-  };
-  final preset = presets[value.trim().toLowerCase()];
-  if (preset != null) return preset;
-  final parts = value.split(':');
-  if (parts.length == 2) {
-    final w = double.tryParse(parts[0].trim());
-    final h = double.tryParse(parts[1].trim());
-    if (w != null && h != null && w > 0 && h > 0) return w / h;
-  }
-  return 9 / 16;
-}
-
-/// Lazy masonry: children keep their own heights and each one lands in the
-/// column that is currently shortest.
-///
-/// Written out rather than pulled from a package because the aspects are all
-/// known up front — the whole layout is one O(n) pass over a list of doubles,
-/// and the sliver protocol's index lookups keep the grid building only what is
-/// on screen (a gallery must never mount every card: each one reads a template
-/// off disk).
-class _MasonryGridDelegate extends SliverGridDelegate {
-  final List<double> aspects;
-
-  const _MasonryGridDelegate({required this.aspects});
+  const _Masthead({required this.offline, required this.onSettings});
 
   @override
-  SliverGridLayout getLayout(SliverConstraints constraints) {
-    const columns = _kGridColumns;
-    const gap = _kGridGap;
-    final width = (constraints.crossAxisExtent - gap * (columns - 1)) / columns;
-    final tops = <double>[];
-    final lefts = <double>[];
-    final heights = <double>[];
-    final bottoms = List<double>.filled(columns, 0);
-    for (final aspect in aspects) {
-      var col = 0;
-      for (var i = 1; i < columns; i++) {
-        // The epsilon keeps ties going to the leftmost column, so a uniform
-        // list fills in reading order instead of zig-zagging.
-        if (bottoms[i] < bottoms[col] - 0.5) col = i;
-      }
-      final height = width / (aspect <= 0 ? 9 / 16 : aspect);
-      tops.add(bottoms[col]);
-      lefts.add(col * (width + gap));
-      heights.add(height);
-      bottoms[col] = bottoms[col] + height + gap;
-    }
-    return _MasonryLayout(
-      tops: tops,
-      lefts: lefts,
-      heights: heights,
-      width: width,
-      // Trailing gap trimmed: the grid's own padding provides the bottom edge.
-      extent: math.max(0, bottoms.reduce(math.max) - gap),
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 10, 8, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Layer',
+                  style: AppType.serif(26, italic: true, tracking: -.02),
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Symbols.settings, size: 24),
+                tooltip: 'Settings',
+                onPressed: onSettings,
+              ),
+            ],
+          ),
+          if (offline)
+            Padding(
+              padding: const EdgeInsets.only(top: 6, right: 12),
+              child: Row(
+                children: [
+                  const Icon(
+                    Symbols.cloud_off,
+                    size: 15,
+                    color: AppColors.rouge,
+                  ),
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: Eyebrow(
+                      'Offline — saved copies',
+                      size: 11,
+                      color: AppColors.rouge,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
     );
   }
-
-  @override
-  bool shouldRelayout(_MasonryGridDelegate old) =>
-      !listEquals(old.aspects, aspects);
 }
 
-class _MasonryLayout extends SliverGridLayout {
-  final List<double> tops;
-  final List<double> lefts;
-  final List<double> heights;
-  final double width;
-  final double extent;
+class _Headline extends StatelessWidget {
+  const _Headline();
 
-  const _MasonryLayout({
-    required this.tops,
-    required this.lefts,
-    required this.heights,
-    required this.width,
-    required this.extent,
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.fromLTRB(20, 26, 20, 26),
+    child: SerifHeadline(
+      roman: 'Make something',
+      italic: 'worth keeping.',
+      breakLine: true,
+      style: AppType.display,
+    ),
+  );
+}
+
+class _EndNote extends StatelessWidget {
+  const _EndNote();
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.fromLTRB(20, 64, 20, 40),
+    child: Column(
+      children: [
+        Text(
+          "That's the collection.",
+          textAlign: TextAlign.center,
+          style: AppType.serif(22, italic: true),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Pull down to check for new templates.',
+          textAlign: TextAlign.center,
+          style: AppType.bodyS,
+        ),
+      ],
+    ),
+  );
+}
+
+class _OutOfReach extends StatelessWidget {
+  final VoidCallback onRetry;
+  final VoidCallback onProjects;
+
+  const _OutOfReach({required this.onRetry, required this.onProjects});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 32, 20, 32),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SerifHeadline(
+            roman: 'The collection',
+            italic: 'is out of reach.',
+            breakLine: true,
+            style: AppType.headline,
+          ),
+          const SizedBox(height: 18),
+          Text(
+            "Couldn't load templates. Check your connection and try again "
+            '— your projects are still here.',
+            style: AppType.body.copyWith(color: AppColors.inkSoft),
+          ),
+          const SizedBox(height: 28),
+          SecondaryButton(
+            label: 'Try again',
+            icon: Symbols.refresh,
+            onPressed: onRetry,
+          ),
+          const SizedBox(height: 8),
+          Center(child: TextLink('Open Projects', onTap: onProjects)),
+        ],
+      ),
+    );
+  }
+}
+
+/// The category index: Newsreader words with a superscript count, sticky
+/// under the headline. Bordered 1px ink on top, 1px rule beneath.
+class _CategoryIndexDelegate extends SliverPersistentHeaderDelegate {
+  final int total;
+  final List<String> categories;
+  final Map<String, int> counts;
+  final String? active;
+  final ValueChanged<String?> onSelect;
+
+  _CategoryIndexDelegate({
+    required this.total,
+    required this.categories,
+    required this.counts,
+    required this.active,
+    required this.onSelect,
+  });
+
+  static const double _height = 54;
+
+  @override
+  double get minExtent => _height;
+
+  @override
+  double get maxExtent => _height;
+
+  @override
+  bool shouldRebuild(_CategoryIndexDelegate old) => true;
+
+  @override
+  Widget build(BuildContext context, double shrinkOffset, bool overlaps) {
+    return Container(
+      decoration: const BoxDecoration(
+        color: AppColors.paper,
+        border: Border(
+          top: BorderSide(color: AppColors.ink),
+          bottom: BorderSide(color: AppColors.rule),
+        ),
+      ),
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: AppSpace.margin),
+        children: [
+          _CategoryWord(
+            label: 'All',
+            count: total,
+            selected: active == null,
+            onTap: () => onSelect(null),
+          ),
+          for (final c in categories)
+            _CategoryWord(
+              label: c,
+              count: counts[c] ?? 0,
+              selected: active == c,
+              onTap: () => onSelect(c),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CategoryWord extends StatelessWidget {
+  final String label;
+  final int count;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _CategoryWord({
+    required this.label,
+    required this.count,
+    required this.selected,
+    required this.onTap,
   });
 
   @override
-  double computeMaxScrollOffset(int childCount) => extent;
-
-  @override
-  SliverGridGeometry getGeometryForChildIndex(int index) => SliverGridGeometry(
-    scrollOffset: tops[index],
-    crossAxisOffset: lefts[index],
-    mainAxisExtent: heights[index],
-    crossAxisExtent: width,
-  );
-
-  // The sliver builds one CONTIGUOUS index range, so these two must bracket
-  // everything visible without assuming tops are globally sorted (they aren't
-  // — two columns interleave). Each predicate is exact: below the first, every
-  // child has already ended; past the last, none has started yet.
-  @override
-  int getMinChildIndexForScrollOffset(double offset) {
-    for (var i = 0; i < tops.length; i++) {
-      if (tops[i] + heights[i] > offset) return i;
-    }
-    return math.max(0, tops.length - 1);
-  }
-
-  @override
-  int getMaxChildIndexForScrollOffset(double offset) {
-    for (var i = tops.length - 1; i >= 0; i--) {
-      if (tops[i] <= offset) return i;
-    }
-    return 0;
+  Widget build(BuildContext context) {
+    final color = selected ? AppColors.ink : AppColors.stone;
+    return Semantics(
+      button: true,
+      selected: selected,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.only(right: 24),
+          child: Align(
+            alignment: Alignment.bottomLeft,
+            child: Container(
+              padding: const EdgeInsets.only(bottom: 9),
+              decoration: BoxDecoration(
+                border: Border(
+                  bottom: BorderSide(
+                    color: selected ? AppColors.ink : Colors.transparent,
+                  ),
+                ),
+              ),
+              child: Text.rich(
+                TextSpan(
+                  children: [
+                    TextSpan(text: label),
+                    WidgetSpan(
+                      alignment: PlaceholderAlignment.top,
+                      child: Padding(
+                        padding: const EdgeInsets.only(left: 3),
+                        child: Text(
+                          '$count',
+                          style: AppType.sans(
+                            11,
+                            color: selected ? AppColors.rouge : AppColors.stone,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                style: AppType.category.copyWith(color: color),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 
-/// Pulsing ghost cards shown while the template index loads.
-class _SkeletonGrid extends StatefulWidget {
-  const _SkeletonGrid();
+/// Breathing ghost folios in the collection's ragged silhouette, shown while
+/// the index loads: paperDeep ↔ table at 900ms, static under reduced motion.
+class _SkeletonFolios extends StatefulWidget {
+  const _SkeletonFolios();
 
   @override
-  State<_SkeletonGrid> createState() => _SkeletonGridState();
+  State<_SkeletonFolios> createState() => _SkeletonFoliosState();
 }
 
-class _SkeletonGridState extends State<_SkeletonGrid>
+class _SkeletonFoliosState extends State<_SkeletonFolios>
     with SingleTickerProviderStateMixin {
   late final AnimationController _pulse = AnimationController(
     vsync: this,
@@ -662,11 +1543,9 @@ class _SkeletonGridState extends State<_SkeletonGrid>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // Repeat only under an active ticker; a static ghost respects the
-    // system's reduced-motion setting.
     if (MediaQuery.disableAnimationsOf(context)) {
       _pulse.stop();
-      _pulse.value = 1;
+      _pulse.value = 0;
     } else if (!_pulse.isAnimating) {
       _pulse.repeat(reverse: true);
     }
@@ -680,38 +1559,57 @@ class _SkeletonGridState extends State<_SkeletonGrid>
 
   @override
   Widget build(BuildContext context) {
-    return FadeTransition(
-      opacity: Tween(
-        begin: 0.45,
-        end: 1.0,
-      ).animate(CurvedAnimation(parent: _pulse, curve: Curves.easeInOut)),
-      child: GridView.builder(
-        physics: const NeverScrollableScrollPhysics(),
-        padding: const EdgeInsets.all(_kGridGap),
-        // Mixed formats, so the ghost has the ragged silhouette the real grid
-        // will have — a uniform skeleton would visibly reflow on arrival.
-        gridDelegate: const _MasonryGridDelegate(aspects: _kSkeletonAspects),
-        itemCount: _kSkeletonAspects.length,
-        itemBuilder: (context, i) => const Card(
-          margin: EdgeInsets.zero,
-          child: ColoredBox(color: AppColors.surfaceHigh),
-        ),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 28, 20, 0),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final w = constraints.maxWidth;
+          return AnimatedBuilder(
+            animation: _pulse,
+            builder: (context, _) {
+              final tone = Color.lerp(
+                AppColors.paperDeep,
+                AppColors.table,
+                Curves.easeInOut.transform(_pulse.value),
+              )!;
+              Widget block(double bw, double bh) =>
+                  Container(width: bw, height: bh, color: tone);
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  block(w * .45, 12),
+                  const SizedBox(height: 16),
+                  block(w * .71, w * .71 * 1.25),
+                  const SizedBox(height: 48),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      block(_span(w, 4), _span(w, 4) / (9 / 16)),
+                      const SizedBox(width: AppSpace.gutter),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          block(_span(w, 1), 30),
+                          const SizedBox(height: 12),
+                          block(_span(w, 2), 14),
+                          const SizedBox(height: 8),
+                          block(_span(w, 2) * .7, 10),
+                        ],
+                      ),
+                    ],
+                  ),
+                ],
+              );
+            },
+          );
+        },
       ),
     );
   }
 }
 
-const List<double> _kSkeletonAspects = [
-  9 / 16,
-  4 / 5,
-  4 / 5,
-  9 / 16,
-  9 / 16,
-  1,
-];
-
-/// One-shot entrance for grid items: fade in while sliding up 12px, staggered
-/// by [order] (capped so deep items don't wait). Runs once per element — a
+/// One-shot entrance for collection rows: fade in while sliding up, staggered
+/// by [order] (capped so deep rows don't wait). Runs once per element — a
 /// rebuild (e.g. the unlock flip) never replays it.
 class _AppearFromBelow extends StatefulWidget {
   final int order;
@@ -778,14 +1676,71 @@ class _AppearFromBelowState extends State<_AppearFromBelow>
   }
 }
 
-/// A category pill: accent-filled when active (selection is an action),
-/// quiet otherwise.
-class _FilterChip extends StatelessWidget {
+// ── Navigation ───────────────────────────────────────────────────────────
+
+/// The home's bottom bar: Discover and Projects flanking the create square.
+/// Grid `1fr 72 1fr`; the active destination is ink with a short rouge rule
+/// at the bar's top edge — the one rouge mark.
+class _HomeBottomBar extends StatelessWidget {
+  final int current;
+  final ValueChanged<int> onSelect;
+  final VoidCallback onCreate;
+
+  const _HomeBottomBar({
+    required this.current,
+    required this.onSelect,
+    required this.onCreate,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        color: AppColors.paper,
+        border: Border(top: BorderSide(color: AppColors.rule)),
+      ),
+      child: SafeArea(
+        top: false,
+        child: SizedBox(
+          height: 64,
+          child: Row(
+            children: [
+              Expanded(
+                child: _NavItem(
+                  icon: Symbols.auto_stories,
+                  label: 'Discover',
+                  selected: current == 0,
+                  onTap: () => onSelect(0),
+                ),
+              ),
+              SizedBox(
+                width: 72,
+                child: Center(child: _CreateButton(onTap: onCreate)),
+              ),
+              Expanded(
+                child: _NavItem(
+                  icon: Symbols.photo_library,
+                  label: 'Projects',
+                  selected: current == 1,
+                  onTap: () => onSelect(1),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _NavItem extends StatelessWidget {
+  final IconData icon;
   final String label;
   final bool selected;
   final VoidCallback onTap;
 
-  const _FilterChip({
+  const _NavItem({
+    required this.icon,
     required this.label,
     required this.selected,
     required this.onTap,
@@ -793,55 +1748,34 @@ class _FilterChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(right: 8),
-      child: InkWell(
+    final color = selected ? AppColors.ink : AppColors.inkSoft;
+    return Semantics(
+      button: true,
+      selected: selected,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
         onTap: onTap,
-        borderRadius: BorderRadius.circular(999),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 150),
-          padding: const EdgeInsets.symmetric(horizontal: 14),
+        child: Stack(
           alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: selected ? AppColors.accent : AppColors.surfaceHigh,
-            borderRadius: BorderRadius.circular(999),
-          ),
-          child: Text(
-            label,
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              color: selected ? AppColors.onAccent : AppColors.textSecondary,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Empty state: an icon above the message, quiet and centered.
-class _EmptyTab extends StatelessWidget {
-  final IconData icon;
-  final String message;
-
-  const _EmptyTab({required this.icon, required this.message});
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 40, color: AppColors.textSecondary),
-            const SizedBox(height: 12),
-            Text(
-              message,
-              textAlign: TextAlign.center,
-              style: const TextStyle(color: AppColors.textSecondary),
+            Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  icon,
+                  size: 24,
+                  weight: selected ? 300 : 200,
+                  color: color,
+                ),
+                const SizedBox(height: 4),
+                Text(label, style: AppType.navLabel(color: color)),
+              ],
             ),
+            if (selected)
+              Positioned(
+                top: 0,
+                child: Container(width: 18, height: 2, color: AppColors.rouge),
+              ),
           ],
         ),
       ),
@@ -849,282 +1783,131 @@ class _EmptyTab extends StatelessWidget {
   }
 }
 
-class _TemplateCard extends StatelessWidget {
-  final TemplateSummary summary;
-  final bool locked;
-  final TemplateStore store;
-  final FontResolver fontResolver;
-  final List<AssetRecord> catalog;
+/// Create-from-scratch: the ink square in the middle of the bar.
+class _CreateButton extends StatelessWidget {
   final VoidCallback onTap;
 
-  const _TemplateCard({
-    required this.summary,
-    required this.locked,
-    required this.store,
-    required this.fontResolver,
-    required this.catalog,
-    required this.onTap,
-  });
+  const _CreateButton({required this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      // Stable per-template handle (the visible name was removed): lets tests
-      // and Heroes target a specific card without a text label.
-      key: ValueKey('template-card-${summary.id}'),
-      clipBehavior: Clip.antiAlias,
-      // The grid delegate already spaces the tiles, and the tile IS the card
-      // now — Material's default 4px margin would inset the artwork inside its
-      // own tile and skew the aspect the tile was cut to.
-      margin: EdgeInsets.zero,
+    return Material(
+      color: AppColors.ink,
       child: InkWell(
         onTap: onTap,
-        // The artwork IS the card — no letterbox, no caption bar. The tile
-        // already carries the template's aspect (see [_MasonryGridDelegate]),
-        // so the format the caption used to spell out is now the card's own
-        // silhouette, and the space it took goes back to the art.
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            // Shared with the preview screen's canvas: the thumbnail
-            // flies into place instead of vanishing and reappearing.
-            Hero(
-              tag: 'template-${summary.id}',
-              child: _CardCarousel(
-                summary: summary,
-                store: store,
-                fontResolver: fontResolver,
-                catalog: catalog,
-              ),
-            ),
-            // Always mounted so the badge can animate out the moment a
-            // purchase lands (isPro rebuilds flip [locked] live).
-            Positioned(
-              left: 8,
-              bottom: 8,
-              child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 200),
-                switchInCurve: Curves.easeOutBack,
-                switchOutCurve: Curves.easeIn,
-                transitionBuilder: (child, animation) => ScaleTransition(
-                  scale: animation,
-                  child: FadeTransition(opacity: animation, child: child),
-                ),
-                // A word, not a padlock: the old black disc read as a warning
-                // over the artwork. Bottom-left keeps it off the subject of a
-                // photo, which is almost always centred or high.
-                child: locked
-                    ? Container(
-                        key: const ValueKey('locked'),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 7,
-                          vertical: 3,
-                        ),
-                        decoration: BoxDecoration(
-                          color: AppColors.gold,
-                          borderRadius: BorderRadius.circular(5),
-                        ),
-                        child: const Text(
-                          'PRO',
-                          style: TextStyle(
-                            color: AppColors.onGold,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: 0.6,
-                            height: 1.1,
-                          ),
-                        ),
-                      )
-                    : const SizedBox.shrink(key: ValueKey('unlocked')),
-              ),
-            ),
-          ],
+        child: const SizedBox(
+          width: 52,
+          height: 44,
+          child: Icon(
+            Symbols.add,
+            size: 24,
+            weight: 250,
+            color: AppColors.onInk,
+            semanticLabel: 'Create from scratch',
+          ),
         ),
       ),
     );
   }
 }
 
-/// The card's artwork. Every card renders the real document once it has
-/// loaded — multi-panel ones as a mini carousel, so every slide of a carousel
-/// template can be seen right from the home. The stored thumbnail is only the
-/// placeholder for the frame or two before that: it is saved 240px wide and
-/// the card asks for roughly twice that, which was visible as a soft, blocky
-/// card next to a sharp preview.
-/// The template comes from the prefetch cache ([TemplateStore
-/// .loadTemplateCached]) — the grid itself never hits the network per card.
-class _CardCarousel extends StatefulWidget {
-  final TemplateSummary summary;
-  final TemplateStore store;
-  final FontResolver fontResolver;
-  final List<AssetRecord> catalog;
+// ── Blank canvas sheet ───────────────────────────────────────────────────
 
-  const _CardCarousel({
-    required this.summary,
-    required this.store,
-    required this.fontResolver,
-    required this.catalog,
-  });
+class _BlankCanvasSheet extends StatefulWidget {
+  const _BlankCanvasSheet();
 
   @override
-  State<_CardCarousel> createState() => _CardCarouselState();
+  State<_BlankCanvasSheet> createState() => _BlankCanvasSheetState();
 }
 
-class _CardCarouselState extends State<_CardCarousel> {
-  late final Future<TemplateResult> _template = widget.store.loadTemplateCached(
-    widget.summary.id,
-  );
+class _BlankCanvasSheetState extends State<_BlankCanvasSheet> {
+  // (name, ratio, width, height, drawn frame size)
+  static const _formats = [
+    ('Story', '9:16', 1080.0, 1920.0, Size(72, 128)),
+    ('Portrait', '4:5', 1080.0, 1350.0, Size(96, 120)),
+    ('Square', '1:1', 1080.0, 1080.0, Size(100, 100)),
+  ];
 
-  /// Dots only — same trick as the preview screen: a page change repaints
-  /// the dots row, never the mounted canvases.
-  final _page = ValueNotifier<int>(0);
-
-  /// A plain full-width controller: the card is cut to this template's aspect,
-  /// so one page is exactly one slide. (It used to be rebuilt per layout to
-  /// carry a fractional viewport — see the PageView below for why that went.)
-  final PageController _pageController = PageController();
-
-  @override
-  void dispose() {
-    _pageController.dispose();
-    _page.dispose();
-    super.dispose();
-  }
+  int _selected = 1;
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<TemplateResult>(
-      future: _template,
-      builder: (context, snapshot) {
-        final template = snapshot.data?.template;
-        // Still loading, or the load failed: the stored thumbnail stands in.
-        if (template == null) {
-          return _staticThumb();
-        }
-        // The published template folded into the continuous model, so a
-        // panorama really spans slides instead of being echoed by a bleed.
-        final document = migrateToV4(template, const SlotContent()).document;
-        final catalog = [...widget.catalog, ...snapshot.data!.assets];
-        // Nothing to swipe: the canvas on its own. A PageView here would hand
-        // every single-panel card in the grid a viewport it can never scroll
-        // and a dots row that counts to one.
-        //
-        // The boundary is not decoration: a card's canvas is expensive to
-        // paint and never changes once built, so without it every card
-        // repaints on every frame of a scroll. The carousel branch gets one
-        // for free — PageView wraps its children in repaint boundaries — and
-        // leaving it off here was enough to slow the gallery test's frames
-        // until the real-IO wait it polls against timed out.
-        if (document.slideCount < 2) {
-          return RepaintBoundary(
-            child: Center(
-              child: IgnorePointer(
-                child: SlideView(
-                  document: document,
-                  slideIndex: 0,
-                  fontResolver: widget.fontResolver,
-                  assetCatalog: catalog,
-                  showTemplatePhotos: true,
-                ),
-              ),
-            ),
-          );
-        }
-        return Stack(
-          fit: StackFit.expand,
+    final chosen = _formats[_selected];
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          "Choose a format. You can add slides once you're in.",
+          style: AppType.bodyS,
+        ),
+        const SizedBox(height: 24),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // One slide per page, filling the card. The card's tile already
-            // carries this template's aspect, so a full-width page IS the
-            // slide's width — the old fractional viewport existed to make
-            // slides touch inside an oversized tile, and its side effect was
-            // the neighbour peeking out and being sliced off at the card's
-            // border, which read as a rendering fault.
-            PageView.builder(
-              controller: _pageController,
-              itemCount: document.slideCount,
-              onPageChanged: (i) => _page.value = i,
-              itemBuilder: (context, i) => Center(
-                child: AspectRatio(
-                  aspectRatio: template.canvasWidth / template.canvasHeight,
-                  // Inert, like the preview: the card's InkWell keeps the
-                  // tap, the PageView keeps the horizontal drag.
-                  child: IgnorePointer(
-                    child: SlideView(
-                      document: document,
-                      slideIndex: i,
-                      fontResolver: widget.fontResolver,
-                      assetCatalog: catalog,
-                      // Cards show the "with sample photos" look, matching
-                      // the static thumbnail they replace.
-                      showTemplatePhotos: true,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            // Which slide you're on. Inert, so they never steal the card's
-            // tap. They ride in a scrim pill because they sit ON the artwork
-            // and the artwork is any colour at all — the old bare dots used
-            // black26 for the inactive state and disappeared entirely against
-            // a dark photo.
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 8,
-              child: IgnorePointer(
-                child: Center(
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 6,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.35),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: ValueListenableBuilder<int>(
-                      valueListenable: _page,
-                      builder: (context, page, _) => Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          for (var i = 0; i < document.slideCount; i++)
-                            AnimatedContainer(
-                              duration: const Duration(milliseconds: 150),
-                              width: i == page ? 10 : 4,
-                              height: 4,
-                              margin: const EdgeInsets.symmetric(horizontal: 2),
-                              decoration: BoxDecoration(
-                                color: i == page
-                                    ? AppColors.accent
-                                    : Colors.white.withValues(alpha: 0.45),
-                                borderRadius: BorderRadius.circular(2),
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
+            for (var i = 0; i < _formats.length; i++) ...[
+              if (i > 0) const SizedBox(width: 10),
+              Expanded(child: _formatOption(i)),
+            ],
           ],
-        );
-      },
+        ),
+        const SizedBox(height: 28),
+        PrimaryButton(
+          label: 'Start with ${chosen.$1}',
+          onPressed: () =>
+              Navigator.of(context).pop((chosen.$2, chosen.$3, chosen.$4)),
+        ),
+      ],
     );
   }
 
-  Widget _staticThumb() {
-    final thumb = widget.summary.thumbnailDataUrl;
-    return thumb != null && thumb.contains(',')
-        ? Image.memory(base64Decode(thumb.split(',').last), fit: BoxFit.contain)
-        : const ColoredBox(
-            color: AppColors.surfaceHigh,
-            child: Center(
-              child: Icon(
-                Symbols.image_rounded,
-                color: AppColors.textSecondary,
+  Widget _formatOption(int i) {
+    final (name, ratio, w, h, frame) = _formats[i];
+    final selected = i == _selected;
+    final box = Container(
+      width: frame.width,
+      height: frame.height,
+      decoration: BoxDecoration(
+        color: selected ? Colors.transparent : AppColors.paperDeep,
+        border: Border.all(color: AppColors.ink),
+      ),
+    );
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: '$name $ratio',
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => setState(() => _selected = i),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              height: 140,
+              child: Align(
+                alignment: Alignment.bottomLeft,
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: selected
+                      ? Container(
+                          padding: const EdgeInsets.all(4),
+                          decoration: BoxDecoration(
+                            border: Border.all(color: AppColors.ink),
+                          ),
+                          child: box,
+                        )
+                      : Padding(padding: const EdgeInsets.all(5), child: box),
+                ),
               ),
             ),
-          );
+            const Hairline(color: AppColors.ink),
+            const SizedBox(height: 10),
+            Text(name, style: AppType.title(20)),
+            const SizedBox(height: 4),
+            Text('$ratio · ${w.toInt()}×${h.toInt()}', style: AppType.caption),
+          ],
+        ),
+      ),
+    );
   }
 }

@@ -103,10 +103,12 @@ void main() {
     }
 
     Finder cardOf(String id) => find.byKey(ValueKey('template-card-$id'));
+    Finder coverOf(String id) => find.byKey(ValueKey('template-cover-$id'));
 
-    testWidgets('each card is cut to its own template aspect', (tester) async {
+    testWidgets('each cover is cut to its own template aspect', (tester) async {
       await tester.runAsync(() async {
-        tester.view.physicalSize = const Size(800, 1400);
+        // Tall enough that the whole (lazily built) collection is laid out.
+        tester.view.physicalSize = const Size(800, 3000);
         tester.view.devicePixelRatio = 1.0;
         addTearDown(tester.view.reset);
         await tester.pumpWidget(
@@ -120,34 +122,37 @@ void main() {
         );
         await pumpUntil(
           tester,
-          () => tester.any(cardOf('s1')),
-          reason: 'the template grid never loaded',
+          () => tester.any(cardOf('q1')),
+          reason: 'the collection never loaded',
         );
 
-        // Let the staggered entrance finish — mid-flight every card carries
+        // Let the staggered entrance finish — mid-flight every row carries
         // its own slide offset and the geometry below would measure that.
         for (var i = 0; i < 20; i++) {
           await tester.pump(const Duration(milliseconds: 100));
         }
 
-        final story = tester.getRect(cardOf('s1'));
-        final post = tester.getRect(cardOf('p1'));
-        final square = tester.getRect(cardOf('q1'));
-        // The shape IS the format — this is what replaced the caption bar.
+        final story = tester.getRect(coverOf('s1'));
+        final post = tester.getRect(coverOf('p1'));
+        final square = tester.getRect(coverOf('q1'));
+        // The shape IS the format.
         expect(story.width / story.height, closeTo(9 / 16, 0.01));
         expect(post.width / post.height, closeTo(4 / 5, 0.01));
         expect(square.width / square.height, closeTo(1.0, 0.01));
 
-        // Two equal columns, so every card is the same width and the heights
-        // are what differ.
-        expect(post.width, closeTo(story.width, 0.5));
-        expect(square.width, closeTo(story.width, 0.5));
-        expect(story.height, greaterThan(post.height));
-
-        // Masonry, not rows: the third card stacks under the SHORTER of the
-        // two above it rather than waiting for a row break.
-        expect(square.top, closeTo(post.bottom + 12, 0.5));
-        expect(square.left, closeTo(post.left, 0.5));
+        // Rhythm, not a grid: on a 6-column grid (20pt margins, 10 gutter)
+        // the first collection folio spans four columns with its caption in
+        // the other two; the next one sits centred on four columns.
+        const content = 800 - 40.0;
+        const col = (content - 50) / 6;
+        const four = 4 * col + 30;
+        expect(post.width, closeTo(four, 0.5));
+        expect(post.left, closeTo(20, 0.5));
+        expect(square.width, closeTo(four, 0.5));
+        expect(square.left, closeTo(20 + (content - four) / 2, 0.5));
+        // Featured first, then the collection in index order, top to bottom.
+        expect(story.bottom, lessThan(post.top));
+        expect(post.bottom, lessThan(square.top));
       });
     });
 

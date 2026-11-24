@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'dart:typed_data';
-import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show HapticFeedback;
@@ -10,6 +9,8 @@ import 'package:purchases_flutter/purchases_flutter.dart';
 import '../api/entitlements.dart';
 import '../api/template_api.dart';
 import '../theme.dart';
+import '../widgets/layer_ui.dart';
+import '../widgets/template_meta.dart';
 
 /// What to tell the user about a finished purchase or restore. Null means say
 /// nothing: cancelling was the user's own decision, and a snackbar about it
@@ -32,14 +33,14 @@ String? purchaseOutcomeMessage(PurchaseOutcome outcome) => switch (outcome) {
 /// Subscription paywall shown when a free user opens a premium template.
 /// Pops with `true` after a purchase/restore that unlocked pro.
 ///
-/// The plans are selectable cards driving a single Continue button — the tap
-/// that spends money is always the same, clearly labeled one.
+/// "Show the shelf, don't shout": a sharp spread of real Pro covers, the
+/// three benefits numbered, the plans as rows. Selecting a plan never
+/// charges — the tap that spends money is always the one Continue button.
 class PaywallScreen extends StatefulWidget {
   final EntitlementsService entitlements;
 
-  /// Fuels the blurred template mosaic behind the pitch — show the product,
-  /// not an abstract splash. Optional: without thumbnails the backdrop is a
-  /// quiet gold-tinted gradient.
+  /// The loaded index: its premium covers make the spread at the top.
+  /// Optional — without thumbnails the spread is left out.
   final List<TemplateSummary> catalog;
 
   const PaywallScreen({
@@ -56,16 +57,16 @@ class _PaywallScreenState extends State<PaywallScreen> {
   late final Future<List<Package>> _packages = widget.entitlements.packages();
   bool _busy = false;
 
-  /// Which plan card is highlighted; null until the user picks (the annual
-  /// plan then acts as the default).
+  /// Which plan row is selected; null until the user picks (the annual plan
+  /// then acts as the default).
   PackageType? _selectedType;
 
-  late final List<Uint8List> _mosaic = _decodeMosaic();
+  late final List<(Uint8List, double)> _covers = _decodeCovers();
 
-  /// Premium thumbnails first (they ARE the pitch), decoded once; cycled to
-  /// fill the grid when there are only a few.
-  List<Uint8List> _decodeMosaic() {
-    final thumbs = <Uint8List>[];
+  /// Up to three covers, premium first (they ARE the pitch), each with its
+  /// aspect; decoded once.
+  List<(Uint8List, double)> _decodeCovers() {
+    final covers = <(Uint8List, double)>[];
     for (final template in [
       ...widget.catalog.where((t) => t.premium),
       ...widget.catalog.where((t) => !t.premium),
@@ -73,14 +74,16 @@ class _PaywallScreenState extends State<PaywallScreen> {
       final data = template.thumbnailDataUrl;
       if (data == null || !data.contains(',')) continue;
       try {
-        thumbs.add(base64Decode(data.split(',').last));
+        covers.add((
+          base64Decode(data.split(',').last),
+          aspectRatioOf(template.aspectRatio),
+        ));
       } catch (_) {
-        // A malformed thumbnail is a gap in the backdrop, not an error.
+        // A malformed thumbnail is a gap in the spread, not an error.
       }
-      if (thumbs.length >= 15) break;
+      if (covers.length >= 3) break;
     }
-    if (thumbs.isEmpty) return const [];
-    return [for (var i = 0; i < 15; i++) thumbs[i % thumbs.length]];
+    return covers;
   }
 
   Future<void> _finish(Future<PurchaseOutcome> attempt) async {
@@ -97,79 +100,78 @@ class _PaywallScreenState extends State<PaywallScreen> {
     // leaves something to do here — retry, restore, or just wait.
     final message = purchaseOutcomeMessage(outcome);
     if (message == null) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    showLayerMessage(context, message);
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      // The mosaic bleeds behind the (transparent) app bar; only the
-      // BackButton floats on top.
-      extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        scrolledUnderElevation: 0,
-      ),
-      body: Stack(
-        fit: StackFit.expand,
-        children: [
-          if (_mosaic.isNotEmpty) ...[
-            _MosaicBackdrop(thumbs: _mosaic),
-            // Legibility scrim, fading fully to ink where the plans sit.
-            const DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [Color(0xB30D0D0F), Color(0xE60D0D0F), AppColors.ink],
-                  stops: [0, 0.35, 0.6],
+      body: SafeArea(
+        child: FutureBuilder<List<Package>>(
+          future: _packages,
+          builder: (context, snapshot) {
+            final loading = snapshot.connectionState != ConnectionState.done;
+            final packages = snapshot.data ?? const <Package>[];
+            return ListView(
+              padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
+              children: [
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: IconButton(
+                    icon: const Icon(Symbols.close, size: 24),
+                    tooltip: 'Close',
+                    onPressed: () => Navigator.of(context).maybePop(),
+                  ),
                 ),
-              ),
-            ),
-          ] else
-            // No thumbnails to show — a faint warm glow keeps the premium
-            // register without faking content.
-            const DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: RadialGradient(
-                  center: Alignment(0, -0.7),
-                  radius: 1.3,
-                  colors: [Color(0xFF2B2216), AppColors.ink],
+                if (_covers.isNotEmpty) ...[
+                  _CoverSpread(covers: _covers),
+                  const SizedBox(height: 36),
+                ] else
+                  const SizedBox(height: 12),
+                const Eyebrow('Layer Pro', color: AppColors.rouge),
+                const SizedBox(height: 8),
+                SerifHeadline(
+                  roman: 'The whole ',
+                  italic: 'collection.',
+                  style: AppType.headline,
                 ),
-              ),
-            ),
-          SafeArea(
-            child: FutureBuilder<List<Package>>(
-              future: _packages,
-              builder: (context, snapshot) {
-                if (snapshot.connectionState != ConnectionState.done) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                final packages = snapshot.data ?? const <Package>[];
-                if (snapshot.hasError || packages.isEmpty) {
-                  return const Center(
-                    child: Padding(
-                      padding: EdgeInsets.all(24),
-                      child: Text(
-                        'Plans are unavailable right now.\nCheck your connection and try again.',
-                        textAlign: TextAlign.center,
-                      ),
+                const SizedBox(height: 22),
+                const _Benefit(n: 1, text: 'Every premium template, unlocked'),
+                const _Benefit(
+                  n: 2,
+                  text: 'New premium templates as they arrive',
+                ),
+                const _Benefit(
+                  n: 3,
+                  text: 'Restore on any device with your store account',
+                ),
+                const Hairline(),
+                const SizedBox(height: 22),
+                if (loading)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 32),
+                    child: Center(child: LayerSpinner()),
+                  )
+                else if (snapshot.hasError || packages.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 24),
+                    child: Text(
+                      'Plans are unavailable right now. Check your '
+                      'connection and try again.',
+                      style: AppType.body.copyWith(color: AppColors.inkSoft),
                     ),
-                  );
-                }
-                return _buildPlans(context, packages);
-              },
-            ),
-          ),
-        ],
+                  )
+                else
+                  ..._buildPlans(packages),
+              ],
+            );
+          },
+        ),
       ),
     );
   }
 
-  Widget _buildPlans(BuildContext context, List<Package> packages) {
+  List<Widget> _buildPlans(List<Package> packages) {
     Package? byType(PackageType type) {
       for (final p in packages) {
         if (p.packageType == type) return p;
@@ -179,7 +181,7 @@ class _PaywallScreenState extends State<PaywallScreen> {
 
     final annual = byType(PackageType.annual);
     final monthly = byType(PackageType.monthly);
-    // "Save 50%" on the annual card, computed from the real store prices so
+    // "Save 50%" on the annual row, computed from the real store prices so
     // it stays honest when prices change in the dashboard.
     String? savings;
     if (annual != null && monthly != null && monthly.storeProduct.price > 0) {
@@ -201,171 +203,173 @@ class _PaywallScreenState extends State<PaywallScreen> {
         ? monthly
         : null;
 
-    final textTheme = Theme.of(context).textTheme;
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(24, kToolbarHeight, 24, 16),
-      children: [
-        Center(
-          child: Container(
-            width: 72,
-            height: 72,
-            decoration: BoxDecoration(
-              color: AppColors.gold.withValues(alpha: 0.14),
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(
-              Symbols.auto_awesome_rounded,
-              size: 36,
-              color: AppColors.gold,
+    return [
+      if (annual != null)
+        _PlanRow(
+          title: 'Annual',
+          price: '${annual.storeProduct.priceString} / year',
+          savings: savings,
+          selected: selectedType == PackageType.annual,
+          enabled: !_busy,
+          onTap: () => setState(() => _selectedType = PackageType.annual),
+        ),
+      if (annual != null) const SizedBox(height: 12),
+      if (monthly != null)
+        _PlanRow(
+          title: 'Monthly',
+          price: '${monthly.storeProduct.priceString} / month',
+          selected: selectedType == PackageType.monthly,
+          enabled: !_busy,
+          onTap: () => setState(() => _selectedType = PackageType.monthly),
+        ),
+      const SizedBox(height: 20),
+      PrimaryButton(
+        label: 'Continue',
+        labelWidget: _busy
+            ? const Align(
+                alignment: Alignment.centerLeft,
+                child: SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 1.5,
+                    color: AppColors.inkSoft,
+                  ),
+                ),
+              )
+            : null,
+        icon: _busy ? null : Symbols.arrow_forward,
+        onPressed: _busy || selectedPackage == null
+            ? null
+            : () => _finish(widget.entitlements.buy(selectedPackage)),
+      ),
+      const SizedBox(height: 8),
+      Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          TextLink(
+            'Restore purchases',
+            onTap: _busy ? null : () => _finish(widget.entitlements.restore()),
+          ),
+          const SizedBox(width: 24),
+          Expanded(
+            child: Text(
+              'Auto-renews. Cancel anytime.',
+              textAlign: TextAlign.end,
+              style: AppType.sans(13, color: AppColors.inkSoft),
             ),
           ),
-        ),
-        const SizedBox(height: 16),
-        Text.rich(
-          TextSpan(
-            children: [
-              const TextSpan(text: 'Layer '),
-              TextSpan(
-                text: 'Pro',
-                style: TextStyle(color: AppColors.gold),
+        ],
+      ),
+    ];
+  }
+}
+
+/// Three real covers, sharp, at their own aspects: a large one on the left,
+/// two smaller ones and a "From the Pro shelf" caption on the right.
+class _CoverSpread extends StatelessWidget {
+  final List<(Uint8List, double)> covers;
+
+  const _CoverSpread({required this.covers});
+
+  @override
+  Widget build(BuildContext context) {
+    Widget cover((Uint8List, double) c, double width) => SizedBox(
+      width: width,
+      height: width / c.$2,
+      child: Image.memory(c.$1, fit: BoxFit.cover, gaplessPlayback: true),
+    );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final w = constraints.maxWidth;
+        final big = w * 0.43;
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            cover(covers[0], big),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.only(top: 28),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (covers.length > 1)
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          cover(covers[1], w * 0.31),
+                          if (covers.length > 2) ...[
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Padding(
+                                padding: const EdgeInsets.only(top: 4),
+                                child: LayoutBuilder(
+                                  builder: (context, c) =>
+                                      cover(covers[2], c.maxWidth),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    const SizedBox(height: 12),
+                    const Eyebrow('From the Pro shelf', size: 11),
+                  ],
+                ),
               ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _Benefit extends StatelessWidget {
+  final int n;
+  final String text;
+
+  const _Benefit({required this.n, required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        const Hairline(),
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              SizedBox(
+                width: 30,
+                child: Text(twoDigits(n), style: AppType.numeral(16)),
+              ),
+              Expanded(child: Text(text, style: AppType.sans(15))),
             ],
           ),
-          textAlign: TextAlign.center,
-          style: textTheme.headlineLarge,
-        ),
-        const SizedBox(height: 8),
-        Text(
-          'Unlock every premium template.',
-          textAlign: TextAlign.center,
-          style: textTheme.bodyLarge!.copyWith(color: AppColors.textSecondary),
-        ),
-        const SizedBox(height: 24),
-        const _Benefit(
-          icon: Symbols.grid_view_rounded,
-          text: 'Every premium template, unlocked',
-        ),
-        const _Benefit(
-          icon: Symbols.new_releases_rounded,
-          text: 'New premium templates as they arrive',
-        ),
-        const _Benefit(
-          icon: Symbols.devices_rounded,
-          text: 'Restore on any device with your store account',
-        ),
-        const SizedBox(height: 24),
-        if (annual != null)
-          _PlanCard(
-            title: 'Annual',
-            price: '${annual.storeProduct.priceString} / year',
-            badge: savings,
-            selected: selectedType == PackageType.annual,
-            enabled: !_busy,
-            onTap: () => setState(() => _selectedType = PackageType.annual),
-          ),
-        if (annual != null) const SizedBox(height: 12),
-        if (monthly != null)
-          _PlanCard(
-            title: 'Monthly',
-            price: '${monthly.storeProduct.priceString} / month',
-            selected: selectedType == PackageType.monthly,
-            enabled: !_busy,
-            onTap: () => setState(() => _selectedType = PackageType.monthly),
-          ),
-        const SizedBox(height: 20),
-        FilledButton(
-          style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(52)),
-          onPressed: _busy || selectedPackage == null
-              ? null
-              : () => _finish(widget.entitlements.buy(selectedPackage)),
-          child: _busy
-              ? const SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Text('Continue'),
-        ),
-        const SizedBox(height: 4),
-        TextButton(
-          onPressed: _busy
-              ? null
-              : () => _finish(widget.entitlements.restore()),
-          child: const Text('Restore purchases'),
-        ),
-        const SizedBox(height: 4),
-        const Text(
-          'Auto-renews. Cancel anytime in your store settings.',
-          textAlign: TextAlign.center,
-          style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
         ),
       ],
     );
   }
 }
 
-/// The blurred wall of template art behind the pitch.
-class _MosaicBackdrop extends StatelessWidget {
-  final List<Uint8List> thumbs;
-
-  const _MosaicBackdrop({required this.thumbs});
-
-  @override
-  Widget build(BuildContext context) {
-    return ImageFiltered(
-      imageFilter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
-      child: GridView.count(
-        crossAxisCount: 3,
-        physics: const NeverScrollableScrollPhysics(),
-        mainAxisSpacing: 6,
-        crossAxisSpacing: 6,
-        childAspectRatio: 0.7,
-        children: [
-          for (final bytes in thumbs)
-            Image.memory(bytes, fit: BoxFit.cover, gaplessPlayback: true),
-        ],
-      ),
-    );
-  }
-}
-
-class _Benefit extends StatelessWidget {
-  final IconData icon;
-  final String text;
-
-  const _Benefit({required this.icon, required this.text});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        children: [
-          Icon(icon, size: 20, color: AppColors.gold),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(text, style: Theme.of(context).textTheme.bodyMedium),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// A selectable plan: gold ring and radio dot when chosen, quiet otherwise.
+/// A selectable plan row: square radio (filled ink square when chosen),
+/// paperDeep fill and an ink border when selected, a rule border otherwise.
 /// Selecting never charges — only the Continue button does.
-class _PlanCard extends StatelessWidget {
+class _PlanRow extends StatelessWidget {
   final String title;
   final String price;
-  final String? badge;
+  final String? savings;
   final bool selected;
   final bool enabled;
   final VoidCallback onTap;
 
-  const _PlanCard({
+  const _PlanRow({
     required this.title,
     required this.price,
-    this.badge,
+    this.savings,
     required this.selected,
     required this.enabled,
     required this.onTap,
@@ -373,94 +377,65 @@ class _PlanCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 150),
-      decoration: BoxDecoration(
-        color: selected
-            ? AppColors.gold.withValues(alpha: 0.08)
-            : AppColors.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: selected ? AppColors.gold : AppColors.outline,
-          width: selected ? 2 : 1,
-        ),
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: enabled ? onTap : null,
-          borderRadius: BorderRadius.circular(16),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                AnimatedContainer(
-                  duration: const Duration(milliseconds: 150),
-                  width: 20,
-                  height: 20,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: selected ? AppColors.gold : AppColors.surfaceBright,
-                      width: 2,
-                    ),
-                  ),
-                  child: selected
-                      ? const Center(
-                          child: SizedBox(
-                            width: 10,
-                            height: 10,
-                            child: DecoratedBox(
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: AppColors.gold,
-                              ),
-                            ),
-                          ),
-                        )
-                      : null,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title,
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        price,
-                        style: Theme.of(context).textTheme.bodyMedium!
-                            .copyWith(color: AppColors.textSecondary),
-                      ),
-                    ],
-                  ),
-                ),
-                if (badge != null)
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      // Gold, not the action accent: the savings badge is
-                      // premium signaling, not an action.
-                      color: AppColors.gold,
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    child: Text(
-                      badge!,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.onGold,
-                      ),
-                    ),
-                  ),
-              ],
+    return Semantics(
+      button: true,
+      selected: selected,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: enabled ? onTap : null,
+        child: AnimatedContainer(
+          duration: MediaQuery.disableAnimationsOf(context)
+              ? Duration.zero
+              : const Duration(milliseconds: 150),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+          decoration: BoxDecoration(
+            color: selected ? AppColors.paperDeep : Colors.transparent,
+            border: Border.all(
+              color: selected ? AppColors.ink : AppColors.rule,
             ),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 16,
+                height: 16,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  border: Border.all(
+                    color: selected ? AppColors.ink : AppColors.inkSoft,
+                  ),
+                ),
+                child: selected
+                    ? Container(width: 8, height: 8, color: AppColors.ink)
+                    : null,
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: AppType.sans(15, weight: FontWeight.w500),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      price,
+                      style: AppType.sans(12.5, color: AppColors.inkSoft),
+                    ),
+                  ],
+                ),
+              ),
+              if (savings != null)
+                Text(
+                  savings!,
+                  style: AppType.serif(
+                    18,
+                    italic: true,
+                    color: AppColors.rouge,
+                  ),
+                ),
+            ],
           ),
         ),
       ),

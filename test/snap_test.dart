@@ -121,12 +121,21 @@ void main() {
 
     final guides = find.byKey(const ValueKey('alignment-guides'));
     final slot = find.byWidgetPredicate(
-      (w) => w is Container && w.color == const Color(0xFFE4E4E7),
+      // The empty photo slot's "PHOTO" label (below its pick square).
+      (w) =>
+          w.key is ValueKey<String> &&
+          (w.key! as ValueKey<String>).value.startsWith('slot-label-'),
+    );
+    // The whole placeholder — its centre is the element's centre.
+    final body = find.byWidgetPredicate(
+      (w) =>
+          w.key is ValueKey<String> &&
+          (w.key! as ValueKey<String>).value.startsWith('slot-placeholder-'),
     );
     expect(guides, findsNothing);
 
     // Select the slot: tap the placeholder below the pick icon.
-    await tester.tapAt(tester.getCenter(slot) + const Offset(0, 40));
+    await tester.tapAt(tester.getCenter(slot));
     await tester.pumpAndSettle();
 
     // Drag from empty canvas space (the canvas-wide selection surface moves
@@ -142,7 +151,7 @@ void main() {
     for (var i = 0; i < 60 && !centered; i++) {
       await gesture.moveBy(const Offset(3, 3));
       await tester.pump();
-      centered = (tester.getCenter(slot) - canvasRect.center).distance < 1.0;
+      centered = (tester.getCenter(body) - canvasRect.center).distance < 1.0;
     }
     expect(centered, isTrue, reason: 'the sweep never snapped to the center');
     // And the guide lines are up while snapped.

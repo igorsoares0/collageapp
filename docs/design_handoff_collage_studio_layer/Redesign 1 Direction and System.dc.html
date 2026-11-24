@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400;1,6..72,500&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap" rel="stylesheet">
+<style>body{margin:0;background:#D9D0C2;font-family:'Instrument Sans',sans-serif;color:#1E1B17;-webkit-font-smoothing:antialiased}a{color:#1E1B17;text-decoration:underline;text-underline-offset:4px}a:hover{color:#7B2D26}</style>
+</helmet>
+<section id="1a" data-screen-label="Direction" style="padding:72px;width:max-content;display:flex;flex-direction:column;gap:56px">
+<div style="background:#F3EEE5;width:1680px;padding:72px 80px;box-sizing:border-box;display:flex;flex-direction:column;gap:64px">
+
+<div style="display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:24px;align-items:end;border-bottom:1px solid #1E1B17;padding-bottom:28px">
+<div style="grid-column:span 2;font-size:11px;letter-spacing:.18em;text-transform:uppercase;font-weight:600;display:flex;flex-direction:column;gap:6px"><span style="color:#7B2D26">Redesign — Part 1 of 3</span><span style="color:#5E564C">Direction &amp; system</span><span style="display:flex;flex-direction:column;gap:4px;margin-top:10px;letter-spacing:.08em"><a href="Redesign 2 Create Flow.dc.html">Part 2 — Create flow</a><a href="Redesign 3 Library and Account.dc.html">Part 3 — Library &amp; account</a><a href="Current UI.dc.html">Current UI reference</a></span></div>
+<div style="grid-column:span 7;font-family:'Newsreader',serif;font-size:112px;line-height:.9;letter-spacing:-.03em">Collage <span style="font-style:italic">Studio</span></div>
+<div style="grid-column:span 3;font-size:14px;line-height:1.55;color:#5E564C;text-wrap:pretty">An art-directed redesign of the existing Flutter app. Same JSON templates, same renderer, same slots, same PNG export — a new way of looking at them.</div>
+</div>
+
+<div style="display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:24px">
+<div style="grid-column:span 2;font-size:11px;letter-spacing:.18em;text-transform:uppercase;font-weight:600;color:#5E564C">01 — The idea</div>
+<div style="grid-column:span 6;font-family:'Newsreader',serif;font-size:54px;line-height:1.02;letter-spacing:-.02em;text-wrap:balance">A carousel is a <span style="font-style:italic">short publication.</span> Treat every template like a folio — numbered, sequenced, captioned.</div>
+<div style="grid-column:9 / span 4;display:flex;flex-direction:column;gap:14px;font-size:15px;line-height:1.55;text-wrap:pretty">
+<p style="margin:0">The current build already believes the right things: the card <em>is</em> the template's shape, slides sit flush so a panorama reads as one image, previews render the real document. The redesign keeps those truths and moves the chrome from a dark tool palette to the warm stock of a printed magazine.</p>
+<p style="margin:0;color:#5E564C">Identity comes from composition, type and photography — not from containers. There are no cards, no pills, no shadows. Paper tone and hairline rules do the separating.</p>
+</div>
+</div>
+
+<div style="display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:0;border-top:1px solid #CFC5B5">
+<div style="padding:28px 28px 0 0;display:flex;flex-direction:column;gap:14px;border-right:1px solid #CFC5B5">
+<div style="font-family:'Newsreader',serif;font-style:italic;font-size:40px;line-height:1">i.</div>
+<div style="font-size:15px;font-weight:600">Page edges</div>
+<div style="width:96px;height:120px;background:#E4DCCF;margin:6px 0 4px 2px;box-shadow:4px -4px 0 -1px #F3EEE5,4px -4px 0 0 #A89D8D,8px -8px 0 -1px #F3EEE5,8px -8px 0 0 #A89D8D"><img src="https://picsum.photos/id/225/200/250" style="width:100%;height:100%;object-fit:cover;filter:sepia(.2) saturate(.8)"></div>
+<div style="font-size:13px;line-height:1.5;color:#5E564C">Hairline slivers behind a cover say “there are more pages” — the carousel signal, without dots on the artwork.</div>
+</div>
+<div style="padding:28px 28px 0;display:flex;flex-direction:column;gap:14px;border-right:1px solid #CFC5B5">
+<div style="font-family:'Newsreader',serif;font-style:italic;font-size:40px;line-height:1">ii.</div>
+<div style="font-size:15px;font-weight:600">Folio numerals</div>
+<div style="font-family:'Newsreader',serif;font-style:italic;font-size:64px;line-height:1;letter-spacing:-.03em;padding:8px 0">03<span style="font-size:28px;color:#6F665C">/06</span></div>
+<div style="font-size:13px;line-height:1.5;color:#5E564C">Sequence is always spoken in Newsreader italic numerals: slide position, collection order, slide counts.</div>
+</div>
+<div style="padding:28px 28px 0;display:flex;flex-direction:column;gap:14px;border-right:1px solid #CFC5B5">
+<div style="font-family:'Newsreader',serif;font-style:italic;font-size:40px;line-height:1">iii.</div>
+<div style="font-size:15px;font-weight:600">Captions, not cards</div>
+<div style="display:flex;flex-direction:column;gap:6px;padding:12px 0;border-top:1px solid #1E1B17"><div style="display:flex;justify-content:space-between;font-size:11.5px;letter-spacing:.16em;text-transform:uppercase;font-weight:600"><span>Lifestyle</span><span style="color:#7B2D26">Pro</span></div><div style="font-family:'Newsreader',serif;font-size:22px">Slow Mornings</div><div style="font-size:12px;color:#5E564C">Portrait 4:5 · 6 slides</div></div>
+<div style="font-size:13px;line-height:1.5;color:#5E564C">Information sits under the image as a magazine caption, anchored by a rule.</div>
+</div>
+<div style="padding:28px 28px 0;display:flex;flex-direction:column;gap:14px;border-right:1px solid #CFC5B5">
+<div style="font-family:'Newsreader',serif;font-style:italic;font-size:40px;line-height:1">iv.</div>
+<div style="font-size:15px;font-weight:600">The contact sheet</div>
+<div style="display:flex;gap:4px;padding:10px 0"><div style="width:30px;height:38px;background:#CFC5B5;outline:1px solid #1E1B17;outline-offset:2px"></div><div style="width:30px;height:38px;background:#CFC5B5"></div><div style="width:30px;height:38px;background:#CFC5B5"></div><div style="width:30px;height:38px;background:#CFC5B5"></div><div style="width:30px;height:38px;background:#CFC5B5"></div></div>
+<div style="font-size:13px;line-height:1.5;color:#5E564C">The whole sequence at a glance — in preview, in the editor strip, in the archive and on export.</div>
+</div>
+<div style="padding:28px 0 0 28px;display:flex;flex-direction:column;gap:14px">
+<div style="font-family:'Newsreader',serif;font-style:italic;font-size:40px;line-height:1">v.</div>
+<div style="font-size:15px;font-weight:600">One rouge mark</div>
+<div style="display:flex;align-items:center;gap:10px;padding:16px 0"><div style="width:6px;height:6px;background:#7B2D26"></div><span style="font-size:13px;font-weight:600">Discover</span></div>
+<div style="font-size:13px;line-height:1.5;color:#5E564C">Rouge is spent sparingly: the active state and the Pro mark. Ink performs actions. The two never trade roles.</div>
+</div>
+</div>
+</div>
+</section>
+
+<section id="1b" data-screen-label="Tokens" style="padding:0 72px 56px;width:max-content">
+<div style="background:#F3EEE5;width:1680px;padding:72px 80px;box-sizing:border-box;display:flex;flex-direction:column;gap:56px">
+<div style="display:flex;justify-content:space-between;align-items:baseline;border-bottom:1px solid #1E1B17;padding-bottom:20px"><div style="font-family:'Newsreader',serif;font-size:56px;letter-spacing:-.02em">Foundations</div><div style="font-size:11px;letter-spacing:.18em;text-transform:uppercase;font-weight:600;color:#5E564C">02 — Colour · Type · Space · Format</div></div>
+
+<div style="display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:16px">
+<div style="display:flex;flex-direction:column;gap:10px"><div style="height:140px;background:#F3EEE5;outline:1px solid #CFC5B5"></div><div style="font-size:13px;font-weight:600">Paper</div><div style="font-size:12px;color:#5E564C;line-height:1.5">#F3EEE5<br>App background</div></div>
+<div style="display:flex;flex-direction:column;gap:10px"><div style="height:140px;background:#EAE3D7"></div><div style="font-size:13px;font-weight:600">Paper deep</div><div style="font-size:12px;color:#5E564C;line-height:1.5">#EAE3D7<br>Sheets, fields, skeletons</div></div>
+<div style="display:flex;flex-direction:column;gap:10px"><div style="height:140px;background:#E4DCCF"></div><div style="font-size:13px;font-weight:600">Table</div><div style="font-size:12px;color:#5E564C;line-height:1.5">#E4DCCF<br>Editor canvas surround</div></div>
+<div style="display:flex;flex-direction:column;gap:10px"><div style="height:140px;background:#CFC5B5"></div><div style="font-size:13px;font-weight:600">Rule</div><div style="font-size:12px;color:#5E564C;line-height:1.5">#CFC5B5<br>Hairlines, inactive ticks</div></div>
+<div style="display:flex;flex-direction:column;gap:10px"><div style="height:140px;background:#8A8073"></div><div style="font-size:13px;font-weight:600">Stone</div><div style="font-size:12px;color:#5E564C;line-height:1.5">#8A8073<br>Disabled, type ≥ 24pt only</div></div>
+<div style="display:flex;flex-direction:column;gap:10px"><div style="height:140px;background:#5E564C"></div><div style="font-size:13px;font-weight:600">Ink soft</div><div style="font-size:12px;color:#5E564C;line-height:1.5">#5E564C<br>Secondary text · 6.1:1</div></div>
+<div style="display:flex;flex-direction:column;gap:10px"><div style="height:140px;background:#1E1B17"></div><div style="font-size:13px;font-weight:600">Ink</div><div style="font-size:12px;color:#5E564C;line-height:1.5">#1E1B17<br>Type, primary actions</div></div>
+<div style="display:flex;flex-direction:column;gap:10px"><div style="height:140px;background:#7B2D26"></div><div style="font-size:13px;font-weight:600">Rouge</div><div style="font-size:12px;color:#5E564C;line-height:1.5">#7B2D26<br>Active state · Pro mark</div></div>
+</div>
+
+<div style="display:grid;grid-template-columns:minmax(0,7fr) minmax(0,5fr);gap:64px">
+<div style="display:flex;flex-direction:column;border-top:1px solid #CFC5B5">
+<div style="display:grid;grid-template-columns:160px 1fr;gap:24px;align-items:baseline;padding:20px 0;border-bottom:1px solid #CFC5B5"><div style="font-size:12px;color:#5E564C;line-height:1.5">Display<br>Newsreader 52/0.96<br>−2% · opsz 72</div><div style="font-family:'Newsreader',serif;font-size:52px;line-height:.96;letter-spacing:-.02em">Make something <span style="font-style:italic">worth keeping.</span></div></div>
+<div style="display:grid;grid-template-columns:160px 1fr;gap:24px;align-items:baseline;padding:20px 0;border-bottom:1px solid #CFC5B5"><div style="font-size:12px;color:#5E564C;line-height:1.5">Headline<br>Newsreader 34/1.0</div><div style="font-family:'Newsreader',serif;font-size:34px;line-height:1;letter-spacing:-.015em">Lisbon, in June</div></div>
+<div style="display:grid;grid-template-columns:160px 1fr;gap:24px;align-items:baseline;padding:20px 0;border-bottom:1px solid #CFC5B5"><div style="font-size:12px;color:#5E564C;line-height:1.5">Title<br>Newsreader 22/1.1</div><div style="font-family:'Newsreader',serif;font-size:22px;line-height:1.1">Studio Notes</div></div>
+<div style="display:grid;grid-template-columns:160px 1fr;gap:24px;align-items:baseline;padding:20px 0;border-bottom:1px solid #CFC5B5"><div style="font-size:12px;color:#5E564C;line-height:1.5">Numeral<br>Newsreader Italic</div><div style="font-family:'Newsreader',serif;font-style:italic;font-size:44px;line-height:1">01 02 03 — 06</div></div>
+<div style="display:grid;grid-template-columns:160px 1fr;gap:24px;align-items:baseline;padding:20px 0;border-bottom:1px solid #CFC5B5"><div style="font-size:12px;color:#5E564C;line-height:1.5">Body<br>Instrument Sans 15/22</div><div style="font-size:15px;line-height:22px;max-width:520px">Replace the photos, rewrite the words, keep the composition. Every edit saves itself as you go.</div></div>
+<div style="display:grid;grid-template-columns:160px 1fr;gap:24px;align-items:baseline;padding:20px 0;border-bottom:1px solid #CFC5B5"><div style="font-size:12px;color:#5E564C;line-height:1.5">Label<br>Instrument Sans 13/18 · 500</div><div style="font-size:13px;font-weight:500">Use this template</div></div>
+<div style="display:grid;grid-template-columns:160px 1fr;gap:24px;align-items:baseline;padding:20px 0;border-bottom:1px solid #CFC5B5"><div style="font-size:12px;color:#5E564C;line-height:1.5">Caption<br>Instrument Sans 12/16</div><div style="font-size:12px;color:#5E564C">Portrait 4:5 · 6 slides · edited 2 hours ago</div></div>
+<div style="display:grid;grid-template-columns:160px 1fr;gap:24px;align-items:baseline;padding:20px 0;border-bottom:1px solid #CFC5B5"><div style="font-size:12px;color:#5E564C;line-height:1.5">Eyebrow<br>11.5 · 600 · +16% caps</div><div style="font-size:11.5px;letter-spacing:.16em;text-transform:uppercase;font-weight:600">Editorial — N° 07</div></div>
+</div>
+<div style="display:flex;flex-direction:column;gap:40px">
+<div style="display:flex;flex-direction:column;gap:14px">
+<div style="font-size:11px;letter-spacing:.18em;text-transform:uppercase;font-weight:600;color:#5E564C">Spacing — 4pt base</div>
+<div style="display:flex;align-items:flex-end;gap:14px">
+<div style="display:flex;flex-direction:column;align-items:center;gap:6px"><div style="width:4px;height:4px;background:#1E1B17"></div><span style="font-size:11px">4</span></div>
+<div style="display:flex;flex-direction:column;align-items:center;gap:6px"><div style="width:8px;height:8px;background:#1E1B17"></div><span style="font-size:11px">8</span></div>
+<div style="display:flex;flex-direction:column;align-items:center;gap:6px"><div style="width:12px;height:12px;background:#1E1B17"></div><span style="font-size:11px">12</span></div>
+<div style="display:flex;flex-direction:column;align-items:center;gap:6px"><div style="width:16px;height:16px;background:#1E1B17"></div><span style="font-size:11px">16</span></div>
+<div style="display:flex;flex-direction:column;align-items:center;gap:6px"><div style="width:20px;height:20px;background:#7B2D26"></div><span style="font-size:11px">20</span></div>
+<div style="display:flex;flex-direction:column;align-items:center;gap:6px"><div style="width:24px;height:24px;background:#1E1B17"></div><span style="font-size:11px">24</span></div>
+<div style="display:flex;flex-direction:column;align-items:center;gap:6px"><div style="width:32px;height:32px;background:#1E1B17"></div><span style="font-size:11px">32</span></div>
+<div style="display:flex;flex-direction:column;align-items:center;gap:6px"><div style="width:48px;height:48px;background:#1E1B17"></div><span style="font-size:11px">48</span></div>
+<div style="display:flex;flex-direction:column;align-items:center;gap:6px"><div style="width:64px;height:64px;background:#1E1B17"></div><span style="font-size:11px">64</span></div>
+</div>
+<div style="font-size:12px;color:#5E564C;line-height:1.5">20 (rouge) is the screen margin. Sections breathe at 48–64; captions sit 10–12 under their image.</div>
+</div>
+<div style="display:flex;gap:28px;align-items:flex-start">
+<div style="width:156px;height:300px;background:#EAE3D7;position:relative;padding:0 8px;box-sizing:border-box;display:grid;grid-template-columns:repeat(6,1fr);gap:4px;flex:none"><div style="background:rgba(123,45,38,.14)"></div><div style="background:rgba(123,45,38,.14)"></div><div style="background:rgba(123,45,38,.14)"></div><div style="background:rgba(123,45,38,.14)"></div><div style="background:rgba(123,45,38,.14)"></div><div style="background:rgba(123,45,38,.14)"></div></div>
+<div style="display:flex;flex-direction:column;gap:10px;font-size:13px;line-height:1.5"><div style="font-size:11px;letter-spacing:.18em;text-transform:uppercase;font-weight:600;color:#5E564C">Grid</div><div>6 columns · 20 margin · 10 gutter on a 390pt screen.</div><div style="color:#5E564C">Layouts are composed asymmetrically on it — 4+2, 2+4, 3+3 offset — so two adjacent rows never repeat the same split.</div></div>
+</div>
+<div style="display:flex;flex-direction:column;gap:14px">
+<div style="font-size:11px;letter-spacing:.18em;text-transform:uppercase;font-weight:600;color:#5E564C">Formats — from the template contract</div>
+<div style="display:flex;gap:24px;align-items:flex-end">
+<div style="display:flex;flex-direction:column;gap:8px"><div style="width:72px;height:128px;border:1px solid #1E1B17"></div><span style="font-size:12px"><b style="font-weight:600">Story</b> 9:16</span><span style="font-size:11px;color:#5E564C">1080×1920</span></div>
+<div style="display:flex;flex-direction:column;gap:8px"><div style="width:96px;height:120px;border:1px solid #1E1B17"></div><span style="font-size:12px"><b style="font-weight:600">Portrait</b> 4:5</span><span style="font-size:11px;color:#5E564C">1080×1350</span></div>
+<div style="display:flex;flex-direction:column;gap:8px"><div style="width:110px;height:110px;border:1px solid #1E1B17"></div><span style="font-size:12px"><b style="font-weight:600">Square</b> 1:1</span><span style="font-size:11px;color:#5E564C">1080×1080</span></div>
+</div>
+<div style="font-size:12px;color:#5E564C;line-height:1.5">A template is never cropped to fit a tile. The tile takes the template's shape — format is the first thing people choose by.</div>
+</div>
+</div>
+</div>
+</div>
+</section>
+
+<section id="1c" data-screen-label="Components" style="padding:0 72px 72px;width:max-content">
+<div style="background:#F3EEE5;width:1680px;padding:72px 80px;box-sizing:border-box;display:flex;flex-direction:column;gap:56px">
+<div style="display:flex;justify-content:space-between;align-items:baseline;border-bottom:1px solid #1E1B17;padding-bottom:20px"><div style="font-family:'Newsreader',serif;font-size:56px;letter-spacing:-.02em">Components</div><div style="font-size:11px;letter-spacing:.18em;text-transform:uppercase;font-weight:600;color:#5E564C">03 — One family, square-cornered, shadowless</div></div>
+
+<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:56px 64px">
+
+<div style="display:flex;flex-direction:column;gap:18px">
+<div style="font-size:11px;letter-spacing:.18em;text-transform:uppercase;font-weight:600;color:#5E564C;border-bottom:1px solid #CFC5B5;padding-bottom:10px">Actions</div>
+<div style="height:52px;background:#1E1B17;color:#F3EEE5;display:flex;align-items:center;justify-content:space-between;padding:0 20px;font-size:15px;font-weight:500">Use this template<span class="material-symbols-outlined" style="font-size:20px;font-variation-settings:'wght' 300">arrow_forward</span></div>
+<div style="height:52px;border:1px solid #1E1B17;display:flex;align-items:center;justify-content:space-between;padding:0 20px;font-size:15px;font-weight:500">Save to Photos<span class="material-symbols-outlined" style="font-size:20px;font-variation-settings:'wght' 300">download</span></div>
+<div style="display:flex;gap:24px;align-items:center"><span style="font-size:14px;font-weight:500;text-decoration:underline;text-underline-offset:5px;text-decoration-thickness:1px">Restore purchases</span><div style="height:40px;background:#1E1B17;color:#F3EEE5;display:flex;align-items:center;padding:0 16px;font-size:13px;font-weight:500">Export</div><div style="height:40px;background:#CFC5B5;color:#5E564C;display:flex;align-items:center;padding:0 16px;font-size:13px;font-weight:500">Disabled</div></div>
+<div style="font-size:12px;color:#5E564C;line-height:1.5">Primary is an ink slab with the label left and the direction right — it reads like a line in a contents page. One primary per screen.</div>
+</div>
+
+<div style="display:flex;flex-direction:column;gap:18px">
+<div style="font-size:11px;letter-spacing:.18em;text-transform:uppercase;font-weight:600;color:#5E564C;border-bottom:1px solid #CFC5B5;padding-bottom:10px">Navigation</div>
+<div style="width:390px;border-top:1px solid #CFC5B5;background:#F3EEE5;height:64px;display:grid;grid-template-columns:1fr 72px 1fr;align-items:center;outline:1px solid #E4DCCF">
+<div style="display:flex;flex-direction:column;align-items:center;gap:4px;position:relative;padding-top:4px"><div style="position:absolute;top:-9px;width:18px;height:2px;background:#7B2D26"></div><span class="material-symbols-outlined" style="font-size:24px;line-height:1;font-variation-settings:'wght' 300,'FILL' 0;color:#1E1B17">auto_stories</span><span style="font-size:11px;font-weight:600;letter-spacing:.04em;color:#1E1B17">Discover</span></div>
+<div style="width:52px;height:44px;background:#1E1B17;color:#F3EEE5;display:flex;align-items:center;justify-content:center;justify-self:center"><span class="material-symbols-outlined" style="font-size:24px;font-variation-settings:'wght' 250">add</span></div>
+<div style="display:flex;flex-direction:column;align-items:center;gap:4px;position:relative;padding-top:4px"><span class="material-symbols-outlined" style="font-size:24px;line-height:1;font-variation-settings:'wght' 200,'FILL' 0;color:#5E564C">photo_library</span><span style="font-size:11px;font-weight:500;letter-spacing:.04em;color:#5E564C">Projects</span></div>
+</div>
+<div style="display:flex;align-items:center;justify-content:space-between;height:52px;width:390px;border-bottom:1px solid #CFC5B5"><span class="material-symbols-outlined" style="font-size:24px;font-variation-settings:'wght' 200">arrow_back</span><span style="white-space:nowrap;font-size:11.5px;letter-spacing:.16em;text-transform:uppercase;font-weight:600">Lifestyle — N° 07</span><span style="width:24px"></span></div>
+<div style="font-size:12px;color:#5E564C;line-height:1.5">Icon + word, and a square. The existing structure — Templates · Create · Projects — is kept. Hairline Outlined icons at weight 200 (300 when active); the active tab also gets a short rouge rule at the bar edge — the one rouge mark.</div>
+</div>
+
+<div style="display:flex;flex-direction:column;gap:18px">
+<div style="font-size:11px;letter-spacing:.18em;text-transform:uppercase;font-weight:600;color:#5E564C;border-bottom:1px solid #CFC5B5;padding-bottom:10px">Category index</div>
+<div style="display:flex;gap:22px;align-items:baseline;overflow:hidden;white-space:nowrap">
+<span style="font-family:'Newsreader',serif;font-size:26px;border-bottom:1px solid #1E1B17;padding-bottom:4px">All<sup style="font-family:'Instrument Sans';font-size:11px;margin-left:3px;color:#7B2D26">42</sup></span>
+<span style="font-family:'Newsreader',serif;font-size:26px;color:#8A8073">Editorial<sup style="font-family:'Instrument Sans';font-size:11px;margin-left:3px">12</sup></span>
+<span style="font-family:'Newsreader',serif;font-size:26px;color:#8A8073">Minimal<sup style="font-family:'Instrument Sans';font-size:11px;margin-left:3px">8</sup></span>
+<span style="font-family:'Newsreader',serif;font-size:26px;color:#8A8073">Lifestyle<sup style="font-family:'Instrument Sans';font-size:11px;margin-left:3px">9</sup></span>
+</div>
+<div style="font-size:12px;color:#5E564C;line-height:1.5">Categories are set as words, not chips — a magazine's section list. Counts come straight from the template index; nothing is invented.</div>
+</div>
+
+<div style="display:flex;flex-direction:column;gap:18px">
+<div style="font-size:11px;letter-spacing:.18em;text-transform:uppercase;font-weight:600;color:#5E564C;border-bottom:1px solid #CFC5B5;padding-bottom:10px">Template folio</div>
+<div style="display:flex;gap:20px;align-items:flex-start">
+<div style="width:168px;display:flex;flex-direction:column;gap:12px;flex:none">
+<div style="width:160px;height:200px;box-shadow:4px -4px 0 -1px #F3EEE5,4px -4px 0 0 #A89D8D,8px -8px 0 -1px #F3EEE5,8px -8px 0 0 #A89D8D;margin-top:8px"><dc-import name="Slide" kind="cover" img="https://picsum.photos/id/225/400/500" title="Slow Mornings" text="Vol. 01" num="01" hint-size="160px,200px" style="width:160px;height:200px"></dc-import></div>
+<div style="display:flex;flex-direction:column;gap:4px;border-top:1px solid #1E1B17;padding-top:8px"><div style="display:flex;justify-content:space-between;font-size:11px;letter-spacing:.16em;text-transform:uppercase;font-weight:600"><span>Lifestyle</span><span style="color:#7B2D26">Pro</span></div><div style="font-family:'Newsreader',serif;font-size:18px">Slow Mornings</div><div style="font-size:11.5px;color:#5E564C">4:5 · 6 slides</div></div>
+</div>
+<div style="display:flex;flex-direction:column;gap:10px;font-size:12px;color:#5E564C;line-height:1.5">
+<div><b style="color:#1E1B17;font-weight:600">Cover</b> — slide 1 of the real render, at the template's own aspect.</div>
+<div><b style="color:#1E1B17;font-weight:600">Edges</b> — one sliver per 3+ slides; single-panel templates have none.</div>
+<div><b style="color:#1E1B17;font-weight:600">Caption</b> — category, Pro, name, format, count.</div>
+<div><b style="color:#1E1B17;font-weight:600">Pressed</b> — image dims 6%, caption rule extends; then a shared-element flight into Preview.</div>
+</div>
+</div>
+</div>
+
+<div style="display:flex;flex-direction:column;gap:18px">
+<div style="font-size:11px;letter-spacing:.18em;text-transform:uppercase;font-weight:600;color:#5E564C;border-bottom:1px solid #CFC5B5;padding-bottom:10px">Slide strip</div>
+<div style="display:flex;gap:8px;align-items:flex-start">
+<div style="display:flex;flex-direction:column;gap:6px;align-items:center"><div style="width:48px;height:60px;outline:1px solid #1E1B17;outline-offset:3px"><dc-import name="Slide" kind="cover" img="https://picsum.photos/id/225/200/250" title="Slow" num="01" hint-size="48px,60px" style="width:48px;height:60px"></dc-import></div><span style="font-family:'Newsreader',serif;font-style:italic;font-size:14px">01</span></div>
+<div style="display:flex;flex-direction:column;gap:6px;align-items:center"><div style="width:48px;height:60px"><dc-import name="Slide" kind="split" img="https://picsum.photos/id/42/200/250" title="Light" hint-size="48px,60px" style="width:48px;height:60px"></dc-import></div><span style="font-family:'Newsreader',serif;font-style:italic;font-size:14px;color:#6F665C">02</span></div>
+<div style="display:flex;flex-direction:column;gap:6px;align-items:center"><div style="width:48px;height:60px"><dc-import name="Slide" kind="quote" tone="rouge" title="Coffee first." hint-size="48px,60px" style="width:48px;height:60px"></dc-import></div><span style="font-family:'Newsreader',serif;font-style:italic;font-size:14px;color:#6F665C">03</span></div>
+<div style="display:flex;flex-direction:column;gap:6px;align-items:center"><div style="width:48px;height:60px"><dc-import name="Slide" kind="duo" img="https://picsum.photos/id/24/200/250" img2="https://picsum.photos/id/102/200/250" hint-size="48px,60px" style="width:48px;height:60px"></dc-import></div><span style="font-family:'Newsreader',serif;font-style:italic;font-size:14px;color:#6F665C">04</span></div>
+<div style="display:flex;flex-direction:column;gap:6px;align-items:center"><div style="width:48px;height:60px;border:1px dashed #8A8073;box-sizing:border-box;display:flex;align-items:center;justify-content:center"><span class="material-symbols-outlined" style="font-size:20px;font-variation-settings:'wght' 200">add</span></div><span style="font-size:10px;letter-spacing:.12em;text-transform:uppercase;font-weight:600;color:#5E564C">Slide</span></div>
+</div>
+<div style="font-size:12px;color:#5E564C;line-height:1.5">Replaces the dots. Tap to focus a slide, long-press to move left/right or delete (existing slide actions). The dashed frame is the existing “Panel” insert.</div>
+</div>
+
+<div style="display:flex;flex-direction:column;gap:18px">
+<div style="font-size:11px;letter-spacing:.18em;text-transform:uppercase;font-weight:600;color:#5E564C;border-bottom:1px solid #CFC5B5;padding-bottom:10px">Editing controls</div>
+<div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid #CFC5B5"><span style="white-space:nowrap;font-size:11.5px;letter-spacing:.16em;text-transform:uppercase;font-weight:600">Text · Headline</span><div style="display:flex;gap:18px;font-size:13px;font-weight:500"><span style="color:#5E564C">Duplicate</span><span style="color:#5E564C">Delete</span><span style="text-decoration:underline;text-underline-offset:4px">Done</span></div></div>
+<div style="display:flex;gap:16px;align-items:center">
+<div style="display:flex;border:1px solid #1E1B17"><span class="material-symbols-outlined" style="font-size:20px;padding:8px 10px;background:#1E1B17;color:#F3EEE5;font-variation-settings:'wght' 300">format_align_left</span><span class="material-symbols-outlined" style="font-size:20px;padding:8px 10px;font-variation-settings:'wght' 300;border-left:1px solid #1E1B17">format_align_center</span><span class="material-symbols-outlined" style="font-size:20px;padding:8px 10px;font-variation-settings:'wght' 300;border-left:1px solid #1E1B17">format_align_right</span></div>
+<div style="width:38px;height:38px;border:1px solid #1E1B17;display:flex;align-items:center;justify-content:center;font-family:'Newsreader',serif;font-weight:500;font-size:20px;box-sizing:border-box">B</div>
+<div style="flex:1;display:flex;align-items:center;gap:10px"><span style="font-family:'Newsreader',serif;font-size:12px">A</span><div style="flex:1;height:1px;background:#1E1B17;position:relative"><div style="position:absolute;left:45%;top:-7px;width:2px;height:15px;background:#1E1B17"></div></div><span style="font-family:'Newsreader',serif;font-size:20px">A</span></div>
+</div>
+<div style="display:flex;gap:10px">
+<div style="width:64px;display:flex;flex-direction:column;align-items:center;gap:6px;padding:8px 0;border-bottom:2px solid #1E1B17"><span style="font-family:'Playfair Display','Newsreader',serif;font-size:24px">Aa</span><span style="font-size:11px;color:#5E564C">Playfair</span></div>
+<div style="width:64px;display:flex;flex-direction:column;align-items:center;gap:6px;padding:8px 0"><span style="font-family:'Instrument Sans';font-size:24px">Aa</span><span style="font-size:11px;color:#5E564C">Inter</span></div>
+<div style="width:64px;display:flex;flex-direction:column;align-items:center;gap:6px;padding:8px 0"><span style="font-family:'Newsreader';font-style:italic;font-size:24px">Aa</span><span style="font-size:11px;color:#5E564C">Cormorant <span style="color:#7B2D26">·Pro</span></span></div>
+</div>
+<div style="display:flex;gap:6px"><div style="width:26px;height:26px;background:#FFFFFF;outline:1px solid #1E1B17;outline-offset:2px"></div><div style="width:26px;height:26px;background:#111111"></div><div style="width:26px;height:26px;background:#A8A29E"></div><div style="width:26px;height:26px;background:#EF4444"></div><div style="width:26px;height:26px;background:#F97316"></div><div style="width:26px;height:26px;background:#F59E0B"></div><div style="width:26px;height:26px;background:#22C55E"></div><div style="width:26px;height:26px;background:#3B82F6"></div><div style="width:26px;height:26px;background:#EC4899"></div></div>
+<div style="font-size:12px;color:#5E564C;line-height:1.5">Same controls as today's TextStyleBar — align, bold, size, typeface, colour — set as specimens and square chips. The colour palette is template content (kColorChoices) and stays as is.</div>
+</div>
+
+<div style="display:flex;flex-direction:column;gap:18px">
+<div style="font-size:11px;letter-spacing:.18em;text-transform:uppercase;font-weight:600;color:#5E564C;border-bottom:1px solid #CFC5B5;padding-bottom:10px">Fields &amp; inline text</div>
+<div style="display:flex;flex-direction:column;gap:6px"><span style="white-space:nowrap;font-size:11.5px;letter-spacing:.16em;text-transform:uppercase;font-weight:600;color:#5E564C">Editing on canvas</span><div style="background:#4A4A35;padding:22px;display:flex"><div style="border:1px solid #F3EEE5;padding:6px 10px;font-family:'Newsreader',serif;font-style:italic;font-size:28px;color:#F3EEE5;display:flex;align-items:center">Slow morn<span style="width:2px;height:28px;background:#F3EEE5;margin-left:1px"></span></div></div></div>
+<div style="font-size:12px;color:#5E564C;line-height:1.5">Text slots are edited in place on the canvas (existing inline TextField). The selection ring is a 1px hairline with square corner handles — never a glowing outline.</div>
+</div>
+
+<div style="display:flex;flex-direction:column;gap:18px">
+<div style="font-size:11px;letter-spacing:.18em;text-transform:uppercase;font-weight:600;color:#5E564C;border-bottom:1px solid #CFC5B5;padding-bottom:10px">Sheets &amp; messages</div>
+<div style="background:#EAE3D7;border-top:1px solid #1E1B17;padding:18px 20px;display:flex;flex-direction:column;gap:12px">
+<div style="display:flex;justify-content:space-between;align-items:baseline"><span style="font-family:'Newsreader',serif;font-size:24px">Delete project?</span><span style="white-space:nowrap;font-size:11.5px;letter-spacing:.16em;text-transform:uppercase;font-weight:600;color:#5E564C">Close</span></div>
+<div style="font-size:13px;color:#5E564C;line-height:1.5">“Lisbon, in June” and its photos will be removed. This cannot be undone.</div>
+<div style="display:flex;gap:10px"><div style="flex:1;height:44px;border:1px solid #1E1B17;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:500">Cancel</div><div style="flex:1;height:44px;background:#7B2D26;color:#F3EEE5;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:500">Delete</div></div>
+</div>
+<div style="background:#1E1B17;color:#F3EEE5;padding:14px 16px;display:flex;justify-content:space-between;align-items:center;font-size:13px"><span>Pro restored — welcome back.</span><span style="white-space:nowrap;font-size:11.5px;letter-spacing:.16em;text-transform:uppercase;font-weight:600;color:#CFC5B5">OK</span></div>
+<div style="font-size:12px;color:#5E564C;line-height:1.5">Sheets are a sheet of deeper stock with an ink rule on top — no handle pill, no rounded corners. Messages are a flat ink strip pinned above the nav.</div>
+</div>
+
+<div style="display:flex;flex-direction:column;gap:18px">
+<div style="font-size:11px;letter-spacing:.18em;text-transform:uppercase;font-weight:600;color:#5E564C;border-bottom:1px solid #CFC5B5;padding-bottom:10px">Loading &amp; export feedback</div>
+<div style="display:flex;gap:10px;align-items:flex-end">
+<div style="width:96px;height:120px;background:#EAE3D7;box-shadow:4px -4px 0 -1px #F3EEE5,4px -4px 0 0 #CFC5B5"></div>
+<div style="width:72px;height:128px;background:#EAE3D7"></div>
+<div style="flex:1;display:flex;flex-direction:column;gap:8px;padding-left:10px"><div style="height:8px;width:70%;background:#EAE3D7"></div><div style="height:8px;width:45%;background:#EAE3D7"></div></div>
+</div>
+<div style="display:flex;flex-direction:column;gap:8px"><div style="display:flex;justify-content:space-between;font-size:12px"><span>Developing slide <span style="font-family:'Newsreader',serif;font-style:italic;font-size:15px">03</span> of 06</span><span style="color:#5E564C">50%</span></div><div style="height:1px;background:#CFC5B5;position:relative"><div style="position:absolute;left:0;top:-1px;height:3px;width:50%;background:#1E1B17"></div></div></div>
+<div style="font-size:12px;color:#5E564C;line-height:1.5">Skeletons keep the ragged silhouette of mixed formats (as the current build does) and breathe slowly between Paper and Paper deep. Export progress is a single hairline that thickens as it fills.</div>
+</div>
+
+<div style="display:flex;flex-direction:column;gap:18px">
+<div style="font-size:11px;letter-spacing:.18em;text-transform:uppercase;font-weight:600;color:#5E564C;border-bottom:1px solid #CFC5B5;padding-bottom:10px">Iconography</div>
+<div style="display:flex;gap:20px;align-items:center">
+<span class="material-symbols-outlined" style="font-size:26px;font-variation-settings:'wght' 200">arrow_back</span>
+<span class="material-symbols-outlined" style="font-size:26px;font-variation-settings:'wght' 200">undo</span>
+<span class="material-symbols-outlined" style="font-size:26px;font-variation-settings:'wght' 200">redo</span>
+<span class="material-symbols-outlined" style="font-size:26px;font-variation-settings:'wght' 200">title</span>
+<span class="material-symbols-outlined" style="font-size:26px;font-variation-settings:'wght' 200">imagesmode</span>
+<span class="material-symbols-outlined" style="font-size:26px;font-variation-settings:'wght' 200">grid_view</span>
+<span class="material-symbols-outlined" style="font-size:26px;font-variation-settings:'wght' 200">layers</span>
+<span class="material-symbols-outlined" style="font-size:26px;font-variation-settings:'wght' 200">north_east</span>
+</div>
+<div style="font-size:12px;color:#5E564C;line-height:1.5">The app already ships Material Symbols. We keep the library and re-cut it: Outlined, weight 200, never filled, always paired with a word where space allows.</div>
+</div>
+
+</div>
+</div>
+</section>
+</x-dc>
+</body>
+</html>

@@ -29,7 +29,7 @@ void main() {
   }
 
   Future<void> addSlide(WidgetTester tester) async {
-    await tester.tap(find.text('Panel'));
+    await tester.tap(find.byKey(const ValueKey('strip-add-slide')));
     await tester.pumpAndSettle();
   }
 
@@ -58,7 +58,10 @@ void main() {
     // The whole strip has to actually FIT: at minScale the scaled content is
     // no wider than the viewport, which is the entire point of the floor.
     final width = tester.getSize(find.byType(InteractiveViewer)).width;
-    expect(tester.getSize(find.byType(CanvasView)).width * ten, lessThan(width));
+    expect(
+      tester.getSize(find.byType(CanvasView)).width * ten,
+      lessThan(width),
+    );
   });
 
   /// The regression that motivated all of this: InteractiveViewer floors the
@@ -95,7 +98,8 @@ void main() {
     expect(
       scale,
       lessThan(0.9),
-      reason: 'the canvas must actually shrink — not just report a low minScale',
+      reason:
+          'the canvas must actually shrink — not just report a low minScale',
     );
     expect(scale, closeTo(floor, floor * 0.5));
   });

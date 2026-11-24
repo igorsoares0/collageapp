@@ -7,6 +7,14 @@ import 'package:collageapp/src/rendering/template_canvas.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+/// Every photo-pick target on screen (empty slots, and the replace overlay on
+/// a selected photo) — keyed `pick-<slotId>` in template_canvas.dart.
+final pickTargets = find.byWidgetPredicate(
+  (w) =>
+      w.key is ValueKey<String> &&
+      (w.key! as ValueKey<String>).value.startsWith('pick-'),
+);
+
 TextStyle testFontResolver(String family, TextStyle base) => base;
 
 void main() {
@@ -73,16 +81,22 @@ void main() {
 
     // The hero image slot is rotated 4° — dragging must still follow the
     // finger because translation is applied before rotation.
-    final start = tester.getCenter(find.text('hero_image'));
+    final start = tester.getCenter(
+      find.byKey(const ValueKey('slot-label-hero_image')),
+    );
     final gesture = await tester.startGesture(start);
     // First move eats the touch slop; the second is delivered in full.
     await gesture.moveBy(const Offset(40, 0));
     await tester.pump();
-    final mid = tester.getTopLeft(find.text('hero_image'));
+    final mid = tester.getTopLeft(
+      find.byKey(const ValueKey('slot-label-hero_image')),
+    );
     await gesture.moveBy(const Offset(50, 30));
     await tester.pump();
     await gesture.up();
-    final end = tester.getTopLeft(find.text('hero_image'));
+    final end = tester.getTopLeft(
+      find.byKey(const ValueKey('slot-label-hero_image')),
+    );
 
     // 50 screen px → 100 template px → re-rendered at scale 0.5 → 50 px.
     // Tolerant compare: the slot's 4° rotation puts the position through a
@@ -121,7 +135,9 @@ void main() {
         ),
       );
 
-      final gesture = await tester.startGesture(tester.getCenter(find.text('title')));
+      final gesture = await tester.startGesture(
+        tester.getCenter(find.text('title')),
+      );
       // First move eats the touch slop; the second is delivered in full.
       await gesture.moveBy(const Offset(40, 0));
       await tester.pump();
@@ -162,7 +178,9 @@ void main() {
       ),
     );
 
-    final start = tester.getCenter(find.text('hero_image'));
+    final start = tester.getCenter(
+      find.byKey(const ValueKey('slot-label-hero_image')),
+    );
     final g = await tester.startGesture(start);
     await g.moveBy(const Offset(40, 0));
     await tester.pump();
@@ -192,12 +210,12 @@ void main() {
     );
 
     // Tapping the slot body (its label) selects it — it must NOT open gallery.
-    await tester.tap(find.text('hero_image'));
+    await tester.tap(find.byKey(const ValueKey('slot-label-hero_image')));
     expect(picks, isEmpty);
     expect(taps, contains('hero_image'));
 
     // Tapping the photo icon is the only thing that opens the gallery.
-    await tester.tap(find.byIcon(Icons.add_photo_alternate_outlined));
+    await tester.tap(pickTargets);
     expect(picks, ['hero_image']);
   });
 
@@ -479,8 +497,8 @@ void main() {
 
     // Empty cells advertise the add-photo icon; tapping it opens the gallery
     // for that cell's slot.
-    expect(find.byIcon(Icons.add_photo_alternate_outlined), findsWidgets);
-    await tester.tap(find.byIcon(Icons.add_photo_alternate_outlined).first);
+    expect(pickTargets, findsWidgets);
+    await tester.tap(pickTargets.first);
     expect(picks, isNotEmpty);
     expect(picks.first, startsWith('cell_'));
   });
@@ -620,8 +638,12 @@ void main() {
       ),
     );
 
-    final colStrip = tester.getRect(find.byKey(const ValueKey('grid_div_col_0')));
-    final rowStrip = tester.getRect(find.byKey(const ValueKey('grid_div_row_0')));
+    final colStrip = tester.getRect(
+      find.byKey(const ValueKey('grid_div_col_0')),
+    );
+    final rowStrip = tester.getRect(
+      find.byKey(const ValueKey('grid_div_row_0')),
+    );
     // The row strip lives entirely in the right column, past the column
     // boundary — the spanning left cell erased its left half.
     expect(rowStrip.left, greaterThanOrEqualTo(colStrip.center.dx));

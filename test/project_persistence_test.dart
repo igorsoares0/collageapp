@@ -37,12 +37,6 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  // Taps a bottom-toolbar button by its label (Text, Layout, Panel, ...).
-  Future<void> addFromToolbar(WidgetTester tester, String item) async {
-    await tester.tap(find.text(item));
-    await tester.pumpAndSettle();
-  }
-
   /// Whether some saved project.json on disk contains [needle]. Synchronous
   /// on purpose — safe to call from the fake-async test zone.
   bool savedContains(String needle) {
@@ -85,7 +79,8 @@ void main() {
     tester,
   ) async {
     await pumpDraft(tester);
-    await addFromToolbar(tester, 'Panel');
+    await tester.tap(find.byKey(const ValueKey('strip-add-slide')));
+    await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('slide-background-1')), findsOneWidget);
 
     // The debounced save fires without any further interaction (typing-style
@@ -126,11 +121,13 @@ void main() {
     tester,
   ) async {
     await pumpDraft(tester);
-    await addFromToolbar(tester, 'Panel');
+    await tester.tap(find.byKey(const ValueKey('strip-add-slide')));
+    await tester.pumpAndSettle();
     await tester.pump(const Duration(seconds: 3));
     await drainWrites(tester, done: () => savedContains('"slideCount":2'));
 
-    await addFromToolbar(tester, 'Panel');
+    await tester.tap(find.byKey(const ValueKey('strip-add-slide')));
+    await tester.pumpAndSettle();
     await tester.pump(const Duration(seconds: 3));
     await drainWrites(tester, done: () => savedContains('"slideCount":3'));
 

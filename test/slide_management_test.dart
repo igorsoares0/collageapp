@@ -1,6 +1,7 @@
 import 'package:collageapp/src/model/template.dart';
 import 'package:collageapp/src/screens/template_screen.dart';
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// Slide management from the editor: long-press a carousel dot to reorder or
@@ -34,6 +35,12 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  /// The slide strip's "+ Slide".
+  Future<void> tapAddSlide(WidgetTester tester) async {
+    await tester.tap(find.byKey(const ValueKey('strip-add-slide')));
+    await tester.pumpAndSettle();
+  }
+
   Future<void> openSlideActions(WidgetTester tester, int index) async {
     await tester.longPress(find.byKey(ValueKey('panel-dot-$index')));
     await tester.pumpAndSettle();
@@ -45,13 +52,17 @@ void main() {
     tester,
   ) async {
     await pumpDraft(tester);
-    // With one slide there are no dots at all, so nothing to long-press.
-    expect(find.byKey(const ValueKey('panel-dot-0')), findsNothing);
+    // The strip shows the one slide, but long-pressing it offers nothing:
+    // there is nowhere to move it and the last slide can't be deleted.
+    expect(find.byKey(const ValueKey('panel-dot-0')), findsOneWidget);
+    await tester.longPress(find.byKey(const ValueKey('panel-dot-0')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('slide-delete')), findsNothing);
   });
 
   testWidgets('long-pressing a dot offers reorder and delete', (tester) async {
     await pumpDraft(tester);
-    await tapToolbar(tester, 'Panel');
+    await tapAddSlide(tester);
     expect(slide(1), findsOneWidget);
 
     await openSlideActions(tester, 0);
@@ -63,7 +74,7 @@ void main() {
 
   testWidgets('deleting a slide removes it', (tester) async {
     await pumpDraft(tester);
-    await tapToolbar(tester, 'Panel');
+    await tapAddSlide(tester);
     expect(slide(1), findsOneWidget);
 
     await openSlideActions(tester, 1);
@@ -76,13 +87,13 @@ void main() {
 
   testWidgets('a deleted slide comes back with undo', (tester) async {
     await pumpDraft(tester);
-    await tapToolbar(tester, 'Panel');
+    await tapAddSlide(tester);
     await openSlideActions(tester, 1);
     await tester.tap(find.byKey(const ValueKey('slide-delete')));
     await tester.pumpAndSettle();
     expect(slide(1), findsNothing);
 
-    await tester.tap(find.widgetWithIcon(IconButton, Icons.undo));
+    await tester.tap(find.widgetWithIcon(IconButton, Symbols.undo));
     await tester.pumpAndSettle();
     expect(
       slide(1),
@@ -97,9 +108,12 @@ void main() {
     await pumpDraft(tester);
     // Second slide first (adding one focuses it), THEN the text — so the text
     // lands on slide 1 and the toolbar is never needed again.
-    await tapToolbar(tester, 'Panel');
+    await tapAddSlide(tester);
     await tapToolbar(tester, 'Text');
     await tester.enterText(find.byType(TextField), 'SecondSlide');
+    await tester.pumpAndSettle();
+    // Back to the strip (the slide actions live on it).
+    await tester.tap(find.text('Done'));
     await tester.pumpAndSettle();
 
     final beforeX = tester.getCenter(find.text('SecondSlide')).dx;

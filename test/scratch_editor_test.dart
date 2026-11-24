@@ -6,6 +6,14 @@ import 'package:collageapp/src/screens/template_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+/// Every photo-pick target on screen (empty slots, and the replace overlay on
+/// a selected photo) — keyed `pick-<slotId>` in template_canvas.dart.
+final pickTargets = find.byWidgetPredicate(
+  (w) =>
+      w.key is ValueKey<String> &&
+      (w.key! as ValueKey<String>).value.startsWith('pick-'),
+);
+
 TextStyle testFontResolver(String family, TextStyle base) => base;
 
 // 1×1 transparent PNG — enough for AssetRecord.image to decode.
@@ -77,25 +85,30 @@ void main() {
 
     // Four empty cells, each with a pick icon; the grid styling bar is up
     // (spacing + corners sliders) because the first cell got selected.
-    expect(find.byIcon(Icons.add_photo_alternate_outlined), findsNWidgets(4));
+    expect(pickTargets, findsNWidgets(4));
     expect(find.byType(Slider), findsNWidgets(2));
   });
 
-  testWidgets('toolbar Panel appends an empty second panel', (tester) async {
+  testWidgets('the strip\'s + Slide appends an empty second panel', (
+    tester,
+  ) async {
     await pumpDraft(tester);
-    await addFromToolbar(tester, 'Panel');
+    await tester.tap(find.byKey(const ValueKey('strip-add-slide')));
+    await tester.pumpAndSettle();
 
     expect(find.byKey(const ValueKey('slide-background-1')), findsOneWidget);
   });
 
-  testWidgets('carousel dots appear with a second panel and a tap refocuses', (
+  testWidgets('the slide strip grows with a second panel and a tap refocuses', (
     tester,
   ) async {
     await pumpDraft(tester);
-    // Single panel: no dots.
-    expect(find.byKey(const ValueKey('panel-dot-0')), findsNothing);
+    // Single panel: the strip shows just that one.
+    expect(find.byKey(const ValueKey('panel-dot-0')), findsOneWidget);
+    expect(find.byKey(const ValueKey('panel-dot-1')), findsNothing);
 
-    await addFromToolbar(tester, 'Panel');
+    await tester.tap(find.byKey(const ValueKey('strip-add-slide')));
+    await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('panel-dot-0')), findsOneWidget);
     expect(find.byKey(const ValueKey('panel-dot-1')), findsOneWidget);
 
