@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Layer paper: the window behind the splash and the Flutter UI, so the
+         app opens on its own ground instead of a white flash. -->
+    <color name="layer_paper">#F3EEE5</color>
+</resources>

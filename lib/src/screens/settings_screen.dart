@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../api/appearance.dart';
 import '../api/entitlements.dart';
 import '../api/template_api.dart';
 import '../legal.dart';
@@ -21,10 +22,14 @@ class SettingsScreen extends StatelessWidget {
   /// membership row, and the paywall's cover spread.
   final List<TemplateSummary> catalog;
 
+  /// System / Light / Dark. Null hides the Appearance section.
+  final AppearanceController? appearance;
+
   const SettingsScreen({
     super.key,
     required this.entitlements,
     this.catalog = const [],
+    this.appearance,
   });
 
   Future<void> _restore(BuildContext context) async {
@@ -72,6 +77,29 @@ class SettingsScreen extends StatelessWidget {
                     builder: (context, isPro, _) =>
                         isPro ? _proActive(context) : _proOffer(context),
                   ),
+                  if (appearance != null) ...[
+                    const SizedBox(height: 32),
+                    const _Section('Appearance'),
+                    ValueListenableBuilder<ThemeMode>(
+                      valueListenable: appearance!,
+                      builder: (context, mode, _) => Column(
+                        children: [
+                          for (final (option, label) in const [
+                            (ThemeMode.system, 'Match system'),
+                            (ThemeMode.light, 'Light'),
+                            (ThemeMode.dark, 'Dark'),
+                          ])
+                            _Row(
+                              key: ValueKey('appearance-${option.name}'),
+                              label: label,
+                              icon: mode == option ? Symbols.check : null,
+                              selected: mode == option,
+                              onTap: () => appearance!.set(option),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 32),
                   const _Section('Legal'),
                   _Row(
@@ -90,7 +118,7 @@ class SettingsScreen extends StatelessWidget {
                     label: 'Version',
                     trailing: Text(
                       '1.0.0',
-                      style: AppType.sans(14, color: AppColors.inkSoft),
+                      style: AppType.sans(14, color: context.colors.inkSoft),
                     ),
                   ),
                 ],
@@ -111,7 +139,10 @@ class SettingsScreen extends StatelessWidget {
                         child: Text(
                           'Set in Newsreader & Instrument Sans',
                           textAlign: TextAlign.end,
-                          style: AppType.sans(12, color: AppColors.inkSoft),
+                          style: AppType.sans(
+                            12,
+                            color: context.colors.inkSoft,
+                          ),
                         ),
                       ),
                     ],
@@ -153,7 +184,7 @@ class SettingsScreen extends StatelessWidget {
                     const SizedBox(height: 6),
                     Text(
                       'Unlock every premium template.',
-                      style: AppType.sans(14, color: AppColors.inkSoft),
+                      style: AppType.sans(14, color: context.colors.inkSoft),
                     ),
                     TextLink('See plans', onTap: seePlans),
                   ],
@@ -187,7 +218,7 @@ class SettingsScreen extends StatelessWidget {
                     const SizedBox(height: 6),
                     Text(
                       'Pro · Active — all templates unlocked',
-                      style: AppType.sans(14, color: AppColors.inkSoft),
+                      style: AppType.sans(14, color: context.colors.inkSoft),
                     ),
                   ],
                 ),
@@ -229,7 +260,7 @@ class _LayerPro extends StatelessWidget {
         const TextSpan(text: 'Layer '),
         TextSpan(
           text: 'Pro',
-          style: AppType.serif(size, italic: true, color: AppColors.rouge),
+          style: AppType.serif(size, italic: true, color: context.colors.rouge),
         ),
       ],
     ),
@@ -265,7 +296,7 @@ class _ProCover extends StatelessWidget {
                 fit: BoxFit.cover,
               )
             : ColoredBox(
-                color: AppColors.rouge,
+                color: context.colors.rouge,
                 child: Padding(
                   padding: const EdgeInsets.all(8),
                   child: Text(
@@ -273,7 +304,7 @@ class _ProCover extends StatelessWidget {
                     style: AppType.serif(
                       24,
                       italic: true,
-                      color: AppColors.onInk,
+                      color: context.colors.onInk,
                     ),
                   ),
                 ),
@@ -292,9 +323,9 @@ class _Section extends StatelessWidget {
   Widget build(BuildContext context) => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
-      Eyebrow(label, color: AppColors.inkSoft),
+      Eyebrow(label, color: context.colors.inkSoft),
       const SizedBox(height: 12),
-      const Hairline(color: AppColors.ink),
+      Hairline(color: context.colors.ink),
     ],
   );
 }
@@ -305,7 +336,17 @@ class _Row extends StatelessWidget {
   final Widget? trailing;
   final VoidCallback? onTap;
 
-  const _Row({required this.label, this.icon, this.trailing, this.onTap});
+  /// A choice row (Appearance): announced as selected.
+  final bool? selected;
+
+  const _Row({
+    super.key,
+    required this.label,
+    this.icon,
+    this.trailing,
+    this.onTap,
+    this.selected,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -313,16 +354,19 @@ class _Row extends StatelessWidget {
       children: [
         InkWell(
           onTap: onTap,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(minHeight: 52),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              child: Row(
-                children: [
-                  Expanded(child: Text(label, style: AppType.sans(16))),
-                  ?trailing,
-                  if (icon != null) Icon(icon, size: 20, weight: 200),
-                ],
+          child: Semantics(
+            selected: selected,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 52),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                child: Row(
+                  children: [
+                    Expanded(child: Text(label, style: AppType.sans(16))),
+                    ?trailing,
+                    if (icon != null) Icon(icon, size: 20, weight: 200),
+                  ],
+                ),
               ),
             ),
           ),

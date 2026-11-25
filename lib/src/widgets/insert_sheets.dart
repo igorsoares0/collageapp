@@ -7,8 +7,6 @@ import '../model/template.dart';
 import '../rendering/frame_assets.dart';
 import '../theme.dart';
 
-const Color _cellFill = AppColors.rule;
-
 /// A grid layout the user can insert from scratch. Mirrors the classic preset
 /// catalog of the web editor (lib/template/factory.ts): fraction tracks start
 /// uniform; the user reshapes them by dragging dividers afterwards.
@@ -129,13 +127,16 @@ Future<GridPreset?> showGridPresetSheet(BuildContext context) {
                       children: [
                         CustomPaint(
                           size: const Size(64, 64),
-                          painter: _GridThumbPainter(preset),
+                          painter: _GridThumbPainter(
+                            preset,
+                            context.colors.rule,
+                          ),
                         ),
                         const SizedBox(height: 6),
                         Text(
                           preset.label,
-                          style: const TextStyle(
-                            color: AppColors.ink,
+                          style: TextStyle(
+                            color: context.colors.ink,
                             fontSize: 12,
                           ),
                         ),
@@ -173,7 +174,10 @@ Future<GridPreset?> showLayoutPickerSheet(
           children: [
             Text('Choose a layout', style: AppType.title(26)),
             const SizedBox(height: 4),
-            Text('${photos.length} photos', style: AppType.caption),
+            Text(
+              '${photos.length} photos',
+              style: AppType.caption.copyWith(color: context.colors.inkSoft),
+            ),
             const SizedBox(height: 12),
             SizedBox(
               height: 176,
@@ -196,7 +200,9 @@ Future<GridPreset?> showLayoutPickerSheet(
                                 child: DecoratedBox(
                                   decoration: BoxDecoration(
                                     color: Colors.white,
-                                    border: Border.all(color: AppColors.rule),
+                                    border: Border.all(
+                                      color: context.colors.rule,
+                                    ),
                                   ),
                                   child: _FilledLayoutThumb(
                                     preset: preset,
@@ -208,8 +214,8 @@ Future<GridPreset?> showLayoutPickerSheet(
                             const SizedBox(height: 6),
                             Text(
                               preset.label,
-                              style: const TextStyle(
-                                color: AppColors.ink,
+                              style: TextStyle(
+                                color: context.colors.ink,
                                 fontSize: 12,
                               ),
                             ),
@@ -289,8 +295,9 @@ class _FilledLayoutThumb extends StatelessWidget {
 /// the thumbnail is a faithful miniature of what gets inserted.
 class _GridThumbPainter extends CustomPainter {
   final GridPreset preset;
+  final Color cellFill;
 
-  const _GridThumbPainter(this.preset);
+  const _GridThumbPainter(this.preset, this.cellFill);
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -320,7 +327,7 @@ class _GridThumbPainter extends CustomPainter {
           ),
       ],
     );
-    final paint = Paint()..color = _cellFill;
+    final paint = Paint()..color = cellFill;
     for (final cell in grid.cells) {
       canvas.drawRRect(
         RRect.fromRectAndRadius(cellRect(grid, cell), const Radius.circular(3)),
@@ -331,7 +338,7 @@ class _GridThumbPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_GridThumbPainter oldDelegate) =>
-      oldDelegate.preset != preset;
+      oldDelegate.preset != preset || oldDelegate.cellFill != cellFill;
 }
 
 /// What the asset picker resolved to: a sticker (placed as its own layer) or a
@@ -404,12 +411,12 @@ Future<AssetChoice?> showAssetPickerSheet(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 22, 20, 24),
         child: stickers.isEmpty && frames.isEmpty
-            ? const SizedBox(
+            ? SizedBox(
                 height: 120,
                 child: Center(
                   child: Text(
                     'No assets available yet.',
-                    style: TextStyle(color: AppColors.inkSoft),
+                    style: TextStyle(color: context.colors.inkSoft),
                   ),
                 ),
               )
@@ -450,10 +457,10 @@ class _LockBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-      color: AppColors.paper,
+      color: context.colors.paper,
       child: Text(
         'PRO',
-        style: AppType.eyebrow(size: 11, color: AppColors.rouge),
+        style: AppType.eyebrow(size: 11, color: context.colors.rouge),
       ),
     );
   }
@@ -479,8 +486,8 @@ class _AssetSection extends StatelessWidget {
       children: [
         Text(
           title,
-          style: const TextStyle(
-            color: AppColors.ink,
+          style: TextStyle(
+            color: context.colors.ink,
             fontSize: 16,
             fontWeight: FontWeight.w600,
           ),
@@ -526,8 +533,8 @@ class _AssetSection extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          color: AppColors.inkSoft,
+                        style: TextStyle(
+                          color: context.colors.inkSoft,
                           fontSize: 11,
                         ),
                       ),

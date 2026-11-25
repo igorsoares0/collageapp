@@ -186,7 +186,7 @@ class _ExportScreenState extends State<ExportScreen> {
                         onPressed: () => Navigator.of(context).maybePop(),
                       )
                     else
-                      Eyebrow('$w × $h · PNG', color: AppColors.inkSoft),
+                      Eyebrow('$w × $h · PNG', color: context.colors.inkSoft),
                   ],
                 ),
               ),
@@ -239,7 +239,7 @@ class _ExportScreenState extends State<ExportScreen> {
                         width: frameW,
                         height: frameW / _slideAspect,
                         child: ColoredBox(
-                          color: AppColors.paperDeep,
+                          color: context.colors.paperDeep,
                           child: i < done ? _Develop(png: _slides[i]) : null,
                         ),
                       ),
@@ -269,7 +269,7 @@ class _ExportScreenState extends State<ExportScreen> {
             const Spacer(),
             Text(
               'Rendering at full size',
-              style: AppType.sans(14, color: AppColors.inkSoft),
+              style: AppType.sans(14, color: context.colors.inkSoft),
             ),
           ],
         ),
@@ -279,7 +279,7 @@ class _ExportScreenState extends State<ExportScreen> {
         Text(
           'Keep the app open — this takes a few seconds.',
           textAlign: TextAlign.center,
-          style: AppType.sans(13.5, color: AppColors.inkSoft),
+          style: AppType.sans(13.5, color: context.colors.inkSoft),
         ),
       ],
     );
@@ -331,7 +331,7 @@ class _ExportScreenState extends State<ExportScreen> {
                 _count == 1
                     ? 'Full size, ready to post'
                     : 'Swipe to check each slide',
-                style: AppType.sans(14, color: AppColors.inkSoft),
+                style: AppType.sans(14, color: context.colors.inkSoft),
               ),
             ),
             ValueListenableBuilder<int>(
@@ -346,7 +346,7 @@ class _ExportScreenState extends State<ExportScreen> {
                     TextSpan(text: ' / ${twoDigits(_count)}'),
                   ],
                 ),
-                style: AppType.sans(14, color: AppColors.inkSoft),
+                style: AppType.sans(14, color: context.colors.inkSoft),
               ),
             ),
           ],
@@ -378,7 +378,7 @@ class _ExportScreenState extends State<ExportScreen> {
               ? 'Your project is saved — find it again in Projects.'
               : 'Full-size PNGs, one per slide.',
           textAlign: TextAlign.center,
-          style: AppType.sans(13.5, color: AppColors.inkSoft),
+          style: AppType.sans(13.5, color: context.colors.inkSoft),
         ),
       ],
     );
@@ -398,7 +398,7 @@ class _ExportScreenState extends State<ExportScreen> {
         const SizedBox(height: 16),
         Text(
           'Export failed: $_error',
-          style: AppType.body.copyWith(color: AppColors.inkSoft),
+          style: AppType.body.copyWith(color: context.colors.inkSoft),
         ),
         const Spacer(),
         SecondaryButton(
@@ -446,18 +446,18 @@ class _Progress extends StatelessWidget {
       height: 3,
       child: Stack(
         children: [
-          const Positioned(
+          Positioned(
             left: 0,
             right: 0,
             bottom: 1,
-            child: Hairline(color: AppColors.rule),
+            child: Hairline(color: context.colors.rule),
           ),
           AnimatedFractionallySizedBox(
             duration: MediaQuery.disableAnimationsOf(context)
                 ? Duration.zero
                 : const Duration(milliseconds: 250),
             widthFactor: value.clamp(0, 1),
-            child: Container(height: 3, color: AppColors.ink),
+            child: Container(height: 3, color: context.colors.ink),
           ),
         ],
       ),

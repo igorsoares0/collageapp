@@ -24,6 +24,7 @@ class TemplateSummary {
   final String aspectRatio;
   final String? category;
   final bool premium;
+
   /// Whether the designer published this template to the app. Absent in
   /// responses from a server predating the flag → treated as published, so an
   /// older backend keeps showing everything instead of hiding the catalog.

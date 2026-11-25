@@ -83,13 +83,13 @@ class _LabeledSlider extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 20),
       child: Row(
         children: [
-          Icon(icon, size: 22, weight: 200, color: AppColors.inkSoft),
+          Icon(icon, size: 22, weight: 200, color: context.colors.inkSoft),
           const SizedBox(width: 12),
           Expanded(
             child: Slider(
               value: value,
               max: max <= 0 ? 1 : max,
-              activeColor: AppColors.ink,
+              activeColor: context.colors.ink,
               onChanged: max <= 0 ? null : onChanged,
             ),
           ),

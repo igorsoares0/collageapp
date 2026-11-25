@@ -32,8 +32,8 @@ Future<void> showColorPickerSheet({
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
-    backgroundColor: AppColors.paper,
-    barrierColor: AppColors.scrim,
+    backgroundColor: context.colors.paper,
+    barrierColor: context.colors.scrim,
     builder: (_) =>
         _ColorPickerSheet(initial: initialColor, onChanged: onChanged),
   );
@@ -67,7 +67,7 @@ class ColorTrigger extends StatelessWidget {
             padding: const EdgeInsets.all(2),
             decoration: BoxDecoration(
               border: Border.all(
-                color: selected ? AppColors.ink : Colors.transparent,
+                color: selected ? context.colors.ink : Colors.transparent,
               ),
             ),
             child: Container(
@@ -83,7 +83,7 @@ class ColorTrigger extends StatelessWidget {
                   height: 16,
                   decoration: BoxDecoration(
                     color: color,
-                    border: Border.all(color: AppColors.paper, width: 2),
+                    border: Border.all(color: context.colors.paper, width: 2),
                   ),
                   child: Icon(
                     Symbols.colorize,
@@ -196,7 +196,7 @@ class _ColorPickerSheetState extends State<_ColorPickerSheet> {
                   height: 44,
                   decoration: BoxDecoration(
                     color: color,
-                    border: Border.all(color: AppColors.ink),
+                    border: Border.all(color: context.colors.ink),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -222,7 +222,7 @@ class _ColorPickerSheetState extends State<_ColorPickerSheet> {
       focusNode: _hexFocus,
       textCapitalization: TextCapitalization.characters,
       style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-        fontFeatures: const [FontFeature.tabularFigures()],
+        fontFeatures: [const FontFeature.tabularFigures()],
         letterSpacing: 1,
       ),
       inputFormatters: [
@@ -233,18 +233,18 @@ class _ColorPickerSheetState extends State<_ColorPickerSheet> {
         prefixText: _hexController.text.startsWith('#') ? null : '#',
         isDense: true,
         filled: true,
-        fillColor: AppColors.paperDeep,
-        border: const OutlineInputBorder(
+        fillColor: context.colors.paperDeep,
+        border: OutlineInputBorder(
           borderRadius: BorderRadius.zero,
-          borderSide: BorderSide(color: AppColors.rule),
+          borderSide: BorderSide(color: context.colors.rule),
         ),
-        enabledBorder: const OutlineInputBorder(
+        enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.zero,
-          borderSide: BorderSide(color: AppColors.rule),
+          borderSide: BorderSide(color: context.colors.rule),
         ),
-        focusedBorder: const OutlineInputBorder(
+        focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.zero,
-          borderSide: BorderSide(color: AppColors.ink),
+          borderSide: BorderSide(color: context.colors.ink),
         ),
       ),
       onSubmitted: _onHexSubmitted,
@@ -256,7 +256,7 @@ class _ColorPickerSheetState extends State<_ColorPickerSheet> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Eyebrow(label, size: 11, color: AppColors.inkSoft),
+        Eyebrow(label, size: 11, color: context.colors.inkSoft),
         const SizedBox(height: 8),
         SizedBox(
           height: 34,
@@ -275,7 +275,9 @@ class _ColorPickerSheetState extends State<_ColorPickerSheet> {
                   decoration: BoxDecoration(
                     color: c,
                     border: Border.all(
-                      color: isCurrent ? AppColors.ink : AppColors.rule,
+                      color: isCurrent
+                          ? context.colors.ink
+                          : context.colors.rule,
                       width: isCurrent ? 2 : 1,
                     ),
                   ),

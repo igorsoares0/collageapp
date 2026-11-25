@@ -111,7 +111,7 @@ class _PaywallScreenState extends State<PaywallScreen> {
           future: _packages,
           builder: (context, snapshot) {
             final loading = snapshot.connectionState != ConnectionState.done;
-            final packages = snapshot.data ?? const <Package>[];
+            final packages = snapshot.data ?? <Package>[];
             return ListView(
               padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
               children: [
@@ -128,7 +128,7 @@ class _PaywallScreenState extends State<PaywallScreen> {
                   const SizedBox(height: 36),
                 ] else
                   const SizedBox(height: 12),
-                const Eyebrow('Layer Pro', color: AppColors.rouge),
+                Eyebrow('Layer Pro', color: context.colors.rouge),
                 const SizedBox(height: 8),
                 SerifHeadline(
                   roman: 'The whole ',
@@ -158,7 +158,9 @@ class _PaywallScreenState extends State<PaywallScreen> {
                     child: Text(
                       'Plans are unavailable right now. Check your '
                       'connection and try again.',
-                      style: AppType.body.copyWith(color: AppColors.inkSoft),
+                      style: AppType.body.copyWith(
+                        color: context.colors.inkSoft,
+                      ),
                     ),
                   )
                 else
@@ -226,14 +228,14 @@ class _PaywallScreenState extends State<PaywallScreen> {
       PrimaryButton(
         label: 'Continue',
         labelWidget: _busy
-            ? const Align(
+            ? Align(
                 alignment: Alignment.centerLeft,
                 child: SizedBox(
                   width: 18,
                   height: 18,
                   child: CircularProgressIndicator(
                     strokeWidth: 1.5,
-                    color: AppColors.inkSoft,
+                    color: context.colors.inkSoft,
                   ),
                 ),
               )
@@ -256,7 +258,7 @@ class _PaywallScreenState extends State<PaywallScreen> {
             child: Text(
               'Auto-renews. Cancel anytime.',
               textAlign: TextAlign.end,
-              style: AppType.sans(13, color: AppColors.inkSoft),
+              style: AppType.sans(13, color: context.colors.inkSoft),
             ),
           ),
         ],
@@ -389,9 +391,9 @@ class _PlanRow extends StatelessWidget {
               : const Duration(milliseconds: 150),
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
           decoration: BoxDecoration(
-            color: selected ? AppColors.paperDeep : Colors.transparent,
+            color: selected ? context.colors.paperDeep : Colors.transparent,
             border: Border.all(
-              color: selected ? AppColors.ink : AppColors.rule,
+              color: selected ? context.colors.ink : context.colors.rule,
             ),
           ),
           child: Row(
@@ -402,11 +404,13 @@ class _PlanRow extends StatelessWidget {
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
                   border: Border.all(
-                    color: selected ? AppColors.ink : AppColors.inkSoft,
+                    color: selected
+                        ? context.colors.ink
+                        : context.colors.inkSoft,
                   ),
                 ),
                 child: selected
-                    ? Container(width: 8, height: 8, color: AppColors.ink)
+                    ? Container(width: 8, height: 8, color: context.colors.ink)
                     : null,
               ),
               const SizedBox(width: 16),
@@ -421,7 +425,7 @@ class _PlanRow extends StatelessWidget {
                     const SizedBox(height: 2),
                     Text(
                       price,
-                      style: AppType.sans(12.5, color: AppColors.inkSoft),
+                      style: AppType.sans(12.5, color: context.colors.inkSoft),
                     ),
                   ],
                 ),
@@ -432,7 +436,7 @@ class _PlanRow extends StatelessWidget {
                   style: AppType.serif(
                     18,
                     italic: true,
-                    color: AppColors.rouge,
+                    color: context.colors.rouge,
                   ),
                 ),
             ],

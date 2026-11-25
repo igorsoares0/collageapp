@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400;1,6..72,500&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+</helmet>
+<div style="position:relative;width:100%;height:100%;overflow:hidden;container-type:inline-size;background:{{ bg }};color:{{ fg }};font-family:'Instrument Sans',sans-serif">
+<sc-if value="{{ isCover }}" hint-placeholder-val="{{ false }}">
+<img src="{{ img }}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;filter:sepia(.2) saturate(.8) contrast(1.04)">
+<div style="position:absolute;inset:0;background:linear-gradient(180deg,rgba(20,16,12,.25) 0%,rgba(20,16,12,0) 30%,rgba(20,16,12,0) 55%,rgba(20,16,12,.55) 100%)"></div>
+<div style="position:absolute;top:6cqw;left:6cqw;right:6cqw;display:flex;justify-content:space-between;font-size:2.6cqw;letter-spacing:.2em;text-transform:uppercase;font-weight:600;color:#F6F1E8"><span>N° {{ num }}</span><span>{{ text }}</span></div>
+<div style="position:absolute;left:6cqw;right:10cqw;bottom:7cqw;font-family:'Newsreader',serif;font-style:italic;font-size:13cqw;line-height:.95;letter-spacing:-.02em;color:#F6F1E8;text-wrap:balance">{{ title }}</div>
+</sc-if>
+<sc-if value="{{ isSplit }}" hint-placeholder-val="{{ false }}">
+<div style="position:absolute;inset:0;padding:7cqw;display:flex;flex-direction:column;gap:5cqw;box-sizing:border-box">
+<img src="{{ img }}" style="flex:1;min-height:0;width:100%;object-fit:cover;filter:sepia(.2) saturate(.8) contrast(1.04)">
+<div style="display:flex;justify-content:space-between;align-items:flex-end;gap:4cqw">
+<div style="font-family:'Newsreader',serif;font-size:8cqw;line-height:1;letter-spacing:-.01em;text-wrap:balance">{{ title }}</div>
+<div style="font-size:2.4cqw;letter-spacing:.2em;text-transform:uppercase;font-weight:600;white-space:nowrap;padding-bottom:1cqw">{{ num }}</div>
+</div>
+<div style="font-size:3cqw;line-height:1.45;max-width:70cqw;opacity:.85">{{ text }}</div>
+</div>
+</sc-if>
+<sc-if value="{{ isDuo }}" hint-placeholder-val="{{ false }}">
+<img src="{{ img }}" style="position:absolute;left:7cqw;top:8%;width:54cqw;height:56%;object-fit:cover;filter:sepia(.2) saturate(.8) contrast(1.04)">
+<img src="{{ img2 }}" style="position:absolute;right:7cqw;top:42%;width:38cqw;height:38%;object-fit:cover;filter:sepia(.2) saturate(.8) contrast(1.04)">
+<div style="position:absolute;right:7cqw;top:8%;font-size:2.4cqw;letter-spacing:.2em;text-transform:uppercase;font-weight:600">{{ num }}</div>
+<div style="position:absolute;left:7cqw;bottom:7cqw;right:50cqw;font-family:'Newsreader',serif;font-style:italic;font-size:7cqw;line-height:1">{{ title }}</div>
+<div style="position:absolute;right:7cqw;bottom:7cqw;width:38cqw;font-size:2.6cqw;line-height:1.45;opacity:.85">{{ text }}</div>
+</sc-if>
+<sc-if value="{{ isQuote }}" hint-placeholder-val="{{ false }}">
+<div style="position:absolute;inset:0;padding:9cqw;display:flex;flex-direction:column;justify-content:space-between;box-sizing:border-box">
+<div style="font-size:2.4cqw;letter-spacing:.2em;text-transform:uppercase;font-weight:600">{{ num }}</div>
+<div style="font-family:'Newsreader',serif;font-size:9.5cqw;line-height:1.02;letter-spacing:-.015em;text-wrap:balance">“{{ title }}”</div>
+<div style="display:flex;align-items:center;gap:3cqw;font-size:2.8cqw"><div style="width:10cqw;height:1px;background:currentColor"></div>{{ text }}</div>
+</div>
+</sc-if>
+<sc-if value="{{ isType }}" hint-placeholder-val="{{ false }}">
+<div style="position:absolute;inset:0;padding:8cqw;display:flex;flex-direction:column;box-sizing:border-box">
+<div style="font-family:'Newsreader',serif;font-style:italic;font-size:36cqw;line-height:.8;letter-spacing:-.04em">{{ num }}</div>
+<div style="flex:1"></div>
+<div style="height:1px;background:currentColor;opacity:.5;margin-bottom:5cqw"></div>
+<div style="font-family:'Newsreader',serif;font-size:8.5cqw;line-height:1;letter-spacing:-.01em;text-wrap:balance;margin-bottom:4cqw">{{ title }}</div>
+<div style="font-size:3cqw;line-height:1.45;max-width:72cqw;opacity:.85">{{ text }}</div>
+</div>
+</sc-if>
+<sc-if value="{{ isFull }}" hint-placeholder-val="{{ true }}">
+<img src="{{ img }}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;filter:sepia(.2) saturate(.8) contrast(1.04)">
+<div style="position:absolute;left:6cqw;bottom:6cqw;right:6cqw;display:flex;justify-content:space-between;font-size:2.4cqw;letter-spacing:.2em;text-transform:uppercase;font-weight:600;color:#F6F1E8"><span>{{ title }}</span><span>{{ num }}</span></div>
+</sc-if>
+<sc-if value="{{ isEmpty }}" hint-placeholder-val="{{ false }}">
+<div style="position:absolute;inset:7cqw;border:1px dashed currentColor;opacity:.45;display:flex;align-items:center;justify-content:center;font-size:3cqw;letter-spacing:.2em;text-transform:uppercase;font-weight:600">{{ title }}</div>
+</sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:320,&quot;height&quot;:400},&quot;kind&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;cover&quot;,&quot;split&quot;,&quot;duo&quot;,&quot;quote&quot;,&quot;type&quot;,&quot;full&quot;,&quot;empty&quot;],&quot;default&quot;:&quot;cover&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;tone&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;paper&quot;,&quot;ink&quot;,&quot;rouge&quot;,&quot;sand&quot;,&quot;olive&quot;,&quot;table&quot;],&quot;default&quot;:&quot;paper&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;img&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;https://picsum.photos/id/225/800/1000&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;img2&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;title&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;Slow Mornings&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;text&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;Vol. 01&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;num&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;01&quot;,&quot;tsType&quot;:&quot;string&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    const p = this.props;
+    const kind = p.kind ?? 'full';
+    const tones = {
+      paper: ['#F3EEE5', '#1E1B17'], ink: ['#1E1B17', '#F3EEE5'], rouge: ['#7B2D26', '#F3EEE5'],
+      sand: ['#E3D6C3', '#1E1B17'], olive: ['#4A4A35', '#EFE9DC'], table: ['#E4DCCF', '#5E564C']
+    };
+    const [bg, fg] = tones[p.tone ?? 'paper'] || tones.paper;
+    return {
+      bg, fg, img: p.img ?? '', img2: p.img2 ?? p.img ?? '', title: p.title ?? '', text: p.text ?? '', num: p.num ?? '',
+      isCover: kind === 'cover', isSplit: kind === 'split', isDuo: kind === 'duo', isQuote: kind === 'quote',
+      isType: kind === 'type', isFull: kind === 'full', isEmpty: kind === 'empty'
+    };
+  }
+}
+</script>
+</body>
+</html>

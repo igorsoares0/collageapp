@@ -69,10 +69,9 @@ MigrationResult migrateToV4(Template template, SlotContent content) {
     // user's additions, in the order the user last left them.
     final stack = [...panel.layers, ...content.addedLayersFor(panel.id)];
     final byId = {for (final l in stack) l.id: l};
-    final ordered = content.orderedLayerIds(
-      panel.id,
-      [for (final l in stack) l.id],
-    );
+    final ordered = content.orderedLayerIds(panel.id, [
+      for (final l in stack) l.id,
+    ]);
 
     for (final id in ordered) {
       final layer = byId[id];

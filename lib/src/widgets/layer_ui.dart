@@ -11,23 +11,32 @@ import '../theme.dart';
 /// A section label: Instrument Sans 600, +0.16em, UPPERCASE.
 class Eyebrow extends StatelessWidget {
   final String text;
-  final Color color;
+
+  /// Defaults to the edition's ink.
+  final Color? color;
   final double size;
   final TextAlign? textAlign;
+
+  /// One line with an ellipsis when set — for headers with a fixed height.
+  final bool singleLine;
 
   const Eyebrow(
     this.text, {
     super.key,
-    this.color = AppColors.ink,
+    this.color,
     this.size = 11.5,
     this.textAlign,
+    this.singleLine = false,
   });
 
   @override
   Widget build(BuildContext context) => Text(
     text.toUpperCase(),
     textAlign: textAlign,
-    style: AppType.eyebrow(size: size, color: color),
+    maxLines: singleLine ? 1 : null,
+    overflow: singleLine ? TextOverflow.ellipsis : null,
+    softWrap: !singleLine,
+    style: AppType.eyebrow(size: size, color: color ?? context.colors.ink),
   );
 }
 
@@ -75,7 +84,10 @@ class PrimaryButton extends StatelessWidget {
   final IconData? icon;
   final VoidCallback? onPressed;
   final double height;
-  final Color background;
+
+  /// Slab colour; defaults to the edition's ink (rouge when destructive).
+  final Color? background;
+  final bool destructive;
 
   const PrimaryButton({
     super.key,
@@ -84,8 +96,8 @@ class PrimaryButton extends StatelessWidget {
     this.icon = Symbols.arrow_forward,
     required this.onPressed,
     this.height = 54,
-    this.background = AppColors.ink,
-  });
+    this.background,
+  }) : destructive = false;
 
   /// The destructive confirm — same slab in rouge.
   const PrimaryButton.destructive({
@@ -95,7 +107,8 @@ class PrimaryButton extends StatelessWidget {
     this.height = 54,
   }) : labelWidget = null,
        icon = null,
-       background = AppColors.rouge;
+       background = null,
+       destructive = true;
 
   @override
   Widget build(BuildContext context) {
@@ -105,14 +118,16 @@ class PrimaryButton extends StatelessWidget {
       child: FilledButton(
         onPressed: onPressed,
         style: FilledButton.styleFrom(
-          backgroundColor: background,
-          foregroundColor: AppColors.onInk,
-          disabledBackgroundColor: AppColors.rule,
-          disabledForegroundColor: AppColors.inkSoft,
+          backgroundColor:
+              background ??
+              (destructive ? context.colors.rouge : context.colors.ink),
+          foregroundColor: context.colors.onInk,
+          disabledBackgroundColor: context.colors.rule,
+          disabledForegroundColor: context.colors.inkSoft,
           minimumSize: Size(0, height),
           padding: const EdgeInsets.symmetric(horizontal: 20),
           textStyle: AppType.label,
-        ).copyWith(overlayColor: _pressOverlay(AppColors.paper)),
+        ).copyWith(overlayColor: _pressOverlay(context.colors.paper)),
         child: _ButtonRow(
           label: labelWidget ?? Text(label),
           icon: icon,
@@ -146,15 +161,15 @@ class SecondaryButton extends StatelessWidget {
       child: OutlinedButton(
         onPressed: onPressed,
         style: OutlinedButton.styleFrom(
-          foregroundColor: AppColors.ink,
-          disabledForegroundColor: AppColors.inkSoft,
+          foregroundColor: context.colors.ink,
+          disabledForegroundColor: context.colors.inkSoft,
           side: BorderSide(
-            color: onPressed == null ? AppColors.rule : AppColors.ink,
+            color: onPressed == null ? context.colors.rule : context.colors.ink,
           ),
           minimumSize: Size(0, height),
           padding: const EdgeInsets.symmetric(horizontal: 20),
           textStyle: AppType.label,
-        ).copyWith(overlayColor: _pressOverlay(AppColors.ink)),
+        ).copyWith(overlayColor: _pressOverlay(context.colors.ink)),
         child: _ButtonRow(
           label: Text(label),
           icon: icon,
@@ -183,16 +198,16 @@ class CompactButton extends StatelessWidget {
     return FilledButton(
       onPressed: onPressed,
       style: FilledButton.styleFrom(
-        backgroundColor: AppColors.ink,
-        foregroundColor: AppColors.onInk,
-        disabledBackgroundColor: AppColors.rule,
-        disabledForegroundColor: AppColors.inkSoft,
+        backgroundColor: context.colors.ink,
+        foregroundColor: context.colors.onInk,
+        disabledBackgroundColor: context.colors.rule,
+        disabledForegroundColor: context.colors.inkSoft,
         minimumSize: const Size(64, 38),
         fixedSize: const Size.fromHeight(38),
         padding: const EdgeInsets.symmetric(horizontal: 16),
         tapTargetSize: MaterialTapTargetSize.padded,
         textStyle: AppType.labelS,
-      ).copyWith(overlayColor: _pressOverlay(AppColors.paper)),
+      ).copyWith(overlayColor: _pressOverlay(context.colors.paper)),
       child: child ?? Text(label),
     );
   }
@@ -231,19 +246,23 @@ class TextLink extends StatelessWidget {
   final String label;
   final VoidCallback? onTap;
   final double size;
-  final Color color;
+
+  /// Defaults to the edition's ink.
+  final Color? color;
 
   const TextLink(
     this.label, {
     super.key,
     required this.onTap,
     this.size = 14,
-    this.color = AppColors.ink,
+    this.color,
   });
 
   @override
   Widget build(BuildContext context) {
-    final c = onTap == null ? AppColors.stone : color;
+    final c = onTap == null
+        ? context.colors.stone
+        : (color ?? context.colors.ink);
     return Semantics(
       button: true,
       child: GestureDetector(
@@ -304,7 +323,7 @@ class Ticks extends StatelessWidget {
               curve: Curves.easeOutCubic,
               width: width,
               height: i == active ? 3 : 1,
-              color: i == active ? AppColors.ink : AppColors.rule,
+              color: i == active ? context.colors.ink : context.colors.rule,
             ),
           ],
         ],
@@ -330,11 +349,11 @@ class PageEdges extends StatelessWidget {
     Widget sliver(double d) => Positioned.fill(
       child: Transform.translate(
         offset: Offset(d, -d),
-        child: const DecoratedBox(
+        child: DecoratedBox(
           decoration: BoxDecoration(
-            color: AppColors.paper,
+            color: context.colors.paper,
             border: Border.fromBorderSide(
-              BorderSide(color: AppColors.ruleStrong),
+              BorderSide(color: context.colors.ruleStrong),
             ),
           ),
         ),
@@ -377,8 +396,12 @@ class ProMark extends StatelessWidget {
               serif ? 'Pro' : 'PRO',
               key: const ValueKey('pro-mark'),
               style: serif
-                  ? AppType.serif(size, italic: true, color: AppColors.rouge)
-                  : AppType.eyebrow(size: size, color: AppColors.rouge),
+                  ? AppType.serif(
+                      size,
+                      italic: true,
+                      color: context.colors.rouge,
+                    )
+                  : AppType.eyebrow(size: size, color: context.colors.rouge),
             )
           : const SizedBox.shrink(key: ValueKey('no-pro-mark')),
     );
@@ -387,14 +410,15 @@ class ProMark extends StatelessWidget {
 
 /// A 1px hairline, ink or rule.
 class Hairline extends StatelessWidget {
-  final Color color;
+  /// Defaults to the edition's rule.
+  final Color? color;
   final double thickness;
 
-  const Hairline({super.key, this.color = AppColors.rule, this.thickness = 1});
+  const Hairline({super.key, this.color, this.thickness = 1});
 
   @override
   Widget build(BuildContext context) =>
-      Container(height: thickness, color: color);
+      Container(height: thickness, color: color ?? context.colors.rule);
 }
 
 /// Push-screen top bar: back (24, padding 10) left, a centred eyebrow, an
@@ -419,7 +443,7 @@ class LayerTopBar extends StatelessWidget implements PreferredSizeWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: AppColors.paper,
+      color: context.colors.paper,
       child: SafeArea(
         bottom: false,
         child: SizedBox(
@@ -430,7 +454,9 @@ class LayerTopBar extends StatelessWidget implements PreferredSizeWidget {
               leading ??
                   BackButton(
                     onPressed: onBack,
-                    style: IconButton.styleFrom(foregroundColor: AppColors.ink),
+                    style: IconButton.styleFrom(
+                      foregroundColor: context.colors.ink,
+                    ),
                   ),
               Expanded(
                 child: eyebrow == null
@@ -462,8 +488,8 @@ Future<T?> showLayerSheet<T>({
   return showModalBottomSheet<T>(
     context: context,
     isScrollControlled: isScrollControlled,
-    backgroundColor: deep ? AppColors.paperDeep : AppColors.paper,
-    barrierColor: AppColors.scrim,
+    backgroundColor: deep ? context.colors.paperDeep : context.colors.paper,
+    barrierColor: context.colors.scrim,
     sheetAnimationStyle: MediaQuery.disableAnimationsOf(context)
         ? AnimationStyle.noAnimation
         : const AnimationStyle(
@@ -520,9 +546,9 @@ class SheetCloseButton extends StatelessWidget {
           minHeight: AppSpace.minTarget,
           minWidth: AppSpace.minTarget,
         ),
-        child: const Center(
+        child: Center(
           widthFactor: 1,
-          child: Eyebrow('Close', size: 11, color: AppColors.inkSoft),
+          child: Eyebrow('Close', size: 11, color: context.colors.inkSoft),
         ),
       ),
     ),
@@ -539,7 +565,7 @@ void showLayerMessage(BuildContext context, String message) {
       padding: const EdgeInsets.fromLTRB(16, 4, 4, 4),
       action: SnackBarAction(
         label: 'OK',
-        textColor: AppColors.rule,
+        textColor: context.colors.rule,
         onPressed: () {},
       ),
     ),
@@ -587,7 +613,8 @@ String twoDigits(int n) => n.toString().padLeft(2, '0');
 /// A box with a dashed 1px border — empty pages, "+ Slide", empty photo
 /// slots. [inset] draws the dashes that far inside the box.
 class DashedBox extends StatelessWidget {
-  final Color color;
+  /// Defaults to the edition's inkSoft.
+  final Color? color;
   final double dash;
   final double gap;
   final double inset;
@@ -596,7 +623,7 @@ class DashedBox extends StatelessWidget {
 
   const DashedBox({
     super.key,
-    this.color = AppColors.inkSoft,
+    this.color,
     this.dash = 4,
     this.gap = 3,
     this.inset = 0,
@@ -607,7 +634,7 @@ class DashedBox extends StatelessWidget {
   @override
   Widget build(BuildContext context) => CustomPaint(
     painter: _DashedRectPainter(
-      color: color,
+      color: color ?? context.colors.inkSoft,
       dash: dash,
       gap: gap,
       inset: inset,
@@ -672,10 +699,13 @@ class LayerSpinner extends StatelessWidget {
   const LayerSpinner({super.key});
 
   @override
-  Widget build(BuildContext context) => const SizedBox(
+  Widget build(BuildContext context) => SizedBox(
     width: 22,
     height: 22,
-    child: CircularProgressIndicator(strokeWidth: 1.5, color: AppColors.ink),
+    child: CircularProgressIndicator(
+      strokeWidth: 1.5,
+      color: context.colors.ink,
+    ),
   );
 }
 

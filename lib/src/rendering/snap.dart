@@ -98,8 +98,16 @@ class SnapTargets {
       ? [center.dy - halfH, center.dy, center.dy + halfH]
       : [center.dy];
 
-  final x = snapAxis(points: pointsX, targets: targets.xs, threshold: threshold);
-  final y = snapAxis(points: pointsY, targets: targets.ys, threshold: threshold);
+  final x = snapAxis(
+    points: pointsX,
+    targets: targets.xs,
+    threshold: threshold,
+  );
+  final y = snapAxis(
+    points: pointsY,
+    targets: targets.ys,
+    threshold: threshold,
+  );
 
   return (
     offset: raw + Offset(x.shift, y.shift),

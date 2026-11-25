@@ -123,7 +123,7 @@ class TextStyleBar extends StatelessWidget {
     // Keep the active font selectable even if it's outside the curated list.
     final fonts = {currentFont, ...kFontChoices}.toList();
     return Material(
-      color: AppColors.paper,
+      color: context.colors.paper,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -135,7 +135,7 @@ class TextStyleBar extends StatelessWidget {
             onDone: onDone,
           ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
             child: SizedBox(
               height: 40,
               child: Row(
@@ -153,8 +153,8 @@ class TextStyleBar extends StatelessWidget {
                       value: scale.clamp(0.25, 3),
                       min: 0.25,
                       max: 3,
-                      activeColor: AppColors.ink,
-                      inactiveColor: AppColors.ink,
+                      activeColor: context.colors.ink,
+                      inactiveColor: context.colors.ink,
                       onChanged: onScale,
                     ),
                   ),
@@ -164,7 +164,7 @@ class TextStyleBar extends StatelessWidget {
             ),
           ),
           SizedBox(
-            height: 64,
+            height: 60,
             child: ListView(
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 14),
@@ -202,7 +202,7 @@ class _ColorRow extends StatelessWidget {
       (c) => c.toARGB32() == currentColor.toARGB32(),
     );
     return SizedBox(
-      height: 48,
+      height: 46,
       child: ListView(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -248,12 +248,12 @@ class _AlignSegment extends StatelessWidget {
           child: Container(
             width: 40,
             height: 38,
-            color: selected ? AppColors.ink : Colors.transparent,
+            color: selected ? context.colors.ink : Colors.transparent,
             child: Icon(
               icon,
               size: 20,
               weight: selected ? 300 : 200,
-              color: selected ? AppColors.onInk : AppColors.ink,
+              color: selected ? context.colors.onInk : context.colors.ink,
             ),
           ),
         ),
@@ -261,14 +261,14 @@ class _AlignSegment extends StatelessWidget {
     }
 
     return Container(
-      decoration: BoxDecoration(border: Border.all(color: AppColors.ink)),
+      decoration: BoxDecoration(border: Border.all(color: context.colors.ink)),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           cell('left', Symbols.format_align_left, 'Align left'),
-          Container(width: 1, height: 38, color: AppColors.ink),
+          Container(width: 1, height: 38, color: context.colors.ink),
           cell('center', Symbols.format_align_center, 'Align centre'),
-          Container(width: 1, height: 38, color: AppColors.ink),
+          Container(width: 1, height: 38, color: context.colors.ink),
           cell('right', Symbols.format_align_right, 'Align right'),
         ],
       ),
@@ -295,14 +295,14 @@ class _BoldToggle extends StatelessWidget {
           height: 40,
           alignment: Alignment.center,
           decoration: BoxDecoration(
-            color: selected ? AppColors.ink : Colors.transparent,
-            border: Border.all(color: AppColors.ink),
+            color: selected ? context.colors.ink : Colors.transparent,
+            border: Border.all(color: context.colors.ink),
           ),
           child: Text(
             'B',
             style: AppType.serif(
               20,
-              color: selected ? AppColors.onInk : AppColors.ink,
+              color: selected ? context.colors.onInk : context.colors.ink,
             ),
           ),
         ),
@@ -363,7 +363,7 @@ class _FontSpecimen extends StatelessWidget {
     // drag, and 20 uncached GoogleFonts.getFont calls per frame drag it down.
     final specimen = googleFontsResolver(
       font,
-      const TextStyle(color: AppColors.ink, fontSize: 24, height: 1.1),
+      TextStyle(color: context.colors.ink, fontSize: 24, height: 1.1),
     );
     return Semantics(
       button: true,
@@ -380,7 +380,7 @@ class _FontSpecimen extends StatelessWidget {
           decoration: BoxDecoration(
             border: Border(
               bottom: BorderSide(
-                color: selected ? AppColors.ink : Colors.transparent,
+                color: selected ? context.colors.ink : Colors.transparent,
                 width: 2,
               ),
             ),
@@ -394,16 +394,16 @@ class _FontSpecimen extends StatelessWidget {
                   children: [
                     TextSpan(text: font.split(' ').first),
                     if (locked)
-                      const TextSpan(
+                      TextSpan(
                         text: ' Pro',
-                        style: TextStyle(color: AppColors.rouge),
+                        style: TextStyle(color: context.colors.rouge),
                       ),
                   ],
                 ),
                 maxLines: 1,
                 overflow: TextOverflow.fade,
                 softWrap: false,
-                style: AppType.sans(11, color: AppColors.inkSoft),
+                style: AppType.sans(11, color: context.colors.inkSoft),
               ),
             ],
           ),
@@ -437,7 +437,7 @@ class _ColorChip extends StatelessWidget {
           padding: const EdgeInsets.all(2),
           decoration: BoxDecoration(
             border: Border.all(
-              color: selected ? AppColors.ink : Colors.transparent,
+              color: selected ? context.colors.ink : Colors.transparent,
             ),
           ),
           child: Container(
@@ -445,7 +445,7 @@ class _ColorChip extends StatelessWidget {
             height: 28,
             decoration: BoxDecoration(
               color: color,
-              border: Border.all(color: AppColors.rule),
+              border: Border.all(color: context.colors.rule),
             ),
           ),
         ),

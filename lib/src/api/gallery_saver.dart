@@ -23,8 +23,7 @@ class GallerySaver {
       await _channel.invokeMethod<void>('saveImage', {
         'bytes': bytes,
         'name': name,
-        'dateTakenMillis':
-            (dateTaken ?? DateTime.now()).millisecondsSinceEpoch,
+        'dateTakenMillis': (dateTaken ?? DateTime.now()).millisecondsSinceEpoch,
       });
       return;
     }

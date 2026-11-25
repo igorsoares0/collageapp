@@ -797,6 +797,7 @@ class CanvasView extends StatelessWidget {
                 child: IgnorePointer(
                   child: CustomPaint(
                     painter: _CutGuidePainter(
+                      color: context.colors.inkSoft,
                       xs: [
                         for (var i = 1; i < document.slideCount; i++)
                           document.slideRect(i).left,
@@ -886,13 +887,18 @@ class SlideView extends StatelessWidget {
 class _CutGuidePainter extends CustomPainter {
   final List<double> xs;
   final double gutter;
+  final Color color;
 
-  const _CutGuidePainter({required this.xs, required this.gutter});
+  const _CutGuidePainter({
+    required this.xs,
+    required this.gutter,
+    required this.color,
+  });
 
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = AppColors.inkSoft
+      ..color = color
       ..strokeWidth = 3
       ..style = PaintingStyle.stroke;
     const dash = 14.0;
@@ -914,7 +920,7 @@ class _CutGuidePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_CutGuidePainter old) =>
-      !identical(old.xs, xs) || old.gutter != gutter;
+      !identical(old.xs, xs) || old.gutter != gutter || old.color != color;
 }
 
 class TemplateCanvas extends StatelessWidget {
@@ -1959,13 +1965,16 @@ class _SelectionChrome extends StatelessWidget {
           child: IgnorePointer(
             child: DecoratedBox(
               decoration: BoxDecoration(
-                border: Border.all(color: AppColors.paper, width: stroke),
+                border: Border.all(color: context.colors.paper, width: stroke),
               ),
               child: Padding(
                 padding: EdgeInsets.all(stroke),
                 child: DecoratedBox(
                   decoration: BoxDecoration(
-                    border: Border.all(color: AppColors.ink, width: stroke),
+                    border: Border.all(
+                      color: context.colors.ink,
+                      width: stroke,
+                    ),
                   ),
                 ),
               ),
@@ -1989,34 +1998,60 @@ class _SelectionChrome extends StatelessWidget {
                       top: pad + h,
                       width: stroke,
                       height: drop,
-                      child: const ColoredBox(color: AppColors.ink),
+                      child: ColoredBox(color: context.colors.ink),
                     ),
-                    _corner('tl', pad, pad),
-                    _corner('tr', pad + w, pad),
-                    _corner('bl', pad, pad + h),
-                    _corner('br', pad + w, pad + h),
+                    _corner(context.colors, 'tl', pad, pad),
+                    _corner(context.colors, 'tr', pad + w, pad),
+                    _corner(context.colors, 'bl', pad, pad + h),
+                    _corner(context.colors, 'br', pad + w, pad + h),
                     // Edge pills (single-axis stretch), gated by the same
                     // fit predicate as their hit zones — what you see is
                     // exactly what you can grab.
                     if (verticalPills && _edgePillsFit(w, scale)) ...[
-                      _pill('t', pad + w / 2, pad, horizontal: true),
-                      _pill('b', pad + w / 2, pad + h, horizontal: true),
+                      _pill(
+                        context.colors,
+                        't',
+                        pad + w / 2,
+                        pad,
+                        horizontal: true,
+                      ),
+                      _pill(
+                        context.colors,
+                        'b',
+                        pad + w / 2,
+                        pad + h,
+                        horizontal: true,
+                      ),
                     ],
                     if (_edgePillsFit(h, scale)) ...[
-                      _pill('l', pad, pad + h / 2, horizontal: false),
-                      _pill('r', pad + w, pad + h / 2, horizontal: false),
+                      _pill(
+                        context.colors,
+                        'l',
+                        pad,
+                        pad + h / 2,
+                        horizontal: false,
+                      ),
+                      _pill(
+                        context.colors,
+                        'r',
+                        pad + w,
+                        pad + h / 2,
+                        horizontal: false,
+                      ),
                     ],
                     _glyphHandle(
+                      context.colors,
                       'rotate',
                       Icons.rotate_right,
-                      AppColors.ink,
+                      context.colors.ink,
                       pad + w / 2,
                       pad + h + drop,
                     ),
                     _glyphHandle(
+                      context.colors,
                       'delete',
                       Icons.delete_outline,
-                      AppColors.rouge,
+                      context.colors.rouge,
                       pad + w / 2,
                       pad - rise,
                     ),
@@ -2036,6 +2071,7 @@ class _SelectionChrome extends StatelessWidget {
   /// by _SlotGestures' matching zone (_nearRotateZone / _nearDeleteZone), whose
   /// radius is [_kCornerReach] for both, independent of the drawn size.
   Widget _glyphHandle(
+    LayerColors colors,
     String key,
     IconData icon,
     Color color,
@@ -2051,8 +2087,8 @@ class _SelectionChrome extends StatelessWidget {
       child: Container(
         key: ValueKey('handle_$key'),
         decoration: BoxDecoration(
-          color: AppColors.paper,
-          border: Border.all(color: AppColors.ink, width: 3 / scale),
+          color: colors.paper,
+          border: Border.all(color: colors.ink, width: 3 / scale),
         ),
         // Two thirds of the square — the glyph grows with its button.
         child: Icon(icon, size: dot * 0.6, weight: 300, color: color),
@@ -2064,7 +2100,13 @@ class _SelectionChrome extends StatelessWidget {
   /// lying along its edge ([horizontal] on top/bottom, upright on the sides),
   /// visually matching the corner dots. Purely visual, like every handle —
   /// _SlotGestures' matching edge zone recognizes the drag.
-  Widget _pill(String key, double cx, double cy, {required bool horizontal}) {
+  Widget _pill(
+    LayerColors colors,
+    String key,
+    double cx,
+    double cy, {
+    required bool horizontal,
+  }) {
     final len = _kEdgePillLength / scale;
     final thick = _kEdgePillThickness / scale;
     final w = horizontal ? len : thick;
@@ -2077,8 +2119,8 @@ class _SelectionChrome extends StatelessWidget {
       child: Container(
         key: ValueKey('handle_edge_$key'),
         decoration: BoxDecoration(
-          color: AppColors.paper,
-          border: Border.all(color: AppColors.ink, width: 3 / scale),
+          color: colors.paper,
+          border: Border.all(color: colors.ink, width: 3 / scale),
         ),
       ),
     );
@@ -2086,7 +2128,7 @@ class _SelectionChrome extends StatelessWidget {
 
   /// One square corner handle centered at ([cx], [cy]) in the padded space.
   /// Drawn small (≈8px); the grab zone around it is much larger.
-  Widget _corner(String key, double cx, double cy) {
+  Widget _corner(LayerColors colors, String key, double cx, double cy) {
     final dot = _kCornerDot * 0.32 / scale;
     return Positioned(
       left: cx - dot / 2,
@@ -2096,8 +2138,8 @@ class _SelectionChrome extends StatelessWidget {
       child: Container(
         key: ValueKey('handle_$key'),
         decoration: BoxDecoration(
-          color: AppColors.paper,
-          border: Border.all(color: AppColors.ink, width: 3 / scale),
+          color: colors.paper,
+          border: Border.all(color: colors.ink, width: 3 / scale),
         ),
       ),
     );
@@ -2671,11 +2713,11 @@ class _SlotPlaceholder extends StatelessWidget {
     final hints = PhotoSlotHints.maybeOf(context);
     final number = hints?.numbers[slotId];
     final dark = hints?.dark.contains(slotId) ?? false;
-    final fill = dark ? AppColors.inkMuted : AppColors.paperDeep;
-    final ink = dark ? AppColors.paper : AppColors.ink;
+    final fill = dark ? context.colors.inkMuted : context.colors.paperDeep;
+    final ink = dark ? context.colors.paper : context.colors.ink;
     final dash = dark
-        ? AppColors.paper.withValues(alpha: .6)
-        : AppColors.inkSoft;
+        ? context.colors.paper.withValues(alpha: .6)
+        : context.colors.inkSoft;
     return CustomPaint(
       key: ValueKey('slot-placeholder-$slotId'),
       painter: _PlaceholderPainter(fill: fill, dash: dash),
@@ -2764,19 +2806,22 @@ class _PickIcon extends StatelessWidget {
   final String slotId;
   final VoidCallback onTap;
   final int? number;
-  final Color color;
+
+  /// Defaults to the edition's ink.
+  final Color? color;
   final bool transparent;
 
   const _PickIcon({
     required this.slotId,
     required this.onTap,
     this.number,
-    this.color = AppColors.ink,
+    this.color,
     this.transparent = false,
   });
 
   @override
   Widget build(BuildContext context) {
+    final color = this.color ?? context.colors.ink;
     return GestureDetector(
       key: ValueKey('pick-$slotId'),
       onTap: onTap,
@@ -2791,7 +2836,7 @@ class _PickIcon extends StatelessWidget {
           decoration: BoxDecoration(
             color: transparent
                 ? Colors.transparent
-                : AppColors.paper.withValues(alpha: .9),
+                : context.colors.paper.withValues(alpha: .9),
             border: Border.all(color: color, width: 3),
           ),
           child: number != null

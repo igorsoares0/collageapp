@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Dark paper (system dark mode). The in-app appearance choice is only
+         known once Flutter runs, so the splash follows the system setting. -->
+    <color name="layer_paper">#171512</color>
+</resources>

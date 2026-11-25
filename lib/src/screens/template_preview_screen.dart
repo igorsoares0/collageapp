@@ -51,7 +51,7 @@ class TemplatePreviewScreen extends StatefulWidget {
 
 class _TemplatePreviewScreenState extends State<TemplatePreviewScreen> {
   late Future<TemplateResult> _template;
-  List<AssetRecord> _catalog = const [];
+  List<AssetRecord> _catalog = [];
 
   /// Current page as a notifier: a page change repaints only the numeral,
   /// ticks and strip. A whole-screen setState here would rebuild every
@@ -195,7 +195,9 @@ class _TemplatePreviewScreenState extends State<TemplatePreviewScreen> {
                       Text(
                         "Couldn't load it. Check your connection and try "
                         'again.',
-                        style: AppType.body.copyWith(color: AppColors.inkSoft),
+                        style: AppType.body.copyWith(
+                          color: context.colors.inkSoft,
+                        ),
                       ),
                       const SizedBox(height: 24),
                       SecondaryButton(
@@ -251,7 +253,7 @@ class _TemplatePreviewScreenState extends State<TemplatePreviewScreen> {
                       '${ratioLabelOf(widget.summary.aspectRatio)} · '
                       '${slidesLabel(slides)}',
                       textAlign: TextAlign.end,
-                      style: AppType.sans(14, color: AppColors.inkSoft),
+                      style: AppType.sans(14, color: context.colors.inkSoft),
                     ),
                     if (photos > 0) ...[
                       const SizedBox(height: 2),
@@ -347,7 +349,10 @@ class _TemplatePreviewScreenState extends State<TemplatePreviewScreen> {
                       ),
                       TextSpan(
                         text: '/${twoDigits(slides)}',
-                        style: AppType.numeral(18, color: AppColors.inkMuted),
+                        style: AppType.numeral(
+                          18,
+                          color: context.colors.inkMuted,
+                        ),
                       ),
                     ],
                   ),
@@ -402,7 +407,9 @@ class _TemplatePreviewScreenState extends State<TemplatePreviewScreen> {
                 if (locked) ...[
                   Text(
                     'Looking is free. Editing is part of Pro.',
-                    style: AppType.bodyS,
+                    style: AppType.bodyS.copyWith(
+                      color: context.colors.inkSoft,
+                    ),
                   ),
                   const SizedBox(height: 10),
                 ],

@@ -95,7 +95,7 @@ class TemplateScreen extends StatefulWidget {
 /// inset is added at build time). Sized to the TALLEST bar (the text styling
 /// bar) and reserved in EVERY state, so the canvas area — and thus the canvas
 /// size — never changes when a different bar shows or a slot is selected.
-const double _kBottomBarHeight = 216;
+const double _kBottomBarHeight = 224;
 
 /// The bar strip's height while the first-open "Make it yours" panel shows —
 /// taller than the toolbar; it eases back to [_kBottomBarHeight] once photos
@@ -143,7 +143,7 @@ class _TemplateScreenState extends State<TemplateScreen>
   Document? _document;
   Document get _doc => _document!;
   // Remote frame/sticker catalog; empty until loaded (seeds still resolve).
-  List<AssetRecord> _catalog = const [];
+  List<AssetRecord> _catalog = [];
   SlotContent _content = const SlotContent();
   String? _selectedSlot;
   String? _editingSlot;
@@ -229,8 +229,8 @@ class _TemplateScreenState extends State<TemplateScreen>
   SnapTargets? _dragTargets;
   double _dragOriginX = 0;
   double _dragThreshold = 0;
-  List<double> _guideXs = const [];
-  List<double> _guideYs = const [];
+  List<double> _guideXs = [];
+  List<double> _guideYs = [];
 
   /// Snap reach in SCREEN px, converted to template units per gesture so the
   /// magnetic feel is the same at any zoom level.
@@ -334,8 +334,8 @@ class _TemplateScreenState extends State<TemplateScreen>
     setState(() {
       _document = snapshot.doc;
       _content = snapshot.content;
-      _guideXs = const [];
-      _guideYs = const [];
+      _guideXs = [];
+      _guideYs = [];
       // Inline editing can't survive a content swap (the field's controller
       // would show stale text); selection stays unless its element is gone.
       _editingSlot = null;
@@ -358,8 +358,8 @@ class _TemplateScreenState extends State<TemplateScreen>
     setState(() {
       _dragRaw = null;
       _dragKey = null;
-      _guideXs = const [];
-      _guideYs = const [];
+      _guideXs = [];
+      _guideYs = [];
     });
   }
 
@@ -373,7 +373,7 @@ class _TemplateScreenState extends State<TemplateScreen>
     if (previous == null) _startDrag(slotId);
     final raw = (previous ?? _content.offsetFor(slotId)) + delta;
     var snapped = raw;
-    List<double> xs = const [], ys = const [];
+    List<double> xs = [], ys = [];
     final box = _dragBox;
     final targets = _dragTargets;
     if (box != null && targets != null) {
@@ -777,14 +777,14 @@ class _TemplateScreenState extends State<TemplateScreen>
       IconData icon,
       String value,
       BuildContext sheetContext, {
-      Color color = AppColors.ink,
+      Color? color,
     }) => InkWell(
       key: key,
       onTap: () => Navigator.pop(sheetContext, value),
       child: Container(
         height: 54,
-        decoration: const BoxDecoration(
-          border: Border(bottom: BorderSide(color: AppColors.rule)),
+        decoration: BoxDecoration(
+          border: Border(bottom: BorderSide(color: context.colors.rule)),
         ),
         child: Row(
           children: [
@@ -808,7 +808,7 @@ class _TemplateScreenState extends State<TemplateScreen>
             ),
             TextSpan(
               text: ' of ${twoDigits(count)}',
-              style: const TextStyle(color: AppColors.inkMuted),
+              style: TextStyle(color: context.colors.inkMuted),
             ),
           ],
         ),
@@ -841,10 +841,13 @@ class _TemplateScreenState extends State<TemplateScreen>
             Symbols.delete,
             'delete',
             sheetContext,
-            color: AppColors.rouge,
+            color: context.colors.rouge,
           ),
           const SizedBox(height: 10),
-          Text('Its elements are deleted with it.', style: AppType.caption),
+          Text(
+            'Its elements are deleted with it.',
+            style: AppType.caption.copyWith(color: context.colors.inkSoft),
+          ),
         ],
       ),
     );
@@ -925,7 +928,7 @@ class _TemplateScreenState extends State<TemplateScreen>
     TextLayer l => {l.slotId},
     StickerLayer l => {l.id},
     GridLayer l => {for (final c in l.cells) c.slotId},
-    _ => const <String>{},
+    _ => <String>{},
   };
 
   /// Deletes a user-added layer (template layers can only be hidden, not
@@ -1531,7 +1534,7 @@ class _TemplateScreenState extends State<TemplateScreen>
             titleSpacing: 0,
             centerTitle: false,
             leading: const BackButton(),
-            shape: const Border(bottom: BorderSide(color: AppColors.rule)),
+            shape: Border(bottom: BorderSide(color: context.colors.rule)),
             title: document == null
                 ? null
                 : Column(
@@ -1548,7 +1551,7 @@ class _TemplateScreenState extends State<TemplateScreen>
                       Eyebrow(
                         _statusLine(),
                         size: 11,
-                        color: AppColors.inkSoft,
+                        color: context.colors.inkSoft,
                       ),
                     ],
                   ),
@@ -1575,12 +1578,12 @@ class _TemplateScreenState extends State<TemplateScreen>
                           ? null
                           : () => _openExport(),
                       child: _exporting
-                          ? const SizedBox(
+                          ? SizedBox(
                               width: 16,
                               height: 16,
                               child: CircularProgressIndicator(
                                 strokeWidth: 1.5,
-                                color: AppColors.inkSoft,
+                                color: context.colors.inkSoft,
                               ),
                             )
                           : null,
@@ -1763,7 +1766,7 @@ class _TemplateScreenState extends State<TemplateScreen>
         children: [
           Expanded(
             child: ColoredBox(
-              color: AppColors.table,
+              color: context.colors.table,
               child: LayoutBuilder(
                 builder: (context, constraints) {
                   // resizeToAvoidBottomInset shrinks this viewport by exactly the
@@ -2045,7 +2048,7 @@ class _TemplateScreenState extends State<TemplateScreen>
           // (resizeToAvoidBottomInset pushes it up). Shorter bars leave the
           // table showing above them.
           ColoredBox(
-            color: AppColors.table,
+            color: context.colors.table,
             child: AnimatedContainer(
               duration: MediaQuery.disableAnimationsOf(context)
                   ? Duration.zero
@@ -2082,7 +2085,7 @@ class _TemplateScreenState extends State<TemplateScreen>
                       child: bottomBar,
                     ),
                   ),
-                  Container(height: safeBottom, color: AppColors.paper),
+                  Container(height: safeBottom, color: context.colors.paper),
                 ],
               ),
             ),
@@ -2127,7 +2130,7 @@ class _TemplateScreenState extends State<TemplateScreen>
         source: ImageSource.gallery,
         maxWidth: 2160,
       );
-      files = file == null ? const [] : [file];
+      files = file == null ? [] : [file];
     } else {
       files = await _picker.pickMultiImage(maxWidth: 2160, limit: empty.length);
     }
@@ -2266,7 +2269,7 @@ class _TemplateScreenState extends State<TemplateScreen>
               Container(
                 width: 64,
                 height: 80,
-                color: AppColors.paperDeep,
+                color: context.colors.paperDeep,
                 child: photo == null
                     ? null
                     : Image(image: photo, fit: BoxFit.cover),
@@ -2285,7 +2288,7 @@ class _TemplateScreenState extends State<TemplateScreen>
                     const SizedBox(height: 10),
                     Text(
                       'Drag to move · pinch to resize · twist to rotate',
-                      style: AppType.sans(12.5, color: AppColors.inkSoft),
+                      style: AppType.sans(12.5, color: context.colors.inkSoft),
                     ),
                   ],
                 ),
@@ -2307,7 +2310,7 @@ class _TemplateScreenState extends State<TemplateScreen>
           padding: const EdgeInsets.fromLTRB(20, 14, 20, 16),
           child: Text(
             'Drag to move · pinch to resize · twist to rotate',
-            style: AppType.sans(12.5, color: AppColors.inkSoft),
+            style: AppType.sans(12.5, color: context.colors.inkSoft),
           ),
         ),
       );
@@ -2330,7 +2333,7 @@ class _TemplateScreenState extends State<TemplateScreen>
     final slideCount = _doc.slideCount;
     return Material(
       key: const ValueKey('bar-toolbar'),
-      color: AppColors.paper,
+      color: context.colors.paper,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -2399,23 +2402,23 @@ class _MakeItYours extends StatelessWidget {
         alignment: Alignment.bottomCenter,
         minHeight: 0,
         maxHeight: double.infinity,
-        child: _panel(one),
+        child: _panel(context, one),
       ),
     );
   }
 
-  Widget _panel(bool one) {
+  Widget _panel(BuildContext context, bool one) {
     return Container(
-      decoration: const BoxDecoration(
-        color: AppColors.paper,
-        border: Border(top: BorderSide(color: AppColors.ink)),
+      decoration: BoxDecoration(
+        color: context.colors.paper,
+        border: Border(top: BorderSide(color: context.colors.ink)),
       ),
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 4),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Eyebrow('Make it yours', color: AppColors.rouge),
+          Eyebrow('Make it yours', color: context.colors.rouge),
           const SizedBox(height: 8),
           SerifHeadline(
             roman: 'Start with ',
@@ -2430,7 +2433,7 @@ class _MakeItYours extends StatelessWidget {
                 : 'Pick $count from your library — they fill the numbered '
                       'frames in order. You can swap or move any of them '
                       'after.',
-            style: AppType.bodyS,
+            style: AppType.bodyS.copyWith(color: context.colors.inkSoft),
           ),
           const SizedBox(height: 14),
           PrimaryButton(

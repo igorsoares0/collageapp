@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
+import '../api/appearance.dart';
 import '../api/entitlements.dart';
 import '../api/project_store.dart';
 import '../api/template_api.dart';
@@ -31,11 +32,16 @@ class GalleryScreen extends StatefulWidget {
   /// Threaded through preview/editor; tests inject a synchronous fake.
   final FontResolver fontResolver;
 
+  /// The appearance choice (System / Light / Dark), handed to Settings.
+  /// Null in tests: Settings then hides its Appearance section.
+  final AppearanceController? appearance;
+
   const GalleryScreen({
     super.key,
     this.entitlements,
     this.store,
     this.fontResolver = googleFontsResolver,
+    this.appearance,
   });
 
   @override
@@ -51,7 +57,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
   late Future<IndexResult> _index;
 
   // Frames/stickers for the folios' live renders.
-  List<AssetRecord> _assets = const [];
+  List<AssetRecord> _assets = [];
 
   // Category index selection; null = All. A stale selection (category gone
   // after a refresh) reads as All — see the guard in [_buildDiscover].
@@ -96,7 +102,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
   Future<void> _openTemplate(TemplateSummary summary) async {
     // The loaded index rides along for the paywall's cover spread; a folio
     // is only tappable once _index resolved, so this await is immediate.
-    var catalog = const <TemplateSummary>[];
+    var catalog = <TemplateSummary>[];
     try {
       catalog = (await _index).templates;
     } catch (_) {
@@ -149,7 +155,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
   }
 
   Future<void> _openSettings() async {
-    var catalog = const <TemplateSummary>[];
+    var catalog = <TemplateSummary>[];
     try {
       catalog = (await _index).templates;
     } catch (_) {
@@ -158,8 +164,11 @@ class _GalleryScreenState extends State<GalleryScreen> {
     if (!mounted) return;
     await Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) =>
-            SettingsScreen(entitlements: _entitlements, catalog: catalog),
+        builder: (_) => SettingsScreen(
+          entitlements: _entitlements,
+          catalog: catalog,
+          appearance: widget.appearance,
+        ),
       ),
     );
   }
@@ -231,8 +240,8 @@ class _GalleryScreenState extends State<GalleryScreen> {
 
         return RefreshIndicator(
           onRefresh: _refresh,
-          color: AppColors.ink,
-          backgroundColor: AppColors.paper,
+          color: context.colors.ink,
+          backgroundColor: context.colors.paper,
           // Rebuilds when a purchase lands so every "Pro" fades out in place.
           child: ValueListenableBuilder<bool>(
             valueListenable: _entitlements.isPro,
@@ -252,7 +261,10 @@ class _GalleryScreenState extends State<GalleryScreen> {
         SliverToBoxAdapter(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(20, 24, 20, 48),
-            child: Text('No templates published yet.', style: AppType.bodyS),
+            child: Text(
+              'No templates published yet.',
+              style: AppType.bodyS.copyWith(color: context.colors.inkSoft),
+            ),
           ),
         ),
       ];
@@ -601,13 +613,18 @@ class _Cover extends StatelessWidget {
             // Shared with the preview's canvas: the cover flies into place.
             Hero(
               tag: 'template-${summary.id}',
-              child: ColoredBox(color: AppColors.paperDeep, child: _artwork()),
+              child: ColoredBox(
+                color: context.colors.paperDeep,
+                child: _artwork(),
+              ),
             ),
             IgnorePointer(
               child: AnimatedBuilder(
                 animation: press,
                 builder: (context, _) => ColoredBox(
-                  color: AppColors.ink.withValues(alpha: 0.06 * press.value),
+                  color: context.colors.ink.withValues(
+                    alpha: 0.06 * press.value,
+                  ),
                 ),
               ),
             ),
@@ -680,15 +697,15 @@ class _CaptionRule extends StatelessWidget {
         animation: press,
         builder: (context, _) => Stack(
           children: [
-            const Positioned(
+            Positioned(
               left: 0,
               right: 0,
               top: 0,
-              child: Hairline(color: AppColors.ink),
+              child: Hairline(color: context.colors.ink),
             ),
             FractionallySizedBox(
               widthFactor: press.value,
-              child: Container(height: 2, color: AppColors.ink),
+              child: Container(height: 2, color: context.colors.ink),
             ),
           ],
         ),
@@ -799,10 +816,17 @@ class _Featured extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     if (summary.category != null)
-                      Text(summary.category!, style: AppType.caption),
+                      Text(
+                        summary.category!,
+                        style: AppType.caption.copyWith(
+                          color: context.colors.inkSoft,
+                        ),
+                      ),
                     Text(
                       metaLabel(summary.aspectRatio, data?.slideCount),
-                      style: AppType.caption,
+                      style: AppType.caption.copyWith(
+                        color: context.colors.inkSoft,
+                      ),
                     ),
                   ],
                 ),
@@ -850,7 +874,7 @@ class _FeaturedPages extends StatelessWidget {
             fit: StackFit.expand,
             children: [
               ColoredBox(
-                color: AppColors.paperDeep,
+                color: context.colors.paperDeep,
                 child: IgnorePointer(
                   child: Center(
                     child: SlideView(
@@ -867,7 +891,9 @@ class _FeaturedPages extends StatelessWidget {
                 child: AnimatedBuilder(
                   animation: press,
                   builder: (context, _) => ColoredBox(
-                    color: AppColors.ink.withValues(alpha: .06 * press.value),
+                    color: context.colors.ink.withValues(
+                      alpha: .06 * press.value,
+                    ),
                   ),
                 ),
               ),
@@ -1002,7 +1028,7 @@ class _WideFolio extends StatelessWidget {
               const SizedBox(height: 6),
               Text(
                 metaLabel(summary.aspectRatio, data?.slideCount),
-                style: AppType.caption,
+                style: AppType.caption.copyWith(color: context.colors.inkSoft),
               ),
               if (captionLeft) ...[
                 const SizedBox(height: 14),
@@ -1091,7 +1117,7 @@ class _StackedFolio extends StatelessWidget {
                   formatNameOf(summary.aspectRatio),
                   metaLabel(summary.aspectRatio, data?.slideCount),
                 ].join(' '),
-                style: AppType.caption,
+                style: AppType.caption.copyWith(color: context.colors.inkSoft),
               ),
             ] else
               Row(
@@ -1113,7 +1139,9 @@ class _StackedFolio extends StatelessWidget {
                             if (data != null) slidesLabel(data.slideCount),
                           ].join(' · '),
                           textAlign: TextAlign.end,
-                          style: AppType.caption,
+                          style: AppType.caption.copyWith(
+                            color: context.colors.inkSoft,
+                          ),
                         ),
                       ],
                     ),
@@ -1166,7 +1194,12 @@ class _SequenceFolio extends StatelessWidget {
                 ProMark(visible: summary.premium && !ctx.isPro),
                 if (data != null) ...[
                   const SizedBox(width: 10),
-                  Text(slidesLabel(data.slideCount), style: AppType.caption),
+                  Text(
+                    slidesLabel(data.slideCount),
+                    style: AppType.caption.copyWith(
+                      color: context.colors.inkSoft,
+                    ),
+                  ),
                 ],
               ],
             ),
@@ -1204,7 +1237,7 @@ class _SequenceFolio extends StatelessWidget {
                     child: AnimatedBuilder(
                       animation: press,
                       builder: (context, _) => ColoredBox(
-                        color: AppColors.ink.withValues(
+                        color: context.colors.ink.withValues(
                           alpha: 0.06 * press.value,
                         ),
                       ),
@@ -1226,7 +1259,9 @@ class _SequenceFolio extends StatelessWidget {
                     ?summary.category,
                     ratioLabelOf(summary.aspectRatio),
                   ].join(' · '),
-                  style: AppType.caption,
+                  style: AppType.caption.copyWith(
+                    color: context.colors.inkSoft,
+                  ),
                 ),
               ],
             ),
@@ -1307,17 +1342,17 @@ class _Masthead extends StatelessWidget {
               padding: const EdgeInsets.only(top: 6, right: 12),
               child: Row(
                 children: [
-                  const Icon(
+                  Icon(
                     Symbols.cloud_off,
                     size: 15,
-                    color: AppColors.rouge,
+                    color: context.colors.rouge,
                   ),
                   const SizedBox(width: 8),
                   Flexible(
                     child: Eyebrow(
                       'Offline — saved copies',
                       size: 11,
-                      color: AppColors.rouge,
+                      color: context.colors.rouge,
                     ),
                   ),
                 ],
@@ -1361,7 +1396,7 @@ class _EndNote extends StatelessWidget {
         Text(
           'Pull down to check for new templates.',
           textAlign: TextAlign.center,
-          style: AppType.bodyS,
+          style: AppType.bodyS.copyWith(color: context.colors.inkSoft),
         ),
       ],
     ),
@@ -1391,7 +1426,7 @@ class _OutOfReach extends StatelessWidget {
           Text(
             "Couldn't load templates. Check your connection and try again "
             '— your projects are still here.',
-            style: AppType.body.copyWith(color: AppColors.inkSoft),
+            style: AppType.body.copyWith(color: context.colors.inkSoft),
           ),
           const SizedBox(height: 28),
           SecondaryButton(
@@ -1438,11 +1473,11 @@ class _CategoryIndexDelegate extends SliverPersistentHeaderDelegate {
   @override
   Widget build(BuildContext context, double shrinkOffset, bool overlaps) {
     return Container(
-      decoration: const BoxDecoration(
-        color: AppColors.paper,
+      decoration: BoxDecoration(
+        color: context.colors.paper,
         border: Border(
-          top: BorderSide(color: AppColors.ink),
-          bottom: BorderSide(color: AppColors.rule),
+          top: BorderSide(color: context.colors.ink),
+          bottom: BorderSide(color: context.colors.rule),
         ),
       ),
       child: ListView(
@@ -1483,7 +1518,7 @@ class _CategoryWord extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = selected ? AppColors.ink : AppColors.stone;
+    final color = selected ? context.colors.ink : context.colors.stone;
     return Semantics(
       button: true,
       selected: selected,
@@ -1499,7 +1534,7 @@ class _CategoryWord extends StatelessWidget {
               decoration: BoxDecoration(
                 border: Border(
                   bottom: BorderSide(
-                    color: selected ? AppColors.ink : Colors.transparent,
+                    color: selected ? context.colors.ink : Colors.transparent,
                   ),
                 ),
               ),
@@ -1515,7 +1550,9 @@ class _CategoryWord extends StatelessWidget {
                           '$count',
                           style: AppType.sans(
                             11,
-                            color: selected ? AppColors.rouge : AppColors.stone,
+                            color: selected
+                                ? context.colors.rouge
+                                : context.colors.stone,
                           ),
                         ),
                       ),
@@ -1576,8 +1613,8 @@ class _SkeletonFoliosState extends State<_SkeletonFolios>
             animation: _pulse,
             builder: (context, _) {
               final tone = Color.lerp(
-                AppColors.paperDeep,
-                AppColors.table,
+                context.colors.paperDeep,
+                context.colors.table,
                 Curves.easeInOut.transform(_pulse.value),
               )!;
               Widget block(double bw, double bh) =>
@@ -1703,9 +1740,9 @@ class _HomeBottomBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      decoration: const BoxDecoration(
-        color: AppColors.paper,
-        border: Border(top: BorderSide(color: AppColors.rule)),
+      decoration: BoxDecoration(
+        color: context.colors.paper,
+        border: Border(top: BorderSide(color: context.colors.rule)),
       ),
       child: SafeArea(
         top: false,
@@ -1756,7 +1793,7 @@ class _NavItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = selected ? AppColors.ink : AppColors.inkSoft;
+    final color = selected ? context.colors.ink : context.colors.inkSoft;
     return Semantics(
       button: true,
       selected: selected,
@@ -1782,7 +1819,11 @@ class _NavItem extends StatelessWidget {
             if (selected)
               Positioned(
                 top: 0,
-                child: Container(width: 18, height: 2, color: AppColors.rouge),
+                child: Container(
+                  width: 18,
+                  height: 2,
+                  color: context.colors.rouge,
+                ),
               ),
           ],
         ),
@@ -1800,17 +1841,17 @@ class _CreateButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: AppColors.ink,
+      color: context.colors.ink,
       child: InkWell(
         onTap: onTap,
-        child: const SizedBox(
+        child: SizedBox(
           width: 52,
           height: 44,
           child: Icon(
             Symbols.add,
             size: 24,
             weight: 250,
-            color: AppColors.onInk,
+            color: context.colors.onInk,
             semanticLabel: 'Create from scratch',
           ),
         ),
@@ -1847,7 +1888,7 @@ class _BlankCanvasSheetState extends State<_BlankCanvasSheet> {
       children: [
         Text(
           "Choose a format. You can add slides once you're in.",
-          style: AppType.bodyS,
+          style: AppType.bodyS.copyWith(color: context.colors.inkSoft),
         ),
         const SizedBox(height: 24),
         Row(
@@ -1876,8 +1917,8 @@ class _BlankCanvasSheetState extends State<_BlankCanvasSheet> {
       width: frame.width,
       height: frame.height,
       decoration: BoxDecoration(
-        color: selected ? Colors.transparent : AppColors.paperDeep,
-        border: Border.all(color: AppColors.ink),
+        color: selected ? Colors.transparent : context.colors.paperDeep,
+        border: Border.all(color: context.colors.ink),
       ),
     );
     return Semantics(
@@ -1900,7 +1941,7 @@ class _BlankCanvasSheetState extends State<_BlankCanvasSheet> {
                       ? Container(
                           padding: const EdgeInsets.all(4),
                           decoration: BoxDecoration(
-                            border: Border.all(color: AppColors.ink),
+                            border: Border.all(color: context.colors.ink),
                           ),
                           child: box,
                         )
@@ -1908,11 +1949,14 @@ class _BlankCanvasSheetState extends State<_BlankCanvasSheet> {
                 ),
               ),
             ),
-            const Hairline(color: AppColors.ink),
+            Hairline(color: context.colors.ink),
             const SizedBox(height: 10),
             Text(name, style: AppType.title(20)),
             const SizedBox(height: 4),
-            Text('$ratio · ${w.toInt()}×${h.toInt()}', style: AppType.caption),
+            Text(
+              '$ratio · ${w.toInt()}×${h.toInt()}',
+              style: AppType.caption.copyWith(color: context.colors.inkSoft),
+            ),
           ],
         ),
       ),

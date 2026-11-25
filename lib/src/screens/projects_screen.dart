@@ -148,7 +148,7 @@ class _ProjectsListState extends State<ProjectsList> {
           Text(
             '"${summary.name}" and its photos will be removed. '
             'This cannot be undone.',
-            style: AppType.bodyS,
+            style: AppType.bodyS.copyWith(color: context.colors.inkSoft),
           ),
           const SizedBox(height: 22),
           Row(
@@ -184,7 +184,7 @@ class _ProjectsListState extends State<ProjectsList> {
       future: _list,
       builder: (context, snapshot) {
         final loading = snapshot.connectionState != ConnectionState.done;
-        final projects = snapshot.data ?? const <ProjectSummary>[];
+        final projects = snapshot.data ?? <ProjectSummary>[];
         return CustomScrollView(
           slivers: [
             SliverToBoxAdapter(
@@ -259,12 +259,12 @@ class _Header extends StatelessWidget {
               if (count != null)
                 Text(
                   twoDigits(count!),
-                  style: AppType.numeral(30, color: AppColors.stone),
+                  style: AppType.numeral(30, color: context.colors.stone),
                 ),
             ],
           ),
           const SizedBox(height: 14),
-          const Hairline(color: AppColors.ink),
+          Hairline(color: context.colors.ink),
         ],
       ),
     );
@@ -289,10 +289,10 @@ class _EmptyArchive extends StatelessWidget {
             height: 108,
             child: Row(
               children: [
-                for (final (i, c) in const [
-                  AppColors.inkSoft,
-                  AppColors.ruleStrong,
-                  AppColors.rule,
+                for (final (i, c) in [
+                  context.colors.inkSoft,
+                  context.colors.ruleStrong,
+                  context.colors.rule,
                 ].indexed) ...[
                   if (i > 0) const SizedBox(width: 6),
                   SizedBox(
@@ -313,7 +313,7 @@ class _EmptyArchive extends StatelessWidget {
           Text(
             'Edit a template or start from a blank canvas — it saves itself, '
             'page by page.',
-            style: AppType.body.copyWith(color: AppColors.inkSoft),
+            style: AppType.body.copyWith(color: context.colors.inkSoft),
           ),
           if (onBrowse != null) ...[
             const SizedBox(height: 14),
@@ -323,7 +323,7 @@ class _EmptyArchive extends StatelessWidget {
                 const SizedBox(width: 20),
                 Text(
                   'or tap +',
-                  style: AppType.sans(15, color: AppColors.inkSoft),
+                  style: AppType.sans(15, color: context.colors.inkSoft),
                 ),
               ],
             ),
@@ -453,7 +453,7 @@ class _ProjectEntryState extends State<_ProjectEntry> {
                           if (slides != null)
                             slides == 1 ? '1 slide' : '$slides slides',
                         ].join(' · '),
-                        style: AppType.sans(14, color: AppColors.inkSoft),
+                        style: AppType.sans(14, color: context.colors.inkSoft),
                       ),
                     ],
                   ),
@@ -523,7 +523,10 @@ class _ProjectEntryState extends State<_ProjectEntry> {
                             const SizedBox(width: 12),
                             Text(
                               [edited, ?slides?.toString()].join(' · '),
-                              style: AppType.sans(13, color: AppColors.inkSoft),
+                              style: AppType.sans(
+                                13,
+                                color: context.colors.inkSoft,
+                              ),
                             ),
                           ],
                         ),
@@ -569,7 +572,7 @@ class _DocumentStrip extends StatelessWidget {
         child: SizedBox(
           width: height * 0.8,
           height: height,
-          child: const ColoredBox(color: AppColors.paperDeep),
+          child: ColoredBox(color: context.colors.paperDeep),
         ),
       );
     }

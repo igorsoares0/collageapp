@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400;1,6..72,500&family=Instrument+Sans:wght@400;600&display=swap" rel="stylesheet">
+</helmet>
+<div style="position:relative;width:100%;height:100%;overflow:hidden;container-type:inline-size;background:#F3EEE5;color:#1E1B17;font-family:'Instrument Sans',sans-serif">
+<div style="position:absolute;left:60cqw;top:0;width:40cqw;height:100%;background:#E3D6C3"></div>
+<img src="https://picsum.photos/id/57/1600/1000" style="position:absolute;left:0;top:0;width:40cqw;height:100%;object-fit:cover;filter:sepia(.22) saturate(.8) contrast(1.04)">
+<sc-if value="{{ empty }}" hint-placeholder-val="{{ false }}"><div style="position:absolute;left:0;top:0;width:40cqw;height:100%;padding-bottom:6cqw;background:#6F665C;box-sizing:border-box;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.6cqw"><div style="position:absolute;inset:.6cqw;border:1px dashed #F3EEE5"></div><div style="width:2.2cqw;height:2.2cqw;border:1px solid #F3EEE5;display:flex;align-items:center;justify-content:center;font-family:'Newsreader',serif;font-style:italic;font-size:1.3cqw;color:#F3EEE5">1</div><div style="font-size:.55cqw;letter-spacing:.2em;text-transform:uppercase;font-weight:600;white-space:nowrap;color:#F3EEE5">Photo 1</div></div></sc-if>
+<div style="position:absolute;left:0;top:0;width:40cqw;height:100%;background:linear-gradient(180deg,rgba(20,16,12,.22) 0%,rgba(20,16,12,0) 30%,rgba(20,16,12,0) 50%,rgba(20,16,12,.5) 100%)"></div>
+<div style="position:absolute;left:1.4cqw;top:1.4cqw;font-size:.55cqw;letter-spacing:.2em;text-transform:uppercase;font-weight:600;white-space:nowrap;color:#F6F1E8">N° 01 — Travel notes</div>
+<div style="position:absolute;left:28cqw;top:1.4cqw;width:10.6cqw;text-align:right;font-size:.55cqw;letter-spacing:.2em;text-transform:uppercase;font-weight:600;white-space:nowrap;color:#F6F1E8">Alfama, 5:40 pm</div>
+<sc-if value="{{ selectTitle }}" hint-placeholder-val="{{ false }}">
+<div style="position:absolute;left:4.4cqw;top:16.6cqw;padding:.3cqw .6cqw;border:1px solid #F6F1E8;font-family:'Newsreader',serif;font-style:italic;font-size:3.6cqw;line-height:1;letter-spacing:-.02em;color:#F6F1E8;white-space:nowrap">Lisbon, in June
+<div style="position:absolute;left:-4px;top:-4px;width:7px;height:7px;background:#F3EEE5;border:1px solid #1E1B17"></div><div style="position:absolute;right:-4px;top:-4px;width:7px;height:7px;background:#F3EEE5;border:1px solid #1E1B17"></div><div style="position:absolute;left:-4px;bottom:-4px;width:7px;height:7px;background:#F3EEE5;border:1px solid #1E1B17"></div><div style="position:absolute;right:-4px;bottom:-4px;width:7px;height:7px;background:#F3EEE5;border:1px solid #1E1B17"></div>
+</div>
+</sc-if>
+<sc-if value="{{ plainTitle }}" hint-placeholder-val="{{ true }}">
+<div style="position:absolute;left:5cqw;top:16.9cqw;font-family:'Newsreader',serif;font-style:italic;font-size:3.6cqw;line-height:1;letter-spacing:-.02em;color:#F6F1E8;white-space:nowrap">Lisbon, in June</div>
+</sc-if>
+<div style="position:absolute;left:5cqw;top:21.4cqw;font-size:.6cqw;color:#F6F1E8;letter-spacing:.04em">Five days, one camera, no plan. →</div>
+<img src="https://picsum.photos/id/78/600/600" style="position:absolute;left:35.5cqw;top:3.2cqw;width:14cqw;height:14cqw;object-fit:cover;border:.45cqw solid #F3EEE5;box-sizing:border-box;filter:sepia(.2) saturate(.8) contrast(1.04)">
+<sc-if value="{{ empty }}" hint-placeholder-val="{{ false }}"><div style="position:absolute;left:35.5cqw;top:3.2cqw;width:14cqw;height:14cqw;border:.45cqw solid #F3EEE5;background:#EAE3D7;box-sizing:border-box;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.6cqw"><div style="position:absolute;inset:.6cqw;border:1px dashed #8A8073"></div><div style="width:2.2cqw;height:2.2cqw;border:1px solid #1E1B17;display:flex;align-items:center;justify-content:center;font-family:'Newsreader',serif;font-style:italic;font-size:1.3cqw;color:#1E1B17">2</div><div style="font-size:.55cqw;letter-spacing:.2em;text-transform:uppercase;font-weight:600;white-space:nowrap;color:#5E564C">Photo 2</div></div></sc-if>
+<sc-if value="{{ selectPhoto }}" hint-placeholder-val="{{ false }}">
+<div style="position:absolute;left:35.5cqw;top:3.2cqw;width:14cqw;height:14cqw;border:1px solid #1E1B17;box-sizing:border-box">
+<div style="position:absolute;left:-4px;top:-4px;width:7px;height:7px;background:#F3EEE5;border:1px solid #1E1B17"></div><div style="position:absolute;right:-4px;top:-4px;width:7px;height:7px;background:#F3EEE5;border:1px solid #1E1B17"></div><div style="position:absolute;left:-4px;bottom:-4px;width:7px;height:7px;background:#F3EEE5;border:1px solid #1E1B17"></div><div style="position:absolute;right:-4px;bottom:-4px;width:7px;height:7px;background:#F3EEE5;border:1px solid #1E1B17"></div>
+</div>
+</sc-if>
+<div style="position:absolute;left:51cqw;top:3.4cqw;font-size:.55cqw;letter-spacing:.2em;text-transform:uppercase;font-weight:600;white-space:nowrap">03</div>
+<div style="position:absolute;left:42cqw;top:19cqw;width:16cqw;font-family:'Newsreader',serif;font-size:1.7cqw;line-height:1;letter-spacing:-.01em">The light at five</div>
+<div style="position:absolute;left:42cqw;top:21.3cqw;width:14cqw;font-size:.6cqw;line-height:1.45;color:#5E564C">We walked Alfama until the tiles turned gold, then kept walking.</div>
+<img src="https://picsum.photos/id/188/1600/600" style="position:absolute;left:64cqw;top:3.2cqw;width:32cqw;height:12cqw;object-fit:cover;filter:sepia(.2) saturate(.8) contrast(1.04)">
+<sc-if value="{{ empty }}" hint-placeholder-val="{{ false }}"><div style="position:absolute;left:64cqw;top:3.2cqw;width:32cqw;height:12cqw;background:#EAE3D7;box-sizing:border-box;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.6cqw"><div style="position:absolute;inset:.6cqw;border:1px dashed #8A8073"></div><div style="width:2.2cqw;height:2.2cqw;border:1px solid #1E1B17;display:flex;align-items:center;justify-content:center;font-family:'Newsreader',serif;font-style:italic;font-size:1.3cqw;color:#1E1B17">3</div><div style="font-size:.55cqw;letter-spacing:.2em;text-transform:uppercase;font-weight:600;white-space:nowrap;color:#5E564C">Photo 3</div></div></sc-if>
+<div style="position:absolute;left:52cqw;top:17.6cqw;width:44cqw;height:1px;background:#1E1B17"></div>
+<div style="position:absolute;left:64cqw;top:18.8cqw;font-family:'Newsreader',serif;font-style:italic;font-size:2.3cqw;line-height:1">Small streets,</div>
+<div style="position:absolute;left:81cqw;top:18.8cqw;font-family:'Newsreader',serif;font-style:italic;font-size:2.3cqw;line-height:1">slow days.</div>
+<div style="position:absolute;left:64cqw;top:22.6cqw;font-size:.55cqw;letter-spacing:.2em;text-transform:uppercase;font-weight:600;white-space:nowrap">04</div>
+<div style="position:absolute;left:81cqw;top:22.6cqw;width:17.6cqw;display:flex;justify-content:space-between;font-size:.55cqw;letter-spacing:.2em;text-transform:uppercase;font-weight:600;white-space:nowrap"><span>05</span><span>@ines.travels</span></div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1500,&quot;height&quot;:375},&quot;selectTitle&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;selectPhoto&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;empty&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    const t = !!this.props.selectTitle;
+    return { selectTitle: t, plainTitle: !t, selectPhoto: !!this.props.selectPhoto, empty: !!this.props.empty };
+  }
+}
+</script>
+</body>
+</html>

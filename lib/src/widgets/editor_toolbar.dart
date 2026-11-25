@@ -106,7 +106,7 @@ class ToolButton extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 24, weight: 200, color: AppColors.ink),
+            Icon(icon, size: 24, weight: 200, color: context.colors.ink),
             const SizedBox(height: 5),
             Text(
               label,
@@ -145,7 +145,7 @@ class ContextBarShell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: AppColors.paper,
+      color: context.colors.paper,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -181,13 +181,13 @@ class ContextBarHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 4, 12, 0),
+      padding: const EdgeInsets.fromLTRB(20, 0, 12, 0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
             children: [
-              Expanded(child: Eyebrow(title, size: 11.5)),
+              Expanded(child: Eyebrow(title, size: 11.5, singleLine: true)),
               if (onDuplicate != null)
                 _BarAction(label: 'Duplicate', onTap: onDuplicate!),
               if (onDelete != null)
@@ -217,7 +217,7 @@ class _BarAction extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = primary ? AppColors.ink : AppColors.inkSoft;
+    final color = primary ? context.colors.ink : context.colors.inkSoft;
     return Tooltip(
       message: label,
       excludeFromSemantics: true,
@@ -237,9 +237,9 @@ class _BarAction extends StatelessWidget {
                 child: Container(
                   padding: const EdgeInsets.only(bottom: 2),
                   decoration: primary
-                      ? const BoxDecoration(
+                      ? BoxDecoration(
                           border: Border(
-                            bottom: BorderSide(color: AppColors.ink),
+                            bottom: BorderSide(color: context.colors.ink),
                           ),
                         )
                       : null,

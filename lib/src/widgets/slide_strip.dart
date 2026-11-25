@@ -153,10 +153,10 @@ class _SlideStripState extends State<SlideStrip> {
                       ? null
                       : () => widget.onLongPress!(i),
                   child: i == widget.active
-                      ? const DecoratedBox(
+                      ? DecoratedBox(
                           decoration: BoxDecoration(
                             border: Border.fromBorderSide(
-                              BorderSide(color: AppColors.ink),
+                              BorderSide(color: context.colors.ink),
                             ),
                           ),
                         )
@@ -191,8 +191,8 @@ class _SlideStripState extends State<SlideStrip> {
                         style: AppType.numeral(
                           12,
                           color: i == widget.active
-                              ? AppColors.ink
-                              : AppColors.inkMuted,
+                              ? context.colors.ink
+                              : context.colors.inkMuted,
                         ),
                       ),
                     ),
@@ -253,20 +253,20 @@ class _AddSlide extends StatelessWidget {
               SizedBox(
                 width: width,
                 height: height,
-                child: const DashedBox(
-                  color: AppColors.inkSoft,
+                child: DashedBox(
+                  color: context.colors.inkSoft,
                   child: Center(
                     child: Icon(
                       Symbols.add,
                       size: 18,
                       weight: 200,
-                      color: AppColors.inkSoft,
+                      color: context.colors.inkSoft,
                     ),
                   ),
                 ),
               ),
               const SizedBox(height: 7),
-              const Eyebrow('Slide', size: 11, color: AppColors.inkSoft),
+              Eyebrow('Slide', size: 11, color: context.colors.inkSoft),
             ],
           ),
         ),
