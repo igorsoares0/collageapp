@@ -7,10 +7,10 @@ TextStyle testFontResolver(String family, TextStyle base) => base;
 
 /// Text selection chrome in the real editor (overlay mode). The Ahem test
 /// font makes every glyph a fontSize square: "a b" at 220px is 660 wide on
-/// one line, "a" / "b" 220 each. (220px: one line must be tall enough for
-/// the side pills to show at all — see _edgePillsFit.)
+/// one line, "a" / "b" 220 each. 220px gives full-length side pills; the
+/// "short text" group covers the compact ones at the new-text default 88px.
 void main() {
-  Template textTemplate(String alignment) => Template(
+  Template textTemplate(String alignment, double fontSize) => Template(
     id: 't',
     schemaVersion: 3,
     version: 1,
@@ -32,7 +32,7 @@ void main() {
             // Much wider than the phrase: the glyphs hug inside it.
             width: 900,
             fontFamily: 'Roboto',
-            fontSize: 220,
+            fontSize: fontSize,
             fontWeight: 400,
             color: const Color(0xFF111111),
             alignment: alignment,
@@ -48,6 +48,7 @@ void main() {
     WidgetTester tester, {
     String alignment = 'center',
     String text = 'a b',
+    double fontSize = 220,
   }) async {
     tester.view.physicalSize = const Size(540, 960);
     tester.view.devicePixelRatio = 1;
@@ -57,7 +58,7 @@ void main() {
       MaterialApp(
         debugShowCheckedModeBanner: false,
         home: TemplateScreen(
-          draft: textTemplate(alignment),
+          draft: textTemplate(alignment, fontSize),
           fontResolver: testFontResolver,
         ),
       ),
@@ -183,5 +184,66 @@ void main() {
       );
     }
     await gesture.up();
+  });
+
+  group('short text (one line at the new-text default 88px)', () {
+    testWidgets('shows compact side pills that fit between the corners', (
+      tester,
+    ) async {
+      final paragraph = await openWithText(tester, fontSize: 88);
+      final r = tester.getRect(paragraph);
+      for (final side in ['l', 'r']) {
+        final p = tester.getRect(pill(side));
+        // Shorter than the full pill, centered on the side, clear of the
+        // corner dots.
+        expect(p.height, lessThan(r.height));
+        expect((p.center.dy - r.center.dy).abs(), lessThan(1.0));
+        final corner = tester.getRect(
+          find.byKey(ValueKey(side == 'l' ? 'handle_tl' : 'handle_tr')),
+        );
+        expect(p.top, greaterThan(corner.bottom));
+      }
+    });
+
+    testWidgets('narrowing from the compact pill stacks the phrase', (
+      tester,
+    ) async {
+      final paragraph = await openWithText(tester, fontSize: 88);
+      final start = tester.getRect(paragraph);
+      final gesture = await tester.startGesture(tester.getCenter(pill('r')));
+      // 8 × 6 = 48 px: past the recognizer's 36 px pan slop.
+      for (var i = 0; i < 8; i++) {
+        await gesture.moveBy(const Offset(-6, 0));
+        await tester.pump();
+        final r = tester.getRect(paragraph);
+        expect(
+          (tester.getCenter(pill('r')).dx - r.right).abs(),
+          lessThan(1.0),
+          reason: 'step $i',
+        );
+        expect((r.left - start.left).abs(), lessThan(1.0), reason: 'step $i');
+      }
+      await gesture.up();
+      await tester.pumpAndSettle();
+      expect(tester.getRect(paragraph).height, closeTo(start.height * 2, 0.5));
+    });
+
+    testWidgets('the corner dots still scale it', (tester) async {
+      final paragraph = await openWithText(tester, fontSize: 88);
+      final start = tester.getRect(paragraph);
+      final gesture = await tester.startGesture(
+        tester.getCenter(find.byKey(const ValueKey('handle_br'))),
+      );
+      for (var i = 0; i < 6; i++) {
+        await gesture.moveBy(const Offset(6, 6));
+        await tester.pump();
+      }
+      await gesture.up();
+      await tester.pumpAndSettle();
+      final r = tester.getRect(paragraph);
+      // Uniform scale: both dimensions grow by the same factor, one line.
+      expect(r.width, greaterThan(start.width * 1.1));
+      expect(r.width / start.width, closeTo(r.height / start.height, 0.01));
+    });
   });
 }

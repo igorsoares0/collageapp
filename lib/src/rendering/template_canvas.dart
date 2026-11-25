@@ -122,6 +122,11 @@ const double _kGlyphHandle = 100.0;
 /// side pills correctly disappear on slightly larger elements.
 const double _kCornerDot = 80.0;
 
+/// The corner dot as actually DRAWN (pre-scale template px / scale) — the
+/// redesign shrank the visual square while [_kCornerDot] still sizes the
+/// edge-pill fit for non-text elements.
+const double _kCornerDotDrawn = _kCornerDot * 0.32;
+
 /// Distance² from [local] to the nearest of the element's four corners, when
 /// [local] is inside a corner resize zone — null otherwise. [size] is the
 /// PADDED chrome box; corners are axis-aligned because every caller sits
@@ -209,12 +214,33 @@ const double _kEdgePillThickness = 34.0;
 bool _edgePillsFit(double sideLen, double scale) =>
     sideLen >= (_kEdgePillLength + _kCornerDot + 24.0) / scale;
 
+/// Text's side pills are COMPACT: a one-line paragraph is far shorter than
+/// [_edgePillsFit] demands, and the side pills are its only way to set the
+/// wrap width. The pill shrinks to the room left between the DRAWN corner
+/// dots (12 of breathing room each side), capped at the full length, and
+/// disappears only once it would be shorter than it is thick. Returns the
+/// pill length in local units, or null when none fits. Shared by the chrome
+/// (draw) and the hit zone (grab), like [_edgePillsFit].
+double? _compactPillLength(double sideLen, double scale) {
+  final room = sideLen * scale - _kCornerDotDrawn - 24.0;
+  final len = math.min(_kEdgePillLength, room);
+  return len >= _kEdgePillThickness ? len / scale : null;
+}
+
+/// Side-pill length (local units) on a side of [sideLen], or null when that
+/// side shows none. [compact] selects text's rule ([_compactPillLength]).
+double? _sidePillLength(double sideLen, double scale, {required bool compact}) {
+  if (compact) return _compactPillLength(sideLen, scale);
+  return _edgePillsFit(sideLen, scale) ? _kEdgePillLength / scale : null;
+}
+
 /// The nearest edge-pill zone within reach of [local], with its center
 /// distance² (for arbitration against the rotate/delete handles, whose zones
 /// overlap the bottom/top pills) — or null. Same contract as
 /// [_nearCornerZone]: [size] is the padded chrome box and [local] arrives
-/// axis-aligned. [vertical] false suppresses the top/bottom pills (text:
-/// height is automatic, only the wrap width stretches).
+/// axis-aligned. [vertical] false is TEXT: no top/bottom pills (height is
+/// automatic, only the wrap width stretches) and compact side pills
+/// ([_compactPillLength]).
 (SlotEdge, double)? _nearEdgeZone(
   Offset local,
   Size size,
@@ -223,23 +249,23 @@ bool _edgePillsFit(double sideLen, double scale) =>
 }) {
   final pad = kChromePad / scale;
   final reach = _resizeReach(scale);
-  final half = _kEdgePillLength / 2 / scale;
   final w = size.width - 2 * pad;
   final h = size.height - 2 * pad;
-  final horizontalPills = vertical && _edgePillsFit(w, scale);
-  final verticalPills = _edgePillsFit(h, scale);
+  final topLen = vertical ? _sidePillLength(w, scale, compact: false) : null;
+  final sideLen = _sidePillLength(h, scale, compact: !vertical);
   // The zone is a CAPSULE around the pill, not a circle around its center:
   // distance to the pill's segment, so a grab near either tip still counts.
   // [horizontal] is the pill's long axis, along its edge.
-  final mids = <(SlotEdge, Offset, bool, bool)>[
-    (SlotEdge.top, Offset(pad + w / 2, pad), true, horizontalPills),
-    (SlotEdge.bottom, Offset(pad + w / 2, pad + h), true, horizontalPills),
-    (SlotEdge.left, Offset(pad, pad + h / 2), false, verticalPills),
-    (SlotEdge.right, Offset(pad + w, pad + h / 2), false, verticalPills),
+  final mids = <(SlotEdge, Offset, bool, double?)>[
+    (SlotEdge.top, Offset(pad + w / 2, pad), true, topLen),
+    (SlotEdge.bottom, Offset(pad + w / 2, pad + h), true, topLen),
+    (SlotEdge.left, Offset(pad, pad + h / 2), false, sideLen),
+    (SlotEdge.right, Offset(pad + w, pad + h / 2), false, sideLen),
   ];
   (SlotEdge, double)? best;
-  for (final (edge, mid, horizontal, exists) in mids) {
-    if (!exists) continue;
+  for (final (edge, mid, horizontal, len) in mids) {
+    if (len == null) continue;
+    final half = len / 2;
     final along = horizontal ? local.dx - mid.dx : local.dy - mid.dy;
     final across = horizontal ? local.dy - mid.dy : local.dx - mid.dx;
     final overshoot = math.max(0.0, along.abs() - half);
@@ -1749,9 +1775,18 @@ class _SlotGesturesState extends State<_SlotGestures> {
         cornerD2 != null &&
         (rotateD2 == null || cornerD2 < rotateD2) &&
         (deleteD2 == null || cornerD2 < deleteD2);
-    var edgeHit = (!_isResizing && size != null)
-        ? _edgeZoneHit(local, size)
-        : null;
+    var edgeHit = size != null ? _edgeZoneHit(local, size) : null;
+    // Text's compact side pills sit inside the corner zones' reach on a
+    // short side (one line): there the closer handle wins, as with the
+    // rotate/delete buttons, so the middle of the side stretches and the
+    // ends still scale. Everything else keeps corners first.
+    if (_isResizing &&
+        edgeHit != null &&
+        !widget.verticalEdges &&
+        edgeHit.$2 < cornerD2!) {
+      _isResizing = false;
+    }
+    if (_isResizing) edgeHit = null;
     if (edgeHit != null &&
         edgeHit.$1 == SlotEdge.top &&
         deleteD2 != null &&
@@ -2020,8 +2055,9 @@ class _SelectionChrome extends StatelessWidget {
   /// with the leader's measured size — imposes the padded box size instead.
   final Widget? child;
 
-  /// False hides the top/bottom edge pills (text slots: height is automatic,
-  /// only the wrap width stretches).
+  /// False is TEXT: hides the top/bottom edge pills (height is automatic,
+  /// only the wrap width stretches) and draws compact side pills
+  /// ([_compactPillLength]) so even one line can be narrowed.
   final bool verticalPills;
 
   const _SelectionChrome({
@@ -2078,6 +2114,11 @@ class _SelectionChrome extends StatelessWidget {
               builder: (context, constraints) {
                 final w = constraints.maxWidth - 2 * pad;
                 final h = constraints.maxHeight - 2 * pad;
+                final sideLen = _sidePillLength(
+                  h,
+                  scale,
+                  compact: !verticalPills,
+                );
                 final drop = _kRotateHandleDrop / scale;
                 final rise = _kDeleteHandleRise / scale;
                 return Stack(
@@ -2114,13 +2155,14 @@ class _SelectionChrome extends StatelessWidget {
                         horizontal: true,
                       ),
                     ],
-                    if (_edgePillsFit(h, scale)) ...[
+                    if (sideLen != null) ...[
                       _pill(
                         context.colors,
                         'l',
                         pad,
                         pad + h / 2,
                         horizontal: false,
+                        length: sideLen,
                       ),
                       _pill(
                         context.colors,
@@ -2128,6 +2170,7 @@ class _SelectionChrome extends StatelessWidget {
                         pad + w,
                         pad + h / 2,
                         horizontal: false,
+                        length: sideLen,
                       ),
                     ],
                     _glyphHandle(
@@ -2197,8 +2240,9 @@ class _SelectionChrome extends StatelessWidget {
     double cx,
     double cy, {
     required bool horizontal,
+    double? length,
   }) {
-    final len = _kEdgePillLength / scale;
+    final len = length ?? _kEdgePillLength / scale;
     final thick = _kEdgePillThickness / scale;
     final w = horizontal ? len : thick;
     final h = horizontal ? thick : len;
@@ -2220,7 +2264,7 @@ class _SelectionChrome extends StatelessWidget {
   /// One square corner handle centered at ([cx], [cy]) in the padded space.
   /// Drawn small (≈8px); the grab zone around it is much larger.
   Widget _corner(LayerColors colors, String key, double cx, double cy) {
-    final dot = _kCornerDot * 0.32 / scale;
+    final dot = _kCornerDotDrawn / scale;
     return Positioned(
       left: cx - dot / 2,
       top: cy - dot / 2,
