@@ -1122,6 +1122,14 @@ class _LayerWidget extends StatelessWidget {
         // top/bottom pills (and their zones) don't exist.
         baseSize: Size(l.width, 0),
         verticalEdges: false,
+        hugAlignment: textHugAlignment(l, content),
+        minEdgeFactor: textMinEdgeFactor(l),
+        maxEdgeFactor: selected
+            ? textMaxEdgeFactor(
+                l,
+                measureTextLayer(context, l, content, fontResolver),
+              )
+            : _kMaxSlotScale,
       ),
       ShapeLayer l => _positioned(
         l.x,
@@ -1284,6 +1292,9 @@ class _LayerWidget extends StatelessWidget {
     Alignment frameAlignment = Alignment.topLeft,
     Size? baseSize,
     bool verticalEdges = true,
+    double? hugAlignment,
+    double minEdgeFactor = _kMinSlotScale,
+    double maxEdgeFactor = _kMaxSlotScale,
   }) {
     final offset = content.offsetFor(slotId);
     final scale = content.scaleFor(slotId);
@@ -1311,6 +1322,9 @@ class _LayerWidget extends StatelessWidget {
         currentStretchY: content.stretchYFor(slotId),
         baseSize: baseSize,
         verticalEdges: verticalEdges,
+        hugAlignment: hugAlignment,
+        minEdgeFactor: minEdgeFactor,
+        maxEdgeFactor: maxEdgeFactor,
         selected: selected,
         onTap: onSlotTap,
         onDrag: onSlotDrag,
@@ -1431,6 +1445,21 @@ class _SlotGestures extends StatefulWidget {
 
   /// False suppresses the top/bottom edge pills (text: height is automatic).
   final bool verticalEdges;
+
+  /// Text only (null otherwise): the element's box HUGS its glyphs inside a
+  /// wider model-width frame, aligned by this fraction of the slack (0 left,
+  /// 0.5 center, 1 right — see [textHugAlignment]). An edge drag first snaps
+  /// the frame onto the hugged box (glyphs stay put), so the dragged edge —
+  /// the wrap width — follows the finger from the glyphs' own edge instead
+  /// of from an invisible frame edge far beyond them.
+  final double? hugAlignment;
+
+  /// Bounds for the edge-stretch factor; default to the slot scale limits.
+  /// Text narrows down to about one glyph and widens only up to its natural
+  /// single-line width (past it the paragraph can't grow, so the frame would
+  /// just drift away from the glyphs).
+  final double minEdgeFactor;
+  final double maxEdgeFactor;
   final void Function(String slotId)? onTap;
   final void Function(String slotId, Offset delta)? onDrag;
   final void Function(String slotId, double scale)? onScaleChange;
@@ -1471,6 +1500,9 @@ class _SlotGestures extends StatefulWidget {
     this.currentStretchY = 1.0,
     this.baseSize,
     this.verticalEdges = true,
+    this.hugAlignment,
+    this.minEdgeFactor = _kMinSlotScale,
+    this.maxEdgeFactor = _kMaxSlotScale,
     required this.onTap,
     required this.onDrag,
     required this.onScaleChange,
@@ -1566,6 +1598,17 @@ class _SlotGesturesState extends State<_SlotGestures> {
   bool _tapIsDelete = false;
   Offset _tapDownGlobal = Offset.zero;
 
+  /// Where the current one-finger touch LANDED (local + global), recorded
+  /// at pointer-down. The scale recognizer only starts after the finger has
+  /// travelled its pan slop (~36 px), and reports THAT point: deciding the
+  /// handle zone from it made a grab on a handle's inner side (an edge pill
+  /// dragged inward — the narrowing that stacks a phrase on two lines) land
+  /// past the zone and turn into a move. The handles decide and anchor from
+  /// the touch-down point instead, so the handle also stays under the
+  /// finger rather than trailing it by the slop.
+  Offset? _downLocal;
+  Offset? _downGlobal;
+
   /// Whether a touch at [local] lands on the delete handle's zone (only
   /// meaningful while selected — the handle only exists then). The top edge
   /// pill sits _kDeleteHandleRise below the handle, and a corner zone can
@@ -1613,11 +1656,21 @@ class _SlotGesturesState extends State<_SlotGestures> {
     );
   }
 
+  bool get _listensForTaps =>
+      widget.onDelete != null || widget.onInteriorTap != null;
+
   void _onPointerDown(PointerDownEvent e) {
     _pointersDown++;
     // A second finger (or a touch on neither zone) is never a tap.
     _tapPointer = null;
-    if (_pointersDown != 1) return;
+    if (_pointersDown != 1) {
+      _downLocal = null;
+      _downGlobal = null;
+      return;
+    }
+    _downLocal = e.localPosition;
+    _downGlobal = e.position;
+    if (!_listensForTaps) return;
     if (_inDeleteZone(e.localPosition)) {
       _tapPointer = e.pointer;
       _tapIsDelete = true;
@@ -1670,7 +1723,10 @@ class _SlotGesturesState extends State<_SlotGestures> {
     _pointerCount = d.pointerCount;
     // Handle zones are one-finger only; a pinch never lands in one.
     final size = d.pointerCount == 1 ? context.size : null;
-    final local = d.localFocalPoint;
+    // Zones and handle anchors use where the finger LANDED (see _downLocal).
+    final oneFinger = d.pointerCount == 1 && _downLocal != null;
+    final local = oneFinger ? _downLocal! : d.localFocalPoint;
+    final startGlobal = oneFinger ? _downGlobal! : d.focalPoint;
     // Every zone the touch falls in, with its center distance². The corner
     // zones (floored at _kMinResizeReach) can overlap the floating rotate/
     // delete buttons on a narrow element, and those buttons' zones overlap
@@ -1710,19 +1766,21 @@ class _SlotGesturesState extends State<_SlotGestures> {
     _gestureCenter = (_isResizing || _isRotating) ? _centerGlobal() : null;
     if (_isResizing) {
       final center = _gestureCenter;
-      _startDistance = center == null ? null : (d.focalPoint - center).distance;
+      _startDistance = center == null
+          ? null
+          : (startGlobal - center).distance;
     }
     if (_isRotating) {
       final center = _gestureCenter;
-      _startAngle = center == null ? null : (d.focalPoint - center).direction;
+      _startAngle = center == null ? null : (startGlobal - center).direction;
     }
-    if (_activeEdge != null) _startEdgeResize(d, size!, _activeEdge!);
+    if (_activeEdge != null) _startEdgeResize(startGlobal, size!, _activeEdge!);
   }
 
   /// Captures the edge drag's global anchor (opposite edge midpoint), axis
   /// direction and the finger's starting projection — all ONCE, for the same
   /// frame-lag reason as [_gestureCenter].
-  void _startEdgeResize(ScaleStartDetails d, Size size, SlotEdge edge) {
+  void _startEdgeResize(Offset startGlobal, Size size, SlotEdge edge) {
     final box = context.findRenderObject();
     if (box is! RenderBox || !box.hasSize) {
       _activeEdge = null;
@@ -1751,7 +1809,7 @@ class _SlotGesturesState extends State<_SlotGestures> {
       return;
     }
     final axisUnit = axisGlobal / axisGlobal.distance;
-    final proj = _dot(d.focalPoint - anchorGlobal, axisUnit);
+    final proj = _dot(startGlobal - anchorGlobal, axisUnit);
     if (proj < 1) {
       _activeEdge = null;
       return;
@@ -1764,6 +1822,36 @@ class _SlotGesturesState extends State<_SlotGestures> {
         ? widget.currentStretchX
         : widget.currentStretchY;
     _edgeLastFactor = _edgeStartFactor;
+    final hug = widget.hugAlignment;
+    final base = widget.baseSize;
+    if (hug != null && horizontal && base != null && base.width > 0) {
+      _snapFrameToHug(edge, hug, base.width, w);
+    }
+  }
+
+  /// Text: shrinks the model-width frame onto the hugged glyph box [glyphW]
+  /// (both in template px) without moving the glyphs, so the edge drag that
+  /// follows starts from the edge the user actually grabbed. Below that
+  /// width the paragraph wraps and its box IS the frame, so the edge then
+  /// tracks the finger exactly.
+  void _snapFrameToHug(SlotEdge edge, double hug, double baseW, double glyphW) {
+    final frameW = baseW * _edgeStartFactor;
+    if (frameW - glyphW <= 0.01) return;
+    // Hold the glyph box's CENTER fixed in painted space. Frame center C and
+    // glyph center sit along the local x axis (same height before and
+    // after), u = glyph center − C in frame-local px. Painted center =
+    // pos + C + S·Ru·u before, pos' + glyphW/2 after (u becomes 0), so
+    // pos' − pos = (frameW − glyphW)/2 + S·Ru·u. Text has no template
+    // rotation, so Rt drops out.
+    final slack = frameW - glyphW;
+    final u = Offset(slack * (hug - 0.5), 0);
+    final s = widget.currentScale;
+    final ru = widget.currentRotation * math.pi / 180;
+    final delta = Offset(slack / 2, 0) + _rotateVec(u, ru) * s;
+    final factor = glyphW / baseW;
+    widget.onEdgeResize?.call(widget.slotId, edge, factor, delta);
+    _edgeStartFactor = factor;
+    _edgeLastFactor = factor;
   }
 
   static double _dot(Offset a, Offset b) => a.dx * b.dx + a.dy * b.dy;
@@ -1814,9 +1902,11 @@ class _SlotGesturesState extends State<_SlotGestures> {
         final proj = _dot(d.focalPoint - anchor, axis);
         // Clamp BEFORE the compensation, so the anchor stays fixed even
         // while the factor is pinned at a limit.
-        final factor = (_edgeStartFactor * proj / startProj).clamp(
-          _kMinSlotScale,
-          _kMaxSlotScale,
+        // The upper bound never sits below where the drag started (a frame
+        // already wider than the limit must not jump inward on touch).
+        final double factor = (_edgeStartFactor * proj / startProj).clamp(
+          math.min(widget.minEdgeFactor, _edgeStartFactor),
+          math.max(widget.maxEdgeFactor, _edgeStartFactor),
         );
         final horizontal = edge == SlotEdge.left || edge == SlotEdge.right;
         final dLayout =
@@ -1888,12 +1978,13 @@ class _SlotGesturesState extends State<_SlotGestures> {
     // The Listener handles delete and interior taps outside the gesture
     // arena (see the fields above); it never competes with the recognizers
     // below.
-    final listens = widget.onDelete != null || widget.onInteriorTap != null;
+    // Always listening: besides those taps, pointer-down records where a
+    // touch landed for the handle zones (see _downLocal).
     return Listener(
-      onPointerDown: listens ? _onPointerDown : null,
-      onPointerMove: listens ? _onPointerMove : null,
-      onPointerUp: listens ? _onPointerUp : null,
-      onPointerCancel: listens ? _onPointerCancel : null,
+      onPointerDown: _onPointerDown,
+      onPointerMove: _onPointerMove,
+      onPointerUp: _onPointerUp,
+      onPointerCancel: _onPointerCancel,
       child: GestureDetector(
         // Opaque, not the default deferToChild: a text slot is mostly empty
         // space (glyphs only at the top) with IgnorePointer chrome, so
@@ -2886,21 +2977,8 @@ class _TextSlot extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final base = TextStyle(
-      fontSize: layer.fontSize,
-      fontWeight: _weight(content.weightFor(layer.slotId) ?? layer.fontWeight),
-      color: content.colorFor(layer.slotId) ?? layer.color,
-    );
-    final style = fontResolver(
-      content.fontFor(layer.slotId) ?? layer.fontFamily,
-      base,
-    );
-    final align = switch (content.alignmentFor(layer.slotId) ??
-        layer.alignment) {
-      'center' => TextAlign.center,
-      'right' => TextAlign.right,
-      _ => TextAlign.left,
-    };
+    final style = _textSlotStyle(layer, content, fontResolver);
+    final align = _textSlotAlign(layer, content);
     if (editing) {
       // The editor hugs the typed text just like the display Text below
       // (IntrinsicWidth re-runs on every text layout — RenderBox invalidates
@@ -2930,16 +3008,108 @@ class _TextSlot extends StatelessWidget {
     // paragraph inside the model box so the glyphs never move.
     return ConstrainedBox(
       constraints: BoxConstraints(maxWidth: wrapWidth ?? layer.width),
-      child: Text(
-        content.textFor(layer.slotId) ?? layer.slotId,
-        style: style,
-        textAlign: align,
-      ),
+      child: Text(_textSlotData(layer, content), style: style, textAlign: align),
     );
   }
+}
 
-  FontWeight _weight(int value) =>
-      FontWeight.values[(value / 100).round().clamp(1, 9) - 1];
+/// What a (non-editing) text slot displays. Shared with [measureTextLayer].
+String _textSlotData(TextLayer layer, SlotContent content) =>
+    content.textFor(layer.slotId) ?? layer.slotId;
+
+/// The style a text slot renders with. Shared with [measureTextLayer].
+TextStyle _textSlotStyle(
+  TextLayer layer,
+  SlotContent content,
+  FontResolver fontResolver,
+) {
+  final weight = content.weightFor(layer.slotId) ?? layer.fontWeight;
+  final base = TextStyle(
+    fontSize: layer.fontSize,
+    fontWeight: FontWeight.values[(weight / 100).round().clamp(1, 9) - 1],
+    color: content.colorFor(layer.slotId) ?? layer.color,
+  );
+  return fontResolver(content.fontFor(layer.slotId) ?? layer.fontFamily, base);
+}
+
+TextAlign _textSlotAlign(TextLayer layer, SlotContent content) =>
+    switch (content.alignmentFor(layer.slotId) ?? layer.alignment) {
+      'center' => TextAlign.center,
+      'right' => TextAlign.right,
+      _ => TextAlign.left,
+    };
+
+/// Where a text slot's hugged paragraph sits inside its model-width frame,
+/// as a 0..1 fraction of the slack (left 0, center 0.5, right 1) — the
+/// horizontal component of the frame's Align in [_LayerWidget].
+double textHugAlignment(TextLayer layer, SlotContent content) =>
+    switch (content.alignmentFor(layer.slotId) ?? layer.alignment) {
+      'center' => 0.5,
+      'right' => 1.0,
+      _ => 0.0,
+    };
+
+/// Narrowest wrap width an edge drag reaches, as a stretch factor: about one
+/// glyph (the font size), so a phrase can stack one word per line.
+double textMinEdgeFactor(TextLayer layer) =>
+    layer.width > 0 ? layer.fontSize / layer.width : _kMinSlotScale;
+
+/// Widest wrap width an edge drag reaches: the paragraph's natural one-line
+/// width ([measureTextLayer]). Wider than that the glyph box stops growing
+/// while the frame keeps going, and the glyphs drift inside it.
+double textMaxEdgeFactor(
+  TextLayer layer,
+  ({Size size, double naturalWidth}) measured,
+) => layer.width > 0
+    ? math.max(measured.naturalWidth, measured.size.width) / layer.width
+    : _kMaxSlotScale;
+
+/// A text slot's paragraph geometry, computed in BUILD rather than read back
+/// from layout: [size] is the exact box the slot's (non-editing) `Text` lays
+/// out to at its current wrap width, [naturalWidth] the single-line width it
+/// would take with no wrap limit.
+///
+/// The selection chrome needs the box on the same frame that changes it (a
+/// resize, a font swap): a post-layout measurement can only reach the chrome
+/// a frame later, which showed as the handles trailing the text. This mirrors
+/// `Text.build` → `RenderParagraph` — ambient DefaultTextStyle merge, bold-
+/// text accessibility, text scaler, locale, width basis, height behavior —
+/// so both lay out the same paragraph. [context] must sit where the canvas'
+/// slots do (same DefaultTextStyle / MediaQuery).
+({Size size, double naturalWidth}) measureTextLayer(
+  BuildContext context,
+  TextLayer layer,
+  SlotContent content,
+  FontResolver fontResolver,
+) {
+  final defaults = DefaultTextStyle.of(context);
+  final own = _textSlotStyle(layer, content, fontResolver);
+  var style = own.inherit ? defaults.style.merge(own) : own;
+  if (MediaQuery.boldTextOf(context)) {
+    style = style.merge(const TextStyle(fontWeight: FontWeight.bold));
+  }
+  final painter = TextPainter(
+    text: TextSpan(text: _textSlotData(layer, content), style: style),
+    textAlign: _textSlotAlign(layer, content),
+    textDirection: Directionality.of(context),
+    locale: Localizations.maybeLocaleOf(context),
+    textScaler: MediaQuery.textScalerOf(context),
+    maxLines: defaults.maxLines,
+    ellipsis: (style.overflow ?? defaults.overflow) == TextOverflow.ellipsis
+        ? '…'
+        : null,
+    textWidthBasis: defaults.textWidthBasis,
+    textHeightBehavior:
+        defaults.textHeightBehavior ?? DefaultTextHeightBehavior.maybeOf(context),
+  );
+  try {
+    final wrap = layer.width * content.stretchXFor(layer.slotId);
+    painter.layout(maxWidth: defaults.softWrap ? wrap : double.infinity);
+    final size = Size(math.min(painter.width, wrap), painter.height);
+    return (size: size, naturalWidth: painter.maxIntrinsicWidth);
+  } finally {
+    painter.dispose();
+  }
 }
 
 /// In-canvas text editing: a collapsed TextField styled exactly like the
@@ -3086,9 +3256,10 @@ class _StickerPlaceholder extends StatelessWidget {
 class CanvasSelectionOverlay extends StatelessWidget {
   final LayerLink link;
 
-  /// The leader's padded box size in leader-local units, as reported by
-  /// [PanelCanvas.onSelectionSize]. Arrives one frame after selection
-  /// (post-layout), so mount the overlay only once it's known.
+  /// The leader's padded box size in leader-local units. Derive it in the
+  /// same build that changes it (text: [measureTextLayer]) — a size read
+  /// back from [PanelCanvas.onSelectionSize] lands a frame late, and the
+  /// handles visibly trail the element.
   final Size size;
 
   /// The id gestures report — the slot id, or the LAYER id for a grid.
@@ -3106,6 +3277,12 @@ class CanvasSelectionOverlay extends StatelessWidget {
 
   /// False hides/suppresses the top/bottom pills (text slots).
   final bool verticalEdges;
+
+  /// See [_SlotGestures.hugAlignment] / [_SlotGestures.minEdgeFactor]. Null
+  /// limits keep the slot scale limits.
+  final double? hugAlignment;
+  final double? minEdgeFactor;
+  final double? maxEdgeFactor;
 
   /// See [PanelCanvas.viewScale]. MUST match what the canvas was given, or the
   /// follower's chrome and the leader's padded box disagree about where the
@@ -3146,6 +3323,9 @@ class CanvasSelectionOverlay extends StatelessWidget {
     this.currentStretchY = 1.0,
     this.baseSize,
     this.verticalEdges = true,
+    this.hugAlignment,
+    this.minEdgeFactor,
+    this.maxEdgeFactor,
     this.viewScale = 1.0,
     this.onDrag,
     this.onScaleChange,
@@ -3184,6 +3364,9 @@ class CanvasSelectionOverlay extends StatelessWidget {
             currentStretchY: currentStretchY,
             baseSize: baseSize,
             verticalEdges: verticalEdges,
+            hugAlignment: hugAlignment,
+            minEdgeFactor: minEdgeFactor ?? _kMinSlotScale,
+            maxEdgeFactor: maxEdgeFactor ?? _kMaxSlotScale,
             selected: true,
             // Plain ring taps are no-ops (the element is already selected):
             // onTap stays null so no tap recognizer joins the arena. Taps

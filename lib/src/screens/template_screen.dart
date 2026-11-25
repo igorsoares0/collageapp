@@ -174,6 +174,12 @@ class _TemplateScreenState extends State<TemplateScreen>
   final LayerLink _selectionLink = LayerLink();
   (String, Size)? _selectionBox;
 
+  // The text chrome box the last build DERIVED (see [_chromeBoxFor]). The
+  // post-layout measurement is compared against it: a mismatch means the
+  // paragraph changed outside a rebuild (a web font finished loading), and
+  // only then does the measurement trigger one.
+  (String, Size)? _derivedTextBox;
+
   // Undo/redo: snapshots of BOTH halves of the document — the continuous
   // [Document] (structure: layers, slides, backgrounds) and [_content] (the
   // user's per-slot overrides). Both are immutable copy-on-write, so a snapshot
@@ -1697,17 +1703,26 @@ class _TemplateScreenState extends State<TemplateScreen>
   /// the measurement is post-layout and setStates — and that lag was visible
   /// as the photo/grid shrinking out from under a ring still on its old size.
   ///
-  /// Text hugs its glyphs, so nothing here can predict its box; it keeps the
-  /// measured path, unchanged, and the overlay waits for the measurement.
-  Size? _chromeBoxFor((String, double, Size, bool) target, double viewScale) {
+  /// Text hugs its glyphs, so its box comes from laying the paragraph out
+  /// here ([measureTextLayer], the same layout its Text does) — reading it
+  /// back from the leader made the handles trail every resize and re-wrap by
+  /// a frame. [textGlyphs] is that measurement for a text [target].
+  Size? _chromeBoxFor(
+    (String, double, Size, bool) target,
+    double viewScale,
+    Size? textGlyphs,
+  ) {
     final (id, _, base, isText) = target;
-    if (isText) {
-      final measured = _selectionBox;
-      return (measured != null && measured.$1 == id) ? measured.$2 : null;
-    }
     // Must match _leaderChromed's padding exactly (kChromePad over the chrome
     // scale, which folds in the canvas zoom), or the ring misses the edges.
     final pad = kChromePad / (_content.scaleFor(id) * viewScale);
+    if (isText) {
+      final glyphs = textGlyphs;
+      if (glyphs == null) return null;
+      final box = Size(glyphs.width + 2 * pad, glyphs.height + 2 * pad);
+      _derivedTextBox = (id, box);
+      return box;
+    }
     return Size(
       base.width * _content.stretchXFor(id) + 2 * pad,
       base.height * _content.stretchYFor(id) + 2 * pad,
@@ -1924,13 +1939,18 @@ class _TemplateScreenState extends State<TemplateScreen>
                           // every other layer the measurement is both redundant
                           // and harmful: its post-frame setState made the chrome
                           // trail the content by a frame on every resize.
+                          // The chrome itself is derived in build; the
+                          // measurement only feeds the drag snap's text box
+                          // and resyncs the chrome when the paragraph changed
+                          // without a rebuild (a font finished loading).
                           onSelectionSize: (target == null || !target.$4)
                               ? null
                               : (sz) {
-                                  if (_selectionBox == (target.$1, sz)) return;
-                                  setState(() {
-                                    _selectionBox = (target.$1, sz);
-                                  });
+                                  final measured = (target.$1, sz);
+                                  _selectionBox = measured;
+                                  if (mounted && _derivedTextBox != measured) {
+                                    setState(() {});
+                                  }
                                 },
                         ),
                       ),
@@ -1985,9 +2005,24 @@ class _TemplateScreenState extends State<TemplateScreen>
                     _content.withScale(slotId, scale),
                     coalesce: 'scale:$slotId',
                   );
+                  // Text geometry, laid out HERE (this context sits where the
+                  // canvas' slots do: same DefaultTextStyle and MediaQuery) so
+                  // the chrome and the edge-drag limits track the paragraph on
+                  // the very frame it changes.
+                  final textLayer = target != null && target.$4
+                      ? _selectedTextLayer()
+                      : null;
+                  final textMeasure = textLayer == null
+                      ? null
+                      : measureTextLayer(
+                          context,
+                          textLayer,
+                          _content,
+                          widget.fontResolver,
+                        );
                   final chromeBox = target == null
                       ? null
-                      : _chromeBoxFor(target, viewScale);
+                      : _chromeBoxFor(target, viewScale, textMeasure?.size);
                   Widget body = scroll;
                   if (target != null && chromeBox != null) {
                     body = Stack(
@@ -2006,6 +2041,15 @@ class _TemplateScreenState extends State<TemplateScreen>
                             currentStretchY: _content.stretchYFor(target.$1),
                             baseSize: target.$3,
                             verticalEdges: !target.$4,
+                            hugAlignment: textLayer == null
+                                ? null
+                                : textHugAlignment(textLayer, _content),
+                            minEdgeFactor: textLayer == null
+                                ? null
+                                : textMinEdgeFactor(textLayer),
+                            maxEdgeFactor: textLayer == null
+                                ? null
+                                : textMaxEdgeFactor(textLayer, textMeasure!),
                             viewScale: viewScale,
                             onDrag: dragSelected,
                             onScaleChange: scaleSelected,
